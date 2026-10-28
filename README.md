@@ -8,7 +8,7 @@
 <p align="center">
   <img alt="Python 3.13" src="https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white">
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-SQLite-009688?logo=fastapi&logoColor=white">
-  <img alt="Lizenz MIT" src="https://img.shields.io/badge/Lizenz-MIT-blue">
+  <img alt="Lizenz PolyForm Noncommercial" src="https://img.shields.io/badge/Lizenz-PolyForm%20Noncommercial-blue">
 </p>
 
 <p align="center">
@@ -186,4 +186,4 @@ Suchalarm ist ein privates Projekt für den eigenen Gebrauch. Es steht in keiner
 
 ## Lizenz
 
-[MIT](LICENSE)
+[PolyForm Noncommercial 1.0.0](LICENSE): Lesen, selbst betreiben, verändern und weitergeben ist für private und gemeinnützige Zwecke erlaubt. Kommerzielle Nutzung, zum Beispiel als bezahlter Dienst oder in einem Produkt, ist nicht erlaubt. Suchalarm ist damit „source available“, nicht Open Source im Sinne der OSI.
