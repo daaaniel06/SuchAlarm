@@ -26,6 +26,8 @@
   <a href="docs/architektur.md"><b>Architektur</b></a>
 </p>
 
+kurzer non slop kommentar von mir: für deine eigenen nutzen könnte es ein wenig nachbesserung benötigen. eine claude session von 30min sollte alles so anpassen das es deine bedürfnisse befriedigt. peace 
+
 ## Was es kann
 
 Suchalarm vereint zwei Bereiche in einer App, umschaltbar oben in der Oberfläche.
