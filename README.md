@@ -1,8 +1,8 @@
-<h1 align="center">SuchAlarm: Wohnungsbot &amp; Preisalarm</h1>
+<h1 align="center">SuchAlarm: Wohnungsbot &amp; Preisalarm für Gebrauchtwaren</h1>
 
 <p align="center">
   <b>Dein eigener Alarm für neue Wohnungen und gute Preise.</b><br>
-  Selbst gehosteter Wohnungsbot für ImmoScout24, Immowelt, Kleinanzeigen und WG-Gesucht, dazu ein Preisalarm für Gebrauchtes, der Kleinanzeigen, eBay und Vinted vergleicht und mit dem Neupreis auf idealo abgleicht. Prüft die Portale im Hintergrund und meldet sich per Mail.
+  Selbst gehosteter Wohnungsbot für ImmoScout24, Immowelt, Kleinanzeigen und WG-Gesucht, dazu Preisvergleich und Preisalarm für Gebrauchtwaren: vergleicht Kleinanzeigen, eBay und Vinted, gleicht mit dem Neupreis auf idealo ab und meldet Schnäppchen unter deinem Wunschpreis. Prüft die Portale im Hintergrund und meldet sich per Mail.
 </p>
 
 <p align="center">
@@ -50,9 +50,9 @@ Suchalarm vereint zwei Bereiche in einer App, umschaltbar oben in der Oberfläch
 - **Warmmiete im Blick:** angegebene Warmmiete aus der Detailseite; fehlt sie, schätzt Suchalarm sie aus der Kaltmiete. Immowelts eigene Schätzung zählt nicht.
 - **Detailblatt:** Fakten, Karte, Bewerbung mit Vorlage und Merkliste „Beworben“.
 
-### Preise
+### Preise für Gebrauchtwaren
 
-Der Preisalarm ist vor allem ein Gebrauchtwaren-Vergleich: Er schaut auf den großen Gebrauchtmärkten nach deinem Artikel, rechnet alle Angebote auf einen vergleichbaren Endpreis um und zeigt, was gebraucht wirklich günstiger ist als neu.
+Der Preisalarm ist vor allem ein Preisvergleich für Gebrauchtwaren mit Preisüberwachung: Er schaut auf den großen Gebrauchtmärkten nach deinem Artikel, rechnet alle Angebote auf einen vergleichbaren Endpreis um und zeigt, was gebraucht wirklich günstiger ist als neu. Fällt ein Angebot unter deinen Wunschpreis, kommt eine Mail, oft bevor andere das Schnäppchen sehen.
 
 - **Gebrauchtmärkte nebeneinander:** Kleinanzeigen, eBay (Sofortkauf) und Vinted in einer Liste, nach Neuheit oder Endpreis sortierbar.
 - **Neupreis als Maßstab:** idealo liefert den günstigsten Shoppreis. Ist ein neuer Artikel sogar billiger als jedes Gebrauchtangebot, steht das mit der Ersparnis in der Mail.
