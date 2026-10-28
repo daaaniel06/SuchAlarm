@@ -1,4 +1,4 @@
-// A flat's detail sheet and its application, like the Wohnungsbot: a click on a flat opens the sheet
+// A flat's detail sheet and its application: a click on a flat opens the sheet
 // instead of the portal. Applying happens on the portal; the page copies the text and remembers the day.
 
 import { dateText, decimal, district, escapeHtml, euro, mapCoordinates, mapView, moveIn } from './logic.js';

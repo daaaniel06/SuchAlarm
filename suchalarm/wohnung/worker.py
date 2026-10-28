@@ -1,6 +1,6 @@
 """Checking flat searches: store each portal's listings, then complete new ones from their detail page.
 
-Like Wohnungsbot: the first successful result of a portal is the search's starting stock (no detail
+The first successful result of a portal is the search's starting stock (no detail
 requests, never "new"). Listings that appear after it and can still fit get their detail page read
 once, at most one page per free budget slot, for warm rent, description and move-in date. When nothing
 else waits, the starting stock that can still fit gets its detail pages too, slowly (backfill_step).

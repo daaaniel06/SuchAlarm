@@ -119,7 +119,7 @@ def fingerprints(urls):
 
 @functools.lru_cache(maxsize=4096)
 def _fingerprint(name):
-    """Equal for the same photo in another size or quality (Wohnungsbot). A file's name is its content's
+    """Equal for the same photo in another size or quality. A file's name is its content's
     hash, so the result never changes. None for an unreadable or nearly uniform picture (a placeholder)."""
     try:
         with Image.open(root() / name) as picture:

@@ -65,7 +65,7 @@ def _store(conn, sid, source, listings, seen, wanted, now, middle=None):
 
 
 def _more_after(conn, sid, source, page, listings, new):
-    """Like the Wohnungsbot: a full page of nothing but new flats may have pushed more onto the next page."""
+    """A full page of nothing but new flats may have pushed more onto the next page."""
     if source in sources.PAGED and page < MAX_PAGE and len(listings) >= FULL_PAGE and len(new) == len(listings):
         conn.execute('INSERT OR REPLACE INTO more_pages VALUES (?,?,?,0)', (sid, source, page + 1))
     else:

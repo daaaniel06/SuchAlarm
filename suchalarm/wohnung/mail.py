@@ -114,7 +114,7 @@ def _buttons(offer):
 
 
 def card(search, offer, photo_src):
-    """The Wohnungsbot card: wide photo, district and rent, address, title, facts, a button per portal."""
+    """The flat card: wide photo, district and rent, address, title, facts, a button per portal."""
     name, address = place_name(offer)
     estimated = bool(offer.get('price') and offer.get('estimated'))
     rent = f'≈ {price_text(search, offer)}' if estimated else price_text(search, offer)

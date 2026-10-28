@@ -72,7 +72,7 @@ export function offerRow(o, s, gone = false, list = 'offers') {
   const unseen = flat && o.last_seen && o.last_seen < Date.now() / 1000 - 86400;
   const when = flat ? [flatAge(o), moveIn(o.available_from)] : [ago(o.first_seen)];
   const line = parts => parts.filter(Boolean).join(' · ');
-  // Like Wohnungsbot: a small green source tag leads the line; an applied flat still found says when instead.
+  // A small green source tag leads the line; an applied flat still found says when instead.
   const foot =
     applied && !gone
       ? `<span class="asset-foot applied">Beworben am ${dayMonth(snapshot.applied_at)}</span>`

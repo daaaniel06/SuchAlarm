@@ -1,4 +1,4 @@
-"""Where a flat lies, and one map of each searched place to draw it on (from the Wohnungsbot).
+"""Where a flat lies, and one map of each searched place to draw it on.
 
 Positions: ImmoScout24, bauverein and mostly NHW list coordinates. Other flats are looked up by their
 address with OpenStreetMap's Nominatim when their sheet opens, once; the answer is kept for good.

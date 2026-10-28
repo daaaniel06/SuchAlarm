@@ -156,7 +156,7 @@ ul {
 }
 
 /* Shell */
-/* Sidebar: same measures and pieces as Wohnungsbot (styles.css .shell/.sidebar/.brand/nav/.user) */
+/* Sidebar: */
 .shell {
   display: grid;
   grid-template-columns: 224px minmax(0, 1fr);
@@ -830,7 +830,7 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* Like Wohnungsbot: a small green source tag leads the line under each row. */
+/* A small green source tag leads the line under each row. */
 .source-tag {
   flex: none;
   padding: 1px 8px;
@@ -1841,7 +1841,7 @@ body {
   }
 }
 
-/* Pages of 30 and the destructive group, as in Wohnungsbot */
+/* Pages of 30 and the destructive group */
 .pager {
   display: flex;
   align-items: center;
@@ -2144,7 +2144,7 @@ body {
   color: var(--ink-2);
 }
 
-/* A flat's detail sheet and its application (Wohnungsbot) */
+/* A flat's detail sheet and its application */
 .sheet-photo {
   display: block;
   width: 100%;

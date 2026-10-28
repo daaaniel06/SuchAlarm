@@ -1,6 +1,4 @@
-"""Flat searches offline: parsers, filter rules, place checks, storing results and detail pages.
-
-The parser fixtures and many cases come from Wohnungsbot's tests (backend/tests)."""
+"""Flat searches offline: parsers, filter rules, place checks, storing results and detail pages."""
 
 import asyncio
 import json

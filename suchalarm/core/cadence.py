@@ -1,4 +1,4 @@
-"""Persisted, shared request budgets adapted from Wohnungsbot/backend/throttle.py."""
+"""Persisted, shared request budgets."""
 
 import asyncio
 import functools
@@ -149,11 +149,11 @@ def _setup(conn):
     conn.executescript(SCHEMA)
     if 'detail' not in {r[1] for r in conn.execute('PRAGMA table_info(failures)')}:
         conn.execute('ALTER TABLE failures ADD COLUMN detail TEXT')
-    # Preisalarm kept Kleinanzeigen location IDs by postcode only; they become places of that source.
+    # Older versions kept Kleinanzeigen location IDs by postcode only; they become places of that source.
     if conn.execute("SELECT 1 FROM sqlite_master WHERE name='locations'").fetchone():
         conn.execute("INSERT OR IGNORE INTO places SELECT 'kleinanzeigen', postcode, id FROM locations")
         conn.execute('DROP TABLE locations')
-    # Preisalarm's Vinted shipping cache moved to the product module's delivery.db; it refills within hours.
+    # Older versions' Vinted shipping cache moved to the product module's delivery.db; it refills within hours.
     conn.execute('DROP TABLE IF EXISTS deliveries')
 
 

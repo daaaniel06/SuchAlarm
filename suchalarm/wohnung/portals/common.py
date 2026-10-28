@@ -1,5 +1,5 @@
 """Shared by the portals: plain text of markup, the place check and the fallback parser for
-renamed card markup (from Wohnungsbot)."""
+renamed card markup."""
 
 import logging
 import re
@@ -42,7 +42,7 @@ def near(place, radius, centre, address, spot):
     return bool(town) and town in address.casefold()
 
 
-# --- Fallback when a portal renames its card markup (from Wohnungsbot) ---------------------
+# --- Fallback when a portal renames its card markup ---------------------
 # Offers are found by their detail links, which rarely change, and read from the card text by pattern.
 
 VOID_TAGS = {'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr'}

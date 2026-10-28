@@ -1,7 +1,6 @@
 """Flat searches: the offer type, the filter rules and the text helpers of the portal parsers.
 
-Ported from Wohnungsbot (backend/models.py and the helpers of backend/scraper.py). Pure functions
-without a database. Money is in euros here, as the portals state it; a search keeps its maximum
+Pure functions without a database. Money is in euros here, as the portals state it; a search keeps its maximum
 warm rent in cents like every search (searches.max_price).
 """
 
@@ -43,7 +42,7 @@ class Listing:
 
     @classmethod
     def from_card(cls, source, card):
-        """A listing from a parser's card (Wohnungsbot's camelCase keys)."""
+        """A listing from a parser's card (camelCase keys)."""
         return cls(
             source=source,
             url=card['url'],

@@ -1,8 +1,7 @@
 """The flat portals: request URLs and parsers for result lists and detail pages, one module per portal.
 No network here.
 
-Ported from Wohnungsbot (backend/scraper.py); Immowelt is new. Parsers return cards with
-Wohnungsbot's camelCase keys (domain.Listing.from_card). A page without recognisable offers is
+Parsers return cards with camelCase keys (domain.Listing.from_card). A page without recognisable offers is
 browser.Unreadable (shown as disturbed, retried like a failure), every other problem a RuntimeError with a short
 German text. sources.py reaches every portal through this package.
 """

@@ -45,7 +45,7 @@ def immoscout_region(entries, city):
 
 
 def immoscout_places(entries):
-    """Suggestions for the place field: towns, districts and postcodes (Wohnungsbot)."""
+    """Suggestions for the place field: towns, districts and postcodes."""
     result, seen = [], set()
     for entry in entries if isinstance(entries, list) else []:
         entity = (entry or {}).get('entity') or {}

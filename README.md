@@ -28,7 +28,7 @@
 
 ## Was es kann
 
-Suchalarm vereint zwei Bereiche in einer App, umschaltbar oben in der Oberfläche. Entstanden ist es aus [Preisalarm](https://github.com/daaaniel06/preisalarm) und dem [Wohnungsbot](https://github.com/daaaniel06/wohnungsbot).
+Suchalarm vereint zwei Bereiche in einer App, umschaltbar oben in der Oberfläche.
 
 ### Wohnungen
 
@@ -143,7 +143,7 @@ Dieselben Checks (ohne Frontend und Browser-Test) laufen beim Deploy in der Test
 Weitere Dokumente:
 
 - [AGENTS.md](AGENTS.md): Regeln für Änderungen am Code
-- [DESIGN.md](DESIGN.md): Designsystem (vom Wohnungsbot übernommen)
+- [DESIGN.md](DESIGN.md): Designsystem
 - [docs/regeln.md](docs/regeln.md): Fachregeln im Detail
 - [docs/architektur.md](docs/architektur.md): Aufbau im Detail
 

@@ -21,7 +21,7 @@ export const sourceName = source => state.sources[source].split(' · ')[0];
 export const refreshIcon = '<svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg>';
 export const clock = ts =>
   new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' }).format(new Date(ts * 1000));
-// "New since your last visit", per device, like Wohnungsbot: offers found after the previous visit
+// "New since your last visit", per device: offers found after the previous visit
 // carry a green dot until they are opened. A reload or a short tab switch is still the same visit.
 const SEEN_KEY = 'suchalarm.seen',
   VISIT_GAP = 10 * 60;
@@ -63,7 +63,7 @@ export const markOpened = o => {
 export const bookmarkIcon =
   '<svg class="mark" viewBox="0 0 24 24" aria-label="Gemerkt"><path d="M6 3h12v18l-6-4-6 4z"/></svg>';
 
-// Long lists come in pages of 30, like Wohnungsbot.
+// Long lists come in pages of 30.
 const PAGE_SIZE = 30;
 export const pages = { offers: 0, saved: 0 }; // the open page of each list
 const chevron = '<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>';

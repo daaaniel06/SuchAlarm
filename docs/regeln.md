@@ -1,6 +1,6 @@
 # Regeln im Detail
 
-Wie Preisalarm Preise vergleicht, Anbieter abfragt und Mails verschickt. Der Überblick steht im [README](../README.md).
+Wie Suchalarm Preise vergleicht, Anbieter abfragt und Mails verschickt. Der Überblick steht im [README](../README.md).
 
 ## Suchen und Treffer
 
@@ -51,7 +51,7 @@ Wie Preisalarm Preise vergleicht, Anbieter abfragt und Mails verschickt. Der Üb
 
 Die App läuft mit einem Uvicorn-Worker. Eine dauerhafte Warteschlange (`scheduler.py`) plant einzelne Aufträge je Anbieter und Suchbegriff statt ganzer Suchen; es gibt kein zusätzliches Suchintervall. Alle Abrufe bleiben seriell, und Reihenfolge, Grenzen und manuell eingereihte Prüfungen überstehen Neustarts.
 
-Zentrale Taktung wie beim Wohnungsbot (`cadence.py`, `cadence.db`):
+Zentrale Taktung (`cadence.py`, `cadence.db`):
 
 - Jede Quelle gehört zu einer Taktgruppe (`core/cadence.py`), jeweils plus bis zu 4 Minuten Zufallsversatz:
   - **Portale** (eBay, Kleinanzeigen, Vinted, später ImmoScout24, WG-Gesucht, Immowelt): alle 15 Minuten, nachts (01–06 Uhr) mindestens stündlich.

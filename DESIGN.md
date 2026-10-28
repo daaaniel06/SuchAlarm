@@ -1,6 +1,6 @@
 ---
-name: Preisalarm
-description: Das persönliche Preis-Depot in der visuellen Welt von Wohnungsbot
+name: Suchalarm
+description: Ruhige Trefferlisten für Wohnungen und Preise
 colors:
   light-bg: "#fff"
   light-ink: "#0a0a0a"
@@ -117,13 +117,13 @@ components:
     rounded: "{rounded.dialog}"
     padding: "28px"
 ---
-# Design System: Preisalarm
+# Design System: Suchalarm
 
 ## Overview
 
 **Creative North Star: "Das persönliche Preis-Depot"**
 
-Preisalarme übernehmen die verbindliche visuelle Welt von Wohnungsbot: Geist, Weiß und Schwarz, ruhige Positionslisten und große Zähler. Die Oberfläche wirkt persönlich, sachlich und leicht. Preise, Quellen und Aktualität erhalten Vorrang vor dekorativen Flächen.
+Suchalarm hat eine klare visuelle Welt: Geist, Weiß und Schwarz, ruhige Positionslisten und große Zähler. Die Oberfläche wirkt persönlich, sachlich und leicht. Preise, Quellen und Aktualität erhalten Vorrang vor dekorativen Flächen.
 
 Die Darstellung folgt automatisch dem hellen oder dunklen Systemmodus. Flächen werden durch Tonwerte und Abstände gegliedert; Farbe trägt fachliche Bedeutung. Desktop-Seitenleiste und mobile Bodennavigation bilden dieselbe ruhige Orientierung.
 
@@ -132,7 +132,7 @@ Die Darstellung folgt automatisch dem hellen oder dunklen Systemmodus. Flächen 
 - Kompakte, offene Listen und großzügige Abschnittsabstände.
 - Große Kennzahlen, tabellarische Beträge und lokal geladene Geist.
 
-Die Gestaltung ist aus dem implementierten CSS dokumentiert und übernimmt die Wohnungsbot-Identität. Das Frontmatter enthält reale helle und dunkle Werte; die laufende Anwendung verwendet dafür dieselben semantischen CSS-Variablen mit automatischem Moduswechsel.
+Die Gestaltung ist aus dem implementierten CSS dokumentiert. Das Frontmatter enthält reale helle und dunkle Werte; die laufende Anwendung verwendet dafür dieselben semantischen CSS-Variablen mit automatischem Moduswechsel.
 
 ## Colors
 
@@ -178,7 +178,7 @@ Feldgruppen nutzen Innenabstand und Haarlinien zwischen den Zeilen statt einzeln
 
 Eingelegte Bedienelemente in grauen Gruppen (Pills, Segmente, Schalter) nutzen `--inset`, nie den Seitengrund.
 
-**The One-Decision Rule.** Eine offene Pflichtwahl ersetzt die Aktionsleiste; was von ihr abhängt, erscheint erst danach, mit einer kleinen Zeile „Über X · Ändern“ darüber. Nie Wahl und abhängige Buttons gleichzeitig zeigen, nie deaktivierte Buttons als Hinweis auf eine fehlende Wahl. Übernommen aus dem Wohnungsbot (Portalwahl bei doppelten Inseraten).
+**The One-Decision Rule.** Eine offene Pflichtwahl ersetzt die Aktionsleiste; was von ihr abhängt, erscheint erst danach, mit einer kleinen Zeile „Über X · Ändern“ darüber. Nie Wahl und abhängige Buttons gleichzeitig zeigen, nie deaktivierte Buttons als Hinweis auf eine fehlende Wahl. Beispiel: die Portalwahl bei doppelten Inseraten.
 
 Ein Name pro Ziel, überall gleich: Treffer, Merkliste, Suchen, Einstellungen. Die Navigation zeigt auf Desktop den aktiven Eintrag mit Füllung und stärkerer Textfarbe. Mobil stehen Icon und kurzer Text übereinander; die aktive Textfarbe trägt die Auswahl. Segmente zeigen das gewählte Element auf einer eigenen Oberfläche innerhalb der neutralen Pill.
 
@@ -186,7 +186,7 @@ Ein Name pro Ziel, überall gleich: Treffer, Merkliste, Suchen, Einstellungen. D
 
 **The Shipping Context Rule.** Der Versand-Schalter gehört in dieselbe Feldgruppe wie Suchbegriff und Höchstpreis. Die Erläuterung darunter beschreibt die Auswirkung auf den Alarm.
 
-**The New Dot Rule.** Wie im Wohnungsbot trägt ein Treffer einen kleinen grünen Punkt vor dem Titel, wenn er nach dem letzten Besuch auf diesem Gerät gefunden wurde. Ein Besuch endet erst nach 10 Minuten Abwesenheit; Neuladen oder ein kurzer Tabwechsel behalten die Punkte. Beim ersten Besuch auf einem Gerät ist nichts neu, der erste Abruf einer Suche ist Bestand. Öffnen nimmt den Punkt sofort weg. Der Punkt springt einmal auf, spätere Aktualisierungen zeichnen ihn ruhig. Die Anzahl steht im Tab-Titel, die des anderen Bereichs als „3 neu“ an dessen Pill.
+**The New Dot Rule.** Ein Treffer trägt ein Treffer einen kleinen grünen Punkt vor dem Titel, wenn er nach dem letzten Besuch auf diesem Gerät gefunden wurde. Ein Besuch endet erst nach 10 Minuten Abwesenheit; Neuladen oder ein kurzer Tabwechsel behalten die Punkte. Beim ersten Besuch auf einem Gerät ist nichts neu, der erste Abruf einer Suche ist Bestand. Öffnen nimmt den Punkt sofort weg. Der Punkt springt einmal auf, spätere Aktualisierungen zeichnen ihn ruhig. Die Anzahl steht im Tab-Titel, die des anderen Bereichs als „3 neu“ an dessen Pill.
 
 **The Row Foot Rule.** Unter jeder Zeile steht vorn ein kleines grünes Anbieter-Etikett, dahinter grau das Alter (bei Wohnungen das Veröffentlichungsdatum des Portals, sonst der Fund) und „frei ab …“. Eine geschätzte Warmmiete steht als „≈ 850 €“ in Zweitgrau, sie ist keine Warnung. Beworbene Wohnungen zeigen einen grünen Haken am Bild, ein grünes „Beworben“ neben dem Titel und grün „Beworben am …“ als Fußzeile.
 

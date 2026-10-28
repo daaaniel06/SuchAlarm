@@ -67,7 +67,7 @@ export function renderFilter(searches, byId) {
 
 export function renderHead(searches, selected, passing) {
   // Head: what is new today, then the state of the sources; "Jetzt prüfen" turns into one step per source.
-  // Like the Wohnungsbot: progress only for a manual check ("Jetzt prüfen"), automatic runs stay quiet.
+  // Progress only for a manual check ("Jetzt prüfen"), automatic runs stay quiet.
   // A source in a block pause is not waited for, otherwise its queued job would hide the button until the pause ends.
   const blocked = job =>
     (state.schedule || []).some(x => x.search_id === job.search_id && x.source === job.source && x.state === 'blocked');
@@ -103,7 +103,7 @@ export function renderHead(searches, selected, passing) {
               ? ' · erster Abruf gleich'
               : ` · geprüft ${ago(Math.max(...checked))}`;
   $('summary').innerHTML = (fresh ? `<b class="up">+${fresh} heute</b>` : '<b>Heute nichts Neues</b>') + detail;
-  // Like the Wohnungsbot: the sources' progress replaces the "Jetzt prüfen" icon, below the summary.
+  // The sources' progress replaces the "Jetzt prüfen" icon, below the summary.
   // With a search chosen in the filter, the icon checks only that one (even if paused).
   const targets = filter ? selected : active,
     label = filter && selected[0] ? `${searchName(selected[0])} jetzt prüfen` : 'Jetzt prüfen';
@@ -181,7 +181,7 @@ export function renderSaved(byId) {
   // The watch list of the area: the current hit while it is still found, otherwise the saved snapshot.
   const kindOfSaved = x => (byId(x.search_id) ? kindOf(byId(x.search_id)) : kindOfSource(x.source));
   const all = state.saved.filter(x => kindOfSaved(x) === area);
-  // Flats split into saved and applied for, like the Wohnungsbot; offers have one list.
+  // Flats split into saved and applied for; offers have one list.
   const flats = area === 'wohnung',
     applied = all.filter(x => x.applied_at),
     saved = flats ? all.filter(x => Boolean(x.applied_at) === appliedTab) : all;

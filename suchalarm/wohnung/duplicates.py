@@ -1,4 +1,4 @@
-"""The same flat on several portals, shown and mailed once. Ported from Wohnungsbot (backend/duplicates.py).
+"""The same flat on several portals, shown and mailed once.
 
 Rule one: never lose a flat. Merging two different flats would hide one, a missed duplicate only shows a
 flat twice. So listings are linked only on clear evidence:

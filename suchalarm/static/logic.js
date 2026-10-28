@@ -133,7 +133,7 @@ export const flatSummary = s => {
 };
 
 // Swipe gestures: the rubber band past the limit and the trackpad's after-swing
-// The map in a flat's sheet (Wohnungsbot): the stored picture of the searched place shows its middle at
+// The map in a flat's sheet: the stored picture of the searched place shows its middle at
 // MAP_ZOOM, slid just enough to keep the flat in view; a flat outside gets an arrow on the frame's edge.
 export const MAP_ZOOM = 1.9,
   MAP_MARGIN = 0.1;

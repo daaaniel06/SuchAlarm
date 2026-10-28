@@ -347,7 +347,7 @@ async def _immowelt_detail(url):
 
 
 async def detail(source, url):
-    """What the detail page of a listing adds (Wohnungsbot's camelCase keys); one booked visit."""
+    """What the detail page of a listing adds (camelCase keys); one booked visit."""
     if source == 'immoscout24':
         data = await http.get_json(source, portals.immoscout_detail_url(url), {'User-Agent': portals.IMMOSCOUT_UA})
         return portals.immoscout_detail(data)
