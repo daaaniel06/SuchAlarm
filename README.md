@@ -2,7 +2,7 @@
 
 <p align="center">
   <b>Dein eigener Alarm für neue Wohnungen und gute Preise.</b><br>
-  Selbst gehosteter Wohnungsbot für ImmoScout24, Immowelt, Kleinanzeigen und WG-Gesucht, dazu ein Preisalarm für Kleinanzeigen, eBay, Vinted und idealo. Prüft die Portale im Hintergrund und meldet sich per Mail.
+  Selbst gehosteter Wohnungsbot für ImmoScout24, Immowelt, Kleinanzeigen und WG-Gesucht, dazu ein Preisalarm für Gebrauchtes, der Kleinanzeigen, eBay und Vinted vergleicht und mit dem Neupreis auf idealo abgleicht. Prüft die Portale im Hintergrund und meldet sich per Mail.
 </p>
 
 <p align="center">
@@ -17,6 +17,7 @@
 
 - 🔎 **Wohnungen oder alles andere:** Möbel, Videospiele, Kleidung, Fahrräder, Autos, mit Versand oder zur Abholung in deiner Nähe.
 - 🔔 **Neue Treffer kommen per Mail**, alle Portale in einer Liste.
+- ♻️ **Gebraucht gegen neu verglichen:** Angebote von Kleinanzeigen, eBay und Vinted in einer Liste, daneben der günstigste Neupreis auf idealo.
 - 💶 **Nur was ins Budget passt**, gerechnet mit Versand bzw. Warmmiete.
 
 <p align="center">
@@ -51,10 +52,13 @@ Suchalarm vereint zwei Bereiche in einer App, umschaltbar oben in der Oberfläch
 
 ### Preise
 
+Der Preisalarm ist vor allem ein Gebrauchtwaren-Vergleich: Er schaut auf den großen Gebrauchtmärkten nach deinem Artikel, rechnet alle Angebote auf einen vergleichbaren Endpreis um und zeigt, was gebraucht wirklich günstiger ist als neu.
+
+- **Gebrauchtmärkte nebeneinander:** Kleinanzeigen, eBay (Sofortkauf) und Vinted in einer Liste, sortiert nach Endpreis.
+- **Neupreis als Maßstab:** idealo liefert den günstigsten Shoppreis. Ist ein neuer Artikel sogar billiger als jedes Gebrauchtangebot, steht das mit der Ersparnis in der Mail.
 - **Für alles Mögliche:** Kategorien für Videospiele, Elektronik, Möbel, Fahrräder und Autos, dazu „Sonstiges“ für alles andere wie Kleidung oder Spielzeug.
 - **Versand, Abholung oder beides:** Pro Suche wählbar. Bei Abholung sucht Suchalarm auf eBay und Kleinanzeigen im Umkreis deiner PLZ (10–200 km) und zeigt Ort und Entfernung. Bei Möbeln und Fahrrädern ist das voreingestellt.
 - **Ein Preis, der stimmt:** Versand pro Suche ein- oder ausschließbar; unbekannter Versand zählt nie als 0. Bei Vinted ist der Käuferschutz eingerechnet.
-- **Mehrere Quellen, eine Liste:** eBay, Kleinanzeigen und Vinted, dazu der idealo-Neupreis als Vergleich.
 - **Kategorien mit eigenen Filtern:** Plattform bei Videospielen, Erstzulassung und Kilometer bei Autos, VB und „Zu verschenken“.
 
 ### Für beide
