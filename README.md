@@ -26,6 +26,10 @@
   <a href="docs/architektur.md"><b>Architektur</b></a>
 </p>
 
+## Warum es Suchalarm gibt
+
+Ich hab Suchalarm gebaut, weil ich auf Wohnungssuche war und keine Lust mehr hatte, fünf Portale am Tag durchzuklicken, nur um dann zu sehen, dass die gute Wohnung schon nach einer Stunde weg war. Dazu wollte ich gebrauchte PS5-Spiele günstig schnappen, sobald jemand eins unter meinem Wunschpreis auf Kleinanzeigen, eBay oder Vinted einstellt. Beides ist dieselbe Aufgabe: Suche speichern, im Hintergrund prüfen lassen, Mail bekommen, wenn etwas passt.
+
 kurzer non slop kommentar von mir: für deine eigenen nutzen könnte es ein wenig nachbesserung benötigen. eine claude session von 30min sollte alles so anpassen das es deine bedürfnisse befriedigt. peace 
 
 ## Was es kann
