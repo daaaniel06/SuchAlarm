@@ -1,8 +1,8 @@
-<h1 align="center">Suchalarm</h1>
+<h1 align="center">SuchAlarm: Wohnungsbot &amp; Preisalarm</h1>
 
 <p align="center">
   <b>Dein eigener Alarm für neue Wohnungen und gute Preise.</b><br>
-  Läuft auf deinem Server, prüft die Portale im Hintergrund und meldet sich per Mail.
+  Selbst gehosteter Wohnungsbot für ImmoScout24, Immowelt, Kleinanzeigen und WG-Gesucht, dazu ein Preisalarm für Kleinanzeigen, eBay, Vinted und idealo. Prüft die Portale im Hintergrund und meldet sich per Mail.
 </p>
 
 <p align="center">
@@ -39,7 +39,7 @@ kurzer non slop kommentar von mir: für deine eigenen nutzen könnte es ein weni
 
 ## Was es kann
 
-Suchalarm vereint zwei Bereiche in einer App, umschaltbar oben in der Oberfläche.
+Suchalarm vereint zwei Bereiche in einer App, umschaltbar oben in der Oberfläche: einen **Wohnungsbot** für die Wohnungssuche und einen **Preisalarm** für gebrauchte und neue Sachen.
 
 ### Wohnungen
 
