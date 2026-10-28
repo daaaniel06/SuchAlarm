@@ -1,5 +1,10 @@
 # Changelog
 
+## Unveröffentlicht
+
+### Wohnungen
+- Duplikate werden auch erkannt, wenn ein Portal nur den Ort und das andere nur den Stadtteil nennt: Die Straße darf nach dem Ort stehen, derselbe lange Titel mit gleicher Fläche zählt als Beweis, und unterschiedlich beschnittene Fotos gelten als gleich.
+
 ## v1.0.0 (2026-10-28)
 
 Erste öffentliche Version.

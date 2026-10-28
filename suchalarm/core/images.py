@@ -117,13 +117,26 @@ def fingerprints(urls):
     return {url: value for url, value in found.items() if value}
 
 
+def _middle(size, ratio=4 / 3):
+    """The centred 4:3 part of a picture: portals crop the same photo to different shapes (ImmoScout24
+    serves 4:3 crops of a 3:2 original)."""
+    width, height = size
+    if width / height > ratio:
+        cut = (width - height * ratio) / 2
+        return (cut, 0, width - cut, height)
+    cut = (height - width / ratio) / 2
+    return (0, cut, width, height - cut)
+
+
 @functools.lru_cache(maxsize=4096)
 def _fingerprint(name):
-    """Equal for the same photo in another size or quality. A file's name is its content's
+    """Equal for the same photo in another size or quality, or cut to 4:3. A file's name is its content's
     hash, so the result never changes. None for an unreadable or nearly uniform picture (a placeholder)."""
     try:
         with Image.open(root() / name) as picture:
-            pixels: list[int] = list(picture.convert('L').resize((9, 8), Image.Resampling.LANCZOS).get_flattened_data())  # type: ignore[arg-type]
+            grey = picture.convert('L')
+            small = grey.resize((9, 8), Image.Resampling.LANCZOS, box=_middle(grey.size))
+            pixels: list[int] = list(small.get_flattened_data())  # type: ignore[arg-type]
     except (OSError, ValueError, Image.DecompressionBombError):
         return None
     bits = [pixels[row * 9 + column] > pixels[row * 9 + column + 1] for row in range(8) for column in range(8)]
