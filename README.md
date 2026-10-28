@@ -141,6 +141,27 @@ Alles Weitere (Empfänger, Mail-Rhythmus, Quellen) stellt man in der Oberfläche
 
 Secrets werden nie über die API ausgeliefert.
 
+### Mailversand einrichten
+
+Die Zugangsdaten zum Mailserver kommen aus Sicherheitsgründen nicht in die Oberfläche, sondern als Umgebungsvariablen in `compose.yml`. Empfänger, Rhythmus und eine Testmail stellt man danach in der App unter **Einstellungen → Mails** ein.
+
+Am einfachsten geht es mit einem bestehenden Postfach, zum Beispiel Gmail:
+
+1. Im Google-Konto die Bestätigung in zwei Schritten einschalten und unter [App-Passwörter](https://myaccount.google.com/apppasswords) ein Passwort für Suchalarm erzeugen.
+2. In `compose.yml` eintragen:
+   ```yaml
+   SMTP_HOST: smtp.gmail.com
+   SMTP_PORT: '587'
+   SMTP_SECURITY: starttls
+   SMTP_USER: deine.adresse@gmail.com
+   SMTP_PASSWORD: das-app-passwort
+   SMTP_FROM: Suchalarm <deine.adresse@gmail.com>
+   APP_URL: http://127.0.0.1:8000
+   ```
+3. `docker compose up -d` und in der App eine Testmail senden.
+
+Andere Anbieter funktionieren genauso. Host, Port und Verschlüsselung stehen in deren Hilfe, oft unter dem Stichwort „SMTP“ oder „E-Mail-Programm einrichten“. Mit Port 465 gilt `SMTP_SECURITY: ssl`.
+
 ## Entwicklung
 
 ```bash
