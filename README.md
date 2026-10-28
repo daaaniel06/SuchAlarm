@@ -54,7 +54,7 @@ Suchalarm vereint zwei Bereiche in einer App, umschaltbar oben in der Oberfläch
 
 Der Preisalarm ist vor allem ein Gebrauchtwaren-Vergleich: Er schaut auf den großen Gebrauchtmärkten nach deinem Artikel, rechnet alle Angebote auf einen vergleichbaren Endpreis um und zeigt, was gebraucht wirklich günstiger ist als neu.
 
-- **Gebrauchtmärkte nebeneinander:** Kleinanzeigen, eBay (Sofortkauf) und Vinted in einer Liste, sortiert nach Endpreis.
+- **Gebrauchtmärkte nebeneinander:** Kleinanzeigen, eBay (Sofortkauf) und Vinted in einer Liste, nach Neuheit oder Endpreis sortierbar.
 - **Neupreis als Maßstab:** idealo liefert den günstigsten Shoppreis. Ist ein neuer Artikel sogar billiger als jedes Gebrauchtangebot, steht das mit der Ersparnis in der Mail.
 - **Für alles Mögliche:** Kategorien für Videospiele, Elektronik, Möbel, Fahrräder und Autos, dazu „Sonstiges“ für alles andere wie Kleidung oder Spielzeug.
 - **Versand, Abholung oder beides:** Pro Suche wählbar. Bei Abholung sucht Suchalarm auf eBay und Kleinanzeigen im Umkreis deiner PLZ (10–200 km) und zeigt Ort und Entfernung. Bei Möbeln und Fahrrädern ist das voreingestellt.
