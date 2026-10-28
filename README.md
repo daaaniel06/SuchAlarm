@@ -155,6 +155,7 @@ Dieselben Checks (ohne Frontend und Browser-Test) laufen beim Deploy in der Test
 
 Weitere Dokumente:
 
+- [CONTRIBUTING.md](CONTRIBUTING.md): Mitmachen
 - [AGENTS.md](AGENTS.md): Regeln für Änderungen am Code
 - [DESIGN.md](DESIGN.md): Designsystem
 - [docs/regeln.md](docs/regeln.md): Fachregeln im Detail
