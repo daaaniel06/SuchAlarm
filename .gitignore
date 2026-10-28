@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+*.db*
+.impeccable/review/
+data/
+.DS_Store
+node_modules/
+.mypy_cache/
+compose.yml

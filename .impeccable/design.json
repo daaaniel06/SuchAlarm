@@ -1,0 +1,704 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-20T09:55:57.403339+00:00",
+  "title": "Design System: Preisalarm",
+  "extensions": {
+    "colorMeta": {
+      "light-bg": {
+        "role": "neutral",
+        "displayName": "Grundfläche · Hell",
+        "canonical": "#fff",
+        "tonalRamp": [
+          "oklch(15% 0.0000 89.88)",
+          "oklch(26% 0.0000 89.88)",
+          "oklch(38% 0.0000 89.88)",
+          "oklch(49% 0.0000 89.88)",
+          "oklch(61% 0.0000 89.88)",
+          "oklch(72% 0.0000 89.88)",
+          "oklch(84% 0.0000 89.88)",
+          "oklch(95% 0.0000 89.88)"
+        ]
+      },
+      "light-ink": {
+        "role": "primary",
+        "displayName": "Tinte · Hell",
+        "canonical": "#0a0a0a",
+        "tonalRamp": [
+          "oklch(15% 0.0000 89.88)",
+          "oklch(26% 0.0000 89.88)",
+          "oklch(38% 0.0000 89.88)",
+          "oklch(49% 0.0000 89.88)",
+          "oklch(61% 0.0000 89.88)",
+          "oklch(72% 0.0000 89.88)",
+          "oklch(84% 0.0000 89.88)",
+          "oklch(95% 0.0000 89.88)"
+        ]
+      },
+      "light-secondary": {
+        "role": "neutral",
+        "displayName": "Zweittext · Hell",
+        "canonical": "#636369",
+        "tonalRamp": [
+          "oklch(15% 0.0094 286.06)",
+          "oklch(26% 0.0094 286.06)",
+          "oklch(38% 0.0094 286.06)",
+          "oklch(49% 0.0094 286.06)",
+          "oklch(61% 0.0094 286.06)",
+          "oklch(72% 0.0094 286.06)",
+          "oklch(84% 0.0094 286.06)",
+          "oklch(95% 0.0094 286.06)"
+        ]
+      },
+      "light-muted": {
+        "role": "neutral",
+        "displayName": "Gedämpfter Text · Hell",
+        "canonical": "#707077",
+        "tonalRamp": [
+          "oklch(15% 0.0107 286.04)",
+          "oklch(26% 0.0107 286.04)",
+          "oklch(38% 0.0107 286.04)",
+          "oklch(49% 0.0107 286.04)",
+          "oklch(61% 0.0107 286.04)",
+          "oklch(72% 0.0107 286.04)",
+          "oklch(84% 0.0107 286.04)",
+          "oklch(95% 0.0107 286.04)"
+        ]
+      },
+      "light-hair": {
+        "role": "neutral",
+        "displayName": "Haarlinie · Hell",
+        "canonical": "#ececef",
+        "tonalRamp": [
+          "oklch(15% 0.0040 286.32)",
+          "oklch(26% 0.0040 286.32)",
+          "oklch(38% 0.0040 286.32)",
+          "oklch(49% 0.0040 286.32)",
+          "oklch(61% 0.0040 286.32)",
+          "oklch(72% 0.0040 286.32)",
+          "oklch(84% 0.0040 286.32)",
+          "oklch(95% 0.0040 286.32)"
+        ]
+      },
+      "light-fill": {
+        "role": "neutral",
+        "displayName": "Füllung · Hell",
+        "canonical": "#f4f4f5",
+        "tonalRamp": [
+          "oklch(15% 0.0013 286.38)",
+          "oklch(26% 0.0013 286.38)",
+          "oklch(38% 0.0013 286.38)",
+          "oklch(49% 0.0013 286.38)",
+          "oklch(61% 0.0013 286.38)",
+          "oklch(72% 0.0013 286.38)",
+          "oklch(84% 0.0013 286.38)",
+          "oklch(95% 0.0013 286.38)"
+        ]
+      },
+      "light-fill2": {
+        "role": "neutral",
+        "displayName": "Zweite Füllung · Hell",
+        "canonical": "#e9e9ec",
+        "tonalRamp": [
+          "oklch(15% 0.0040 286.32)",
+          "oklch(26% 0.0040 286.32)",
+          "oklch(38% 0.0040 286.32)",
+          "oklch(49% 0.0040 286.32)",
+          "oklch(61% 0.0040 286.32)",
+          "oklch(72% 0.0040 286.32)",
+          "oklch(84% 0.0040 286.32)",
+          "oklch(95% 0.0040 286.32)"
+        ]
+      },
+      "light-surface": {
+        "role": "neutral",
+        "displayName": "Oberfläche · Hell",
+        "canonical": "#fff",
+        "tonalRamp": [
+          "oklch(15% 0.0000 89.88)",
+          "oklch(26% 0.0000 89.88)",
+          "oklch(38% 0.0000 89.88)",
+          "oklch(49% 0.0000 89.88)",
+          "oklch(61% 0.0000 89.88)",
+          "oklch(72% 0.0000 89.88)",
+          "oklch(84% 0.0000 89.88)",
+          "oklch(95% 0.0000 89.88)"
+        ]
+      },
+      "light-green": {
+        "role": "secondary",
+        "displayName": "Passend · Hell",
+        "canonical": "#09703b",
+        "tonalRamp": [
+          "oklch(15% 0.1199 153.10)",
+          "oklch(26% 0.1199 153.10)",
+          "oklch(38% 0.1199 153.10)",
+          "oklch(49% 0.1199 153.10)",
+          "oklch(61% 0.1199 153.10)",
+          "oklch(72% 0.1199 153.10)",
+          "oklch(84% 0.1199 153.10)",
+          "oklch(95% 0.1199 153.10)"
+        ]
+      },
+      "light-red": {
+        "role": "secondary",
+        "displayName": "Fehler · Hell",
+        "canonical": "#c5221f",
+        "tonalRamp": [
+          "oklch(15% 0.1976 27.91)",
+          "oklch(26% 0.1976 27.91)",
+          "oklch(38% 0.1976 27.91)",
+          "oklch(49% 0.1976 27.91)",
+          "oklch(61% 0.1976 27.91)",
+          "oklch(72% 0.1976 27.91)",
+          "oklch(84% 0.1976 27.91)",
+          "oklch(95% 0.1976 27.91)"
+        ]
+      },
+      "light-amber": {
+        "role": "secondary",
+        "displayName": "Unsicherheit · Hell",
+        "canonical": "#9a5200",
+        "tonalRamp": [
+          "oklch(15% 0.1230 58.15)",
+          "oklch(26% 0.1230 58.15)",
+          "oklch(38% 0.1230 58.15)",
+          "oklch(49% 0.1230 58.15)",
+          "oklch(61% 0.1230 58.15)",
+          "oklch(72% 0.1230 58.15)",
+          "oklch(84% 0.1230 58.15)",
+          "oklch(95% 0.1230 58.15)"
+        ]
+      },
+      "light-blue-bg": {
+        "role": "secondary",
+        "displayName": "eBay Hintergrund · Hell",
+        "canonical": "#e7efff",
+        "tonalRamp": [
+          "oklch(15% 0.0232 264.46)",
+          "oklch(26% 0.0232 264.46)",
+          "oklch(38% 0.0232 264.46)",
+          "oklch(49% 0.0232 264.46)",
+          "oklch(61% 0.0232 264.46)",
+          "oklch(72% 0.0232 264.46)",
+          "oklch(84% 0.0232 264.46)",
+          "oklch(95% 0.0232 264.46)"
+        ]
+      },
+      "light-blue": {
+        "role": "secondary",
+        "displayName": "eBay · Hell",
+        "canonical": "#1a47b8",
+        "tonalRamp": [
+          "oklch(15% 0.1852 263.83)",
+          "oklch(26% 0.1852 263.83)",
+          "oklch(38% 0.1852 263.83)",
+          "oklch(49% 0.1852 263.83)",
+          "oklch(61% 0.1852 263.83)",
+          "oklch(72% 0.1852 263.83)",
+          "oklch(84% 0.1852 263.83)",
+          "oklch(95% 0.1852 263.83)"
+        ]
+      },
+      "light-green-bg": {
+        "role": "secondary",
+        "displayName": "Kleinanzeigen Hintergrund · Hell",
+        "canonical": "#e4f4e9",
+        "tonalRamp": [
+          "oklch(15% 0.0223 155.92)",
+          "oklch(26% 0.0223 155.92)",
+          "oklch(38% 0.0223 155.92)",
+          "oklch(49% 0.0223 155.92)",
+          "oklch(61% 0.0223 155.92)",
+          "oklch(72% 0.0223 155.92)",
+          "oklch(84% 0.0223 155.92)",
+          "oklch(95% 0.0223 155.92)"
+        ]
+      },
+      "light-purple-bg": {
+        "role": "secondary",
+        "displayName": "idealo Hintergrund · Hell",
+        "canonical": "#efeafc",
+        "tonalRamp": [
+          "oklch(15% 0.0246 298.61)",
+          "oklch(26% 0.0246 298.61)",
+          "oklch(38% 0.0246 298.61)",
+          "oklch(49% 0.0246 298.61)",
+          "oklch(61% 0.0246 298.61)",
+          "oklch(72% 0.0246 298.61)",
+          "oklch(84% 0.0246 298.61)",
+          "oklch(95% 0.0246 298.61)"
+        ]
+      },
+      "light-purple": {
+        "role": "secondary",
+        "displayName": "idealo · Hell",
+        "canonical": "#5b3cc4",
+        "tonalRamp": [
+          "oklch(15% 0.1993 286.60)",
+          "oklch(26% 0.1993 286.60)",
+          "oklch(38% 0.1993 286.60)",
+          "oklch(49% 0.1993 286.60)",
+          "oklch(61% 0.1993 286.60)",
+          "oklch(72% 0.1993 286.60)",
+          "oklch(84% 0.1993 286.60)",
+          "oklch(95% 0.1993 286.60)"
+        ]
+      },
+      "light-teal-bg": {
+        "role": "secondary",
+        "displayName": "Vinted Hintergrund · Hell",
+        "canonical": "#e2f4f4",
+        "tonalRamp": [
+          "oklch(15% 0.0190 196.84)",
+          "oklch(26% 0.0190 196.84)",
+          "oklch(38% 0.0190 196.84)",
+          "oklch(49% 0.0190 196.84)",
+          "oklch(61% 0.0190 196.84)",
+          "oklch(72% 0.0190 196.84)",
+          "oklch(84% 0.0190 196.84)",
+          "oklch(95% 0.0190 196.84)"
+        ]
+      },
+      "light-teal": {
+        "role": "secondary",
+        "displayName": "Vinted · Hell",
+        "canonical": "#0f6b6b",
+        "tonalRamp": [
+          "oklch(15% 0.0781 194.86)",
+          "oklch(26% 0.0781 194.86)",
+          "oklch(38% 0.0781 194.86)",
+          "oklch(49% 0.0781 194.86)",
+          "oklch(61% 0.0781 194.86)",
+          "oklch(72% 0.0781 194.86)",
+          "oklch(84% 0.0781 194.86)",
+          "oklch(95% 0.0781 194.86)"
+        ]
+      },
+      "dark-bg": {
+        "role": "neutral",
+        "displayName": "Grundfläche · Dunkel",
+        "canonical": "#000",
+        "tonalRamp": [
+          "oklch(15% 0.0000 0.00)",
+          "oklch(26% 0.0000 0.00)",
+          "oklch(38% 0.0000 0.00)",
+          "oklch(49% 0.0000 0.00)",
+          "oklch(61% 0.0000 0.00)",
+          "oklch(72% 0.0000 0.00)",
+          "oklch(84% 0.0000 0.00)",
+          "oklch(95% 0.0000 0.00)"
+        ]
+      },
+      "dark-ink": {
+        "role": "primary",
+        "displayName": "Tinte · Dunkel",
+        "canonical": "#f5f5f7",
+        "tonalRamp": [
+          "oklch(15% 0.0027 286.35)",
+          "oklch(26% 0.0027 286.35)",
+          "oklch(38% 0.0027 286.35)",
+          "oklch(49% 0.0027 286.35)",
+          "oklch(61% 0.0027 286.35)",
+          "oklch(72% 0.0027 286.35)",
+          "oklch(84% 0.0027 286.35)",
+          "oklch(95% 0.0027 286.35)"
+        ]
+      },
+      "dark-secondary": {
+        "role": "neutral",
+        "displayName": "Zweittext · Dunkel",
+        "canonical": "#a1a1a8",
+        "tonalRamp": [
+          "oklch(15% 0.0101 286.14)",
+          "oklch(26% 0.0101 286.14)",
+          "oklch(38% 0.0101 286.14)",
+          "oklch(49% 0.0101 286.14)",
+          "oklch(61% 0.0101 286.14)",
+          "oklch(72% 0.0101 286.14)",
+          "oklch(84% 0.0101 286.14)",
+          "oklch(95% 0.0101 286.14)"
+        ]
+      },
+      "dark-muted": {
+        "role": "neutral",
+        "displayName": "Gedämpfter Text · Dunkel",
+        "canonical": "#a1a1a8",
+        "tonalRamp": [
+          "oklch(15% 0.0101 286.14)",
+          "oklch(26% 0.0101 286.14)",
+          "oklch(38% 0.0101 286.14)",
+          "oklch(49% 0.0101 286.14)",
+          "oklch(61% 0.0101 286.14)",
+          "oklch(72% 0.0101 286.14)",
+          "oklch(84% 0.0101 286.14)",
+          "oklch(95% 0.0101 286.14)"
+        ]
+      },
+      "dark-hair": {
+        "role": "neutral",
+        "displayName": "Haarlinie · Dunkel",
+        "canonical": "#3a3a3e",
+        "tonalRamp": [
+          "oklch(15% 0.0069 286.04)",
+          "oklch(26% 0.0069 286.04)",
+          "oklch(38% 0.0069 286.04)",
+          "oklch(49% 0.0069 286.04)",
+          "oklch(61% 0.0069 286.04)",
+          "oklch(72% 0.0069 286.04)",
+          "oklch(84% 0.0069 286.04)",
+          "oklch(95% 0.0069 286.04)"
+        ]
+      },
+      "dark-fill": {
+        "role": "neutral",
+        "displayName": "Füllung · Dunkel",
+        "canonical": "#1c1c1e",
+        "tonalRamp": [
+          "oklch(15% 0.0038 286.09)",
+          "oklch(26% 0.0038 286.09)",
+          "oklch(38% 0.0038 286.09)",
+          "oklch(49% 0.0038 286.09)",
+          "oklch(61% 0.0038 286.09)",
+          "oklch(72% 0.0038 286.09)",
+          "oklch(84% 0.0038 286.09)",
+          "oklch(95% 0.0038 286.09)"
+        ]
+      },
+      "dark-fill2": {
+        "role": "neutral",
+        "displayName": "Zweite Füllung · Dunkel",
+        "canonical": "#2c2c2e",
+        "tonalRamp": [
+          "oklch(15% 0.0036 286.18)",
+          "oklch(26% 0.0036 286.18)",
+          "oklch(38% 0.0036 286.18)",
+          "oklch(49% 0.0036 286.18)",
+          "oklch(61% 0.0036 286.18)",
+          "oklch(72% 0.0036 286.18)",
+          "oklch(84% 0.0036 286.18)",
+          "oklch(95% 0.0036 286.18)"
+        ]
+      },
+      "dark-surface": {
+        "role": "neutral",
+        "displayName": "Oberfläche · Dunkel",
+        "canonical": "#161618",
+        "tonalRamp": [
+          "oklch(15% 0.0039 286.04)",
+          "oklch(26% 0.0039 286.04)",
+          "oklch(38% 0.0039 286.04)",
+          "oklch(49% 0.0039 286.04)",
+          "oklch(61% 0.0039 286.04)",
+          "oklch(72% 0.0039 286.04)",
+          "oklch(84% 0.0039 286.04)",
+          "oklch(95% 0.0039 286.04)"
+        ]
+      },
+      "dark-green": {
+        "role": "secondary",
+        "displayName": "Passend · Dunkel",
+        "canonical": "#34c77b",
+        "tonalRamp": [
+          "oklch(15% 0.1642 155.38)",
+          "oklch(26% 0.1642 155.38)",
+          "oklch(38% 0.1642 155.38)",
+          "oklch(49% 0.1642 155.38)",
+          "oklch(61% 0.1642 155.38)",
+          "oklch(72% 0.1642 155.38)",
+          "oklch(84% 0.1642 155.38)",
+          "oklch(95% 0.1642 155.38)"
+        ]
+      },
+      "dark-red": {
+        "role": "secondary",
+        "displayName": "Fehler · Dunkel",
+        "canonical": "#ff6b61",
+        "tonalRamp": [
+          "oklch(15% 0.1826 26.60)",
+          "oklch(26% 0.1826 26.60)",
+          "oklch(38% 0.1826 26.60)",
+          "oklch(49% 0.1826 26.60)",
+          "oklch(61% 0.1826 26.60)",
+          "oklch(72% 0.1826 26.60)",
+          "oklch(84% 0.1826 26.60)",
+          "oklch(95% 0.1826 26.60)"
+        ]
+      },
+      "dark-amber": {
+        "role": "secondary",
+        "displayName": "Unsicherheit · Dunkel",
+        "canonical": "#f5b35c",
+        "tonalRamp": [
+          "oklch(15% 0.1289 71.75)",
+          "oklch(26% 0.1289 71.75)",
+          "oklch(38% 0.1289 71.75)",
+          "oklch(49% 0.1289 71.75)",
+          "oklch(61% 0.1289 71.75)",
+          "oklch(72% 0.1289 71.75)",
+          "oklch(84% 0.1289 71.75)",
+          "oklch(95% 0.1289 71.75)"
+        ]
+      },
+      "dark-blue-bg": {
+        "role": "secondary",
+        "displayName": "eBay Hintergrund · Dunkel",
+        "canonical": "#16243f",
+        "tonalRamp": [
+          "oklch(15% 0.0544 262.49)",
+          "oklch(26% 0.0544 262.49)",
+          "oklch(38% 0.0544 262.49)",
+          "oklch(49% 0.0544 262.49)",
+          "oklch(61% 0.0544 262.49)",
+          "oklch(72% 0.0544 262.49)",
+          "oklch(84% 0.0544 262.49)",
+          "oklch(95% 0.0544 262.49)"
+        ]
+      },
+      "dark-blue": {
+        "role": "secondary",
+        "displayName": "eBay · Dunkel",
+        "canonical": "#8fb2ff",
+        "tonalRamp": [
+          "oklch(15% 0.1176 265.06)",
+          "oklch(26% 0.1176 265.06)",
+          "oklch(38% 0.1176 265.06)",
+          "oklch(49% 0.1176 265.06)",
+          "oklch(61% 0.1176 265.06)",
+          "oklch(72% 0.1176 265.06)",
+          "oklch(84% 0.1176 265.06)",
+          "oklch(95% 0.1176 265.06)"
+        ]
+      },
+      "dark-green-bg": {
+        "role": "secondary",
+        "displayName": "Kleinanzeigen Hintergrund · Dunkel",
+        "canonical": "#13291c",
+        "tonalRamp": [
+          "oklch(15% 0.0376 156.57)",
+          "oklch(26% 0.0376 156.57)",
+          "oklch(38% 0.0376 156.57)",
+          "oklch(49% 0.0376 156.57)",
+          "oklch(61% 0.0376 156.57)",
+          "oklch(72% 0.0376 156.57)",
+          "oklch(84% 0.0376 156.57)",
+          "oklch(95% 0.0376 156.57)"
+        ]
+      },
+      "dark-purple-bg": {
+        "role": "secondary",
+        "displayName": "idealo Hintergrund · Dunkel",
+        "canonical": "#221a3d",
+        "tonalRamp": [
+          "oklch(15% 0.0645 291.49)",
+          "oklch(26% 0.0645 291.49)",
+          "oklch(38% 0.0645 291.49)",
+          "oklch(49% 0.0645 291.49)",
+          "oklch(61% 0.0645 291.49)",
+          "oklch(72% 0.0645 291.49)",
+          "oklch(84% 0.0645 291.49)",
+          "oklch(95% 0.0645 291.49)"
+        ]
+      },
+      "dark-purple": {
+        "role": "secondary",
+        "displayName": "idealo · Dunkel",
+        "canonical": "#b6a2ff",
+        "tonalRamp": [
+          "oklch(15% 0.1320 292.89)",
+          "oklch(26% 0.1320 292.89)",
+          "oklch(38% 0.1320 292.89)",
+          "oklch(49% 0.1320 292.89)",
+          "oklch(61% 0.1320 292.89)",
+          "oklch(72% 0.1320 292.89)",
+          "oklch(84% 0.1320 292.89)",
+          "oklch(95% 0.1320 292.89)"
+        ]
+      },
+      "dark-teal-bg": {
+        "role": "secondary",
+        "displayName": "Vinted Hintergrund · Dunkel",
+        "canonical": "#0f2a2a",
+        "tonalRamp": [
+          "oklch(15% 0.0328 195.35)",
+          "oklch(26% 0.0328 195.35)",
+          "oklch(38% 0.0328 195.35)",
+          "oklch(49% 0.0328 195.35)",
+          "oklch(61% 0.0328 195.35)",
+          "oklch(72% 0.0328 195.35)",
+          "oklch(84% 0.0328 195.35)",
+          "oklch(95% 0.0328 195.35)"
+        ]
+      },
+      "dark-teal": {
+        "role": "secondary",
+        "displayName": "Vinted · Dunkel",
+        "canonical": "#6fd6d0",
+        "tonalRamp": [
+          "oklch(15% 0.0968 190.43)",
+          "oklch(26% 0.0968 190.43)",
+          "oklch(38% 0.0968 190.43)",
+          "oklch(49% 0.0968 190.43)",
+          "oklch(61% 0.0968 190.43)",
+          "oklch(72% 0.0968 190.43)",
+          "oklch(84% 0.0968 190.43)",
+          "oklch(95% 0.0968 190.43)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Große Angebotszähler mit tabellarischen Ziffern."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Seitenüberschrift; mobil 32px."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Abschnittstitel."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Allgemeine Texte und Listen."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Kompakte Bedienelemente."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "button-background",
+        "value": "background .16s ease",
+        "purpose": "Tonaler Hoverwechsel."
+      },
+      {
+        "name": "switch-thumb",
+        "value": "transform .18s ease",
+        "purpose": "Räumliche Schalterbestätigung."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "transition: none",
+        "purpose": "Systempräferenz respektieren."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "mobile-max",
+        "value": "819px"
+      },
+      {
+        "name": "narrow-max",
+        "value": "380px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primäre Aktion",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Pill-Aktion mit sichtbarem Fokus.",
+      "html": "<button class=\"ds-primary\">Speichern</button>",
+      "css": ".ds-primary{font-family:Geist,ui-sans-serif,system-ui,sans-serif;font-size:15px;background:var(--ink,#0a0a0a);color:var(--bg,#fff);border:0;border-radius:999px;padding:10px 20px;min-height:44px;font-weight:600;cursor:pointer;transition:background .16s ease}.ds-primary:hover{background:var(--secondary,#636369)}.ds-primary:active{transform:scale(.98)}.ds-primary:focus-visible{outline:2px solid var(--ink,#0a0a0a);outline-offset:4px}@media(prefers-reduced-motion:reduce){*,*::after{transition:none!important}}"
+    },
+    {
+      "name": "Sekundäre Aktion",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Pill-Aktion mit sichtbarem Fokus.",
+      "html": "<button class=\"ds-secondary\">Speichern</button>",
+      "css": ".ds-secondary{font-family:Geist,ui-sans-serif,system-ui,sans-serif;font-size:15px;background:var(--fill,#f4f4f5);color:var(--ink,#0a0a0a);border:0;border-radius:999px;padding:10px 20px;min-height:44px;font-weight:600;cursor:pointer;transition:background .16s ease}.ds-secondary:hover{background:var(--fill2,#e9e9ec)}.ds-secondary:active{transform:scale(.98)}.ds-secondary:focus-visible{outline:2px solid var(--ink,#0a0a0a);outline-offset:4px}@media(prefers-reduced-motion:reduce){*,*::after{transition:none!important}}"
+    },
+    {
+      "name": "Feldgruppe",
+      "kind": "input",
+      "refersTo": "field-group",
+      "description": "Beschriftetes Feld auf neutraler Gruppenfläche.",
+      "html": "<label class=\"ds-field\">Suchbegriff<input placeholder=\"Resident Evil Requiem PS5\"></label>",
+      "css": ".ds-field{font-family:Geist,ui-sans-serif,system-ui,sans-serif;font-size:15px;display:block;background:var(--fill,#f4f4f5);color:var(--ink,#0a0a0a);padding:12px 16px;border-radius:20px;font-size:14px;font-weight:550}.ds-field input{display:block;width:100%;border:0;background:transparent;color:inherit;padding:6px 0;margin-top:8px;font:400 16px Geist,system-ui,sans-serif}.ds-field input:focus-visible{outline:2px solid var(--ink,#0a0a0a);outline-offset:4px}@media(prefers-reduced-motion:reduce){*,*::after{transition:none!important}}"
+    },
+    {
+      "name": "Navigation",
+      "kind": "nav",
+      "refersTo": "navigation",
+      "description": "Ruhige Seitennavigation; mobil Icon über Label.",
+      "html": "<nav class=\"ds-nav\"><button aria-current=\"page\">Angebote</button><button>Suchen</button></nav>",
+      "css": ".ds-nav{display:grid;gap:6px}.ds-nav button{font-family:Geist,ui-sans-serif,system-ui,sans-serif;font-size:15px;text-align:left;border:0;border-radius:14px;padding:13px 16px;min-height:44px;color:var(--secondary,#636369);background:transparent;font-weight:600;cursor:pointer}.ds-nav button[aria-current],.ds-nav button:hover{background:var(--fill,#f4f4f5);color:var(--ink,#0a0a0a)}.ds-nav button:focus-visible{outline:2px solid var(--ink,#0a0a0a);outline-offset:4px}@media(prefers-reduced-motion:reduce){*,*::after{transition:none!important}}"
+    },
+    {
+      "name": "Quellenoption",
+      "kind": "chip",
+      "refersTo": "source-chip",
+      "description": "Beschriftete Quelle mit nativer Checkbox.",
+      "html": "<label class=\"ds-source\"><input type=\"checkbox\" checked>eBay</label>",
+      "css": ".ds-source{font-family:Geist,ui-sans-serif,system-ui,sans-serif;font-size:15px;display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:8px 12px;border-radius:999px;background:var(--fill,#f4f4f5);color:var(--ink,#0a0a0a);font-size:13px;cursor:pointer}.ds-source input{width:20px;height:20px;accent-color:var(--ink,#0a0a0a)}.ds-source input:focus-visible{outline:2px solid var(--ink,#0a0a0a);outline-offset:4px}@media(prefers-reduced-motion:reduce){*,*::after{transition:none!important}}"
+    },
+    {
+      "name": "Angebotsposition",
+      "kind": "custom",
+      "refersTo": "offer-row",
+      "description": "Offene Angebotszeile mit Quellenzeichen und rechtem Preis.",
+      "html": "<a class=\"ds-offer\" href=\"#\"><span class=\"ds-avatar\">eb</span><span><strong>Resident Evil Requiem PS5</strong><small>eBay · heute geprüft</small></span><b>29,00 €</b></a>",
+      "css": ".ds-offer{font-family:Geist,ui-sans-serif,system-ui,sans-serif;font-size:15px;display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:12px;align-items:start;padding:16px 12px;border-radius:16px;color:var(--ink,#0a0a0a);text-decoration:none}.ds-offer:hover{background:var(--fill,#f4f4f5)}.ds-offer:focus-visible{outline:2px solid var(--ink,#0a0a0a);outline-offset:4px}.ds-avatar{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:var(--blue-bg,#e7efff);color:var(--blue,#1a47b8);font-size:12px;font-weight:700}.ds-offer strong{display:block;font-weight:600;overflow-wrap:anywhere}.ds-offer small{display:block;margin-top:4px;font-size:13px;color:var(--secondary,#636369)}.ds-offer b{font-size:17px;font-weight:650;white-space:nowrap;font-variant-numeric:tabular-nums}@media(prefers-reduced-motion:reduce){*,*::after{transition:none!important}}"
+    },
+    {
+      "name": "Versand-Schalter",
+      "kind": "input",
+      "refersTo": "switch",
+      "description": "Semantischer Schalter in der Höchstpreis-Feldgruppe.",
+      "html": "<label class=\"ds-switch-label\">Versandkosten berücksichtigen<input class=\"ds-switch\" type=\"checkbox\" role=\"switch\" checked></label>",
+      "css": ".ds-switch-label{font-family:Geist,ui-sans-serif,system-ui,sans-serif;font-size:15px;display:flex;align-items:center;justify-content:space-between;gap:16px;color:var(--ink,#0a0a0a)}.ds-switch{appearance:none;width:48px;height:28px;border-radius:999px;background:var(--fill2,#e9e9ec);position:relative;flex-shrink:0;cursor:pointer}.ds-switch:after{content:\"\";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:var(--bg,#fff);transition:transform .18s ease}.ds-switch:checked{background:var(--green,#09703b)}.ds-switch:checked:after{transform:translateX(20px);background:#fff}.ds-switch:focus-visible{outline:2px solid var(--ink,#0a0a0a);outline-offset:4px}@media(prefers-reduced-motion:reduce){*,*::after{transition:none!important}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Das persönliche Preis-Depot",
+    "overview": "Preisalarme übernehmen die verbindliche visuelle Welt von Wohnungsbot: Geist, Weiß und Schwarz, ruhige Positionslisten und große Zähler. Die Oberfläche wirkt persönlich, sachlich und leicht. Preise, Quellen und Aktualität erhalten Vorrang vor dekorativen Flächen.\n\nDie Darstellung folgt automatisch dem hellen oder dunklen Systemmodus. Flächen werden durch Tonwerte und Abstände gegliedert; Farbe trägt fachliche Bedeutung. Desktop-Seitenleiste und mobile Bodennavigation bilden dieselbe ruhige Orientierung.",
+    "keyCharacteristics": [
+      "Monochrome Grundfläche mit semantischen Farbsignalen.",
+      "Kompakte, offene Listen und großzügige Abschnittsabstände.",
+      "Große Kennzahlen, tabellarische Beträge und lokal geladene Geist."
+    ],
+    "rules": [
+      {
+        "name": "The Semantic Color Rule",
+        "body": "Grün markiert passende Preise, neue Treffer und aktive Schalter; Bernstein markiert unsichere oder veraltete Daten, Rot Fehler und gefährliche Aktionen. Quellenfarben bleiben auf Quellenkennzeichen begrenzt.",
+        "section": "Colors"
+      },
+      {
+        "name": "The Price Alignment Rule",
+        "body": "Beträge und Kennzahlen verwenden tabellarische Ziffern; Angebotspreise stehen rechts und bleiben als zusammenhängender Betrag lesbar.",
+        "section": "Typography"
+      },
+      {
+        "name": "The One Navigation Rule",
+        "body": "Ab dem mobilen Umbruch ersetzt die Bodennavigation die Seitenleiste. Reservierter Platz unter dem Inhalt hält die letzten Aktionen erreichbar.",
+        "section": "Layout"
+      },
+      {
+        "name": "The Quiet List Rule",
+        "body": "Angebote und Suchen bleiben offene Zeilen ohne Schatten und ohne dauerhafte Kartenrahmen. Hover hebt die Zeile durch einen neutralen Tonwert hervor.",
+        "section": "Elevation & Depth"
+      },
+      {
+        "name": "The Shipping Context Rule",
+        "body": "Der Versand-Schalter gehört in dieselbe Feldgruppe wie Suchbegriff und Höchstpreis. Die Erläuterung darunter beschreibt die Auswirkung auf den Alarm.",
+        "section": "Components"
+      }
+    ],
+    "dos": [
+      "Do dieselben semantischen Rollen in beiden Systemmodi erhalten.",
+      "Do Angebote als ruhige Zeilen mit erkennbarem Quellenzeichen und rechtsbündigem Preis darstellen.",
+      "Do sichtbare Fokusmarkierungen und reduzierte Bewegung erhalten.",
+      "Do Versand je Suche unmittelbar beim Höchstpreis anbieten."
+    ],
+    "donts": [
+      "Don't zusätzliche dekorative Akzentfarben oder Verlaufshintergründe einführen.",
+      "Don't offene Angebotslisten durch schwebende Karten oder Schattenraster ersetzen.",
+      "Don't mobile Inhalte hinter der Bodennavigation verstecken."
+    ]
+  }
+}

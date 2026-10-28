@@ -1,0 +1,14 @@
+name: Idee oder neue Quelle
+description: Vorschlag für eine Funktion, ein Portal oder eine Region.
+labels: [idee]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: Was fehlt dir?
+      description: Wofür brauchst du es? Bei einer neuen Quelle bitte den Link zur Suchseite angeben.
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: Suchalarm kauft nichts, bewirbt sich nicht selbst und schreibt keinen Anbietern. Ideen in diese Richtung werden nicht umgesetzt.

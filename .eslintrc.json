@@ -1,0 +1,16 @@
+{
+  "root": true,
+  "env": { "browser": true, "es2022": true },
+  "parserOptions": { "ecmaVersion": 2022, "sourceType": "module" },
+  "rules": {
+    "no-undef": "error",
+    "no-redeclare": "error",
+    "no-import-assign": "error",
+    "no-unused-vars": "warn",
+    "no-shadow": "warn"
+  },
+  "overrides": [
+    { "files": ["suchalarm/preis/extract.js"], "parserOptions": { "sourceType": "script" } },
+    { "files": ["tests/**/*.js"], "env": { "node": true, "browser": false }, "parserOptions": { "sourceType": "script" } }
+  ]
+}

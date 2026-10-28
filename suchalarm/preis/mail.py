@@ -1,0 +1,87 @@
+"""How a product offer reads in the digest mail (mailer.py builds the mail around it)."""
+
+from html import escape
+
+from .. import mailhtml
+from ..fmt import amount
+from .domain import SOURCES, compared_price, search_fee, with_shipping
+
+WORDS = {
+    'one': 'neues Angebot',
+    'many': 'neue Angebote',
+    'tagline': 'unter deinem Höchstpreis',
+    'button': 'Angebot öffnen',
+    'footer': 'Preise und Verfügbarkeit beim Anbieter prüfen.',
+    'footer_plain': 'Preise und Verfügbarkeit beim Anbieter prüfen.',
+}
+
+
+def price(search, offer):
+    """The compared price; with unknown shipping the item price, labelled "Versand unbekannt"."""
+    value = compared_price(
+        offer['price'],
+        offer['shipping'],
+        with_shipping(offer['source'], search),
+        search_fee(offer['source'], offer['price'], search),
+    )
+    return offer['price'] if value is None else value
+
+
+def price_text(search, offer):
+    """0 only ever comes from a "Zu verschenken" listing."""
+    value = price(search, offer)
+    return 'Zu verschenken' if value == 0 else amount(value)
+
+
+def note(search, offer):
+    """The shipping under the price."""
+    if offer['shipping'] is None:
+        return 'Versand unbekannt'
+    if offer['source'] == 'vinted':
+        return f'Versand ab {amount(offer["shipping"])}'
+    if offer['shipping'] == 0:
+        return 'Versand frei'
+    sign = 'inkl.' if with_shipping(offer['source'], search) else '+'
+    return f'{sign} {amount(offer["shipping"])} Versand'
+
+
+def facts(offer):
+    return [part for part in (offer['seller'], offer['condition'], SOURCES[offer['source']].split(' · ')[0]) if part]
+
+
+def price_range(search):
+    if search.get('min_price'):
+        return f'{amount(search["min_price"])} bis unter {amount(search["max_price"])}'
+    return f'unter {amount(search["max_price"])}'
+
+
+def reason(offer):
+    compare = offer.get('compare')
+    if not compare:
+        return ''
+    return f'Neu im Shop {amount(compare["saving"])} günstiger als das günstigste Gebrauchtangebot ({amount(compare["used"])})'
+
+
+def subject(entries, title):
+    if len(entries) > 1:
+        return f'Preisalarm: {len(entries)} neue Angebote'
+    value = price(*entries[0])
+    return f'Preisalarm: {title} ' + ('zu verschenken' if value == 0 else f'für {amount(value)}')
+
+
+def card(search, offer, photo_src):
+    """Title and price, facts and shipping, why it fits, the search, one button."""
+    why = reason(offer)
+    why_row = (
+        f'<tr><td colspan="2" style="padding-top:8px;font-size:13px;font-weight:600;color:#0b8043">{escape(why)}</td></tr>'
+        if why
+        else ''
+    )
+    return mailhtml.card(f"""{mailhtml.photo(offer['url'], photo_src, 160, colspan=2)}<tr>
+<td style="vertical-align:top;font-size:17px;font-weight:700;letter-spacing:-0.01em;color:#0a0a0a">{escape(offer['title'])}</td>
+<td align="right" style="vertical-align:top;white-space:nowrap;padding-left:12px;font-size:22px;font-weight:700;letter-spacing:-0.03em;color:#0a0a0a">{escape(price_text(search, offer))}</td>
+</tr><tr>
+<td style="padding-top:4px;font-size:13px;color:#707077">{escape(' · '.join(facts(offer)))}</td>
+<td align="right" style="padding-top:4px;white-space:nowrap;font-size:13px;color:#707077">{escape(note(search, offer))}</td>
+</tr>{why_row}<tr><td colspan="2" style="padding-top:8px;font-size:13px;font-weight:600;color:#636369">{escape(search['query'])} · {escape(price_range(search))}</td></tr>
+<tr><td colspan="2" style="padding-top:16px">{mailhtml.button(offer['url'], WORDS['button'])}</td></tr>""")

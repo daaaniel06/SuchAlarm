@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<title>Suchalarm</title><link rel="icon" href="data:,"><link rel="preload" href="static/geist.woff2" as="font" type="font/woff2" crossorigin><link rel="stylesheet" href="static/style.css"><script type="module" src="static/app.js"></script>
+</head>
+<body>
+<div class="shell">
+<aside class="sidebar"><a class="brand" href="./"><b>s</b>suchalarm</a><nav aria-label="Navigation">
+<button data-view="offers" aria-current="page"><svg viewBox="0 0 24 24"><path d="M20 13 11 22 2 13V2h11l7 7a3 3 0 0 1 0 4Z"/><circle cx="7" cy="7" r="1"/></svg>Treffer</button>
+<button data-view="saved"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg>Merkliste<span class="nav-count" id="saved-count"></span></button>
+<button data-view="searches"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="7.5"/><path d="m16 16 5 5"/></svg>Suchen</button>
+<button data-view="settings"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Einstellungen</button>
+</nav><div class="user"><a class="home" href="/"><span class="avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M19 12H5m6-6-6 6 6 6"/></svg></span><span><strong>Zuhause</strong><small>Zurück zur Startseite</small></span></a></div></aside>
+<main>
+<div class="top-row">
+<a class="round-button home-back" href="/" aria-label="Zurück zur Startseite" title="Zurück zur Startseite"><svg viewBox="0 0 24 24"><path d="M19 12H5m6-6-6 6 6 6"/></svg></a>
+<div class="area-switch" id="area-switch" role="group" aria-label="Bereich (Tasten 1 und 2)"><button type="button" data-area="wohnung" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9v12h14V9"/><path d="M10 21v-6h4v6"/></svg><span>Wohnungen</span><em class="area-new"></em></button><button type="button" data-area="preis" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13 11 22 2 13V2h11l7 7a3 3 0 0 1 0 4Z"/><circle cx="7" cy="7" r="1"/></svg><span>Preise</span><em class="area-new"></em></button></div>
+</div>
+<section id="offers-view" class="depot">
+<h1 class="hero"><strong id="offer-count">–</strong> <span id="offer-unit">Angebote</span></h1>
+<div class="depot-status"><p id="summary" class="summary">&nbsp;</p><div id="progress" class="check-progress" role="status" hidden></div></div>
+<p class="paused-note" id="paused-note" hidden>Automatische Suche pausiert <button class="text-button" id="resume">Fortsetzen</button></p>
+<div class="list-tools"><div class="segment list-tabs" role="group" aria-label="Ansicht"><button id="tab-match" aria-pressed="true">Passend</button><button id="tab-all" aria-pressed="false">Alle</button></div><div class="filters"><button id="check-all" class="round-button" aria-label="Jetzt prüfen" title="Jetzt prüfen" hidden><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg></button><label class="sort-select" id="filter-wrap" title="Suche wählen" hidden><span class="sr-only">Suche</span><svg class="sel-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg><select id="search-filter"></select><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></label><label class="sort-select" title="Sortieren"><span class="sr-only">Sortieren</span><svg class="sel-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4"/></svg><select id="sort"><option value="new">Neueste</option><option value="price">Günstigste</option></select><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></label></div></div>
+<div id="references" class="references"></div>
+<ul id="offer-list" class="rows"></ul>
+<div class="pager" id="offers-pager" role="navigation" aria-label="Seiten"></div>
+</section>
+<section id="saved-view" class="depot" hidden><div class="page-head"><h1>Merkliste</h1></div><div class="list-tools" id="saved-tabs" hidden><div class="segment list-tabs" role="group" aria-label="Merkliste"><button id="tab-saved" aria-pressed="true">Gemerkt</button><button id="tab-applied" aria-pressed="false">Beworben</button></div></div><ul id="saved-list" class="rows"></ul><div class="pager" id="saved-pager" role="navigation" aria-label="Seiten"></div></section>
+<section id="searches-view" class="page" hidden><div class="page-head"><h1>Suchen</h1><button class="round-button" data-new id="new-search" aria-label="Neue Suche" title="Neue Suche"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div><div id="search-list" class="search-groups"></div></section>
+<section id="settings-view" class="page" hidden><div class="page-head"><h1>Einstellungen</h1></div>
+<div class="group form-group"><label class="field"><span><b>Automatische Suche</b><small id="auto-text"></small></span><input id="auto" class="switch" type="checkbox"></label></div>
+<div class="segment settings-tabs" id="settings-tabs" role="group" aria-label="Bereich"><button type="button" data-settings-tab="mail" aria-pressed="true">Mails</button><button type="button" data-settings-tab="sources" aria-pressed="false">Quellen</button><button type="button" data-settings-tab="data" aria-pressed="false">Daten</button></div>
+<div data-settings-panel="mail">
+<form id="mail-form">
+<div class="group form-group mail-areas">
+<div class="mail-area" data-mail-area="wohnung">
+<label class="field"><span><b>Mails zu Wohnungen</b><small>Sobald ihr Inserat geprüft ist</small></span><input class="switch" type="checkbox" data-mail="enabled" aria-label="Mails für Wohnungen"></label>
+<label class="field" data-mail="frequency-field"><span>Rhythmus</span><span class="unit-input"><select data-mail="frequency"><option>Sofort</option><option>Alle 30 Minuten</option><option>Täglich</option></select><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span></label>
+<div class="field choice" data-mail="batch-field"><span>Treffer pro Mail<small data-mail="batch-text"></small></span><div class="segment" role="group" aria-label="Treffer pro Mail"><button type="button" data-batch="1">1</button><button type="button" data-batch="2">2</button><button type="button" data-batch="3">3</button></div></div>
+</div>
+<div class="mail-area" data-mail-area="preis">
+<label class="field"><span><b>Mails zu Preisen</b><small>Nur Angebote unter deinem Höchstpreis</small></span><input class="switch" type="checkbox" data-mail="enabled" aria-label="Mails für Preise"></label>
+<label class="field" data-mail="frequency-field"><span>Rhythmus</span><span class="unit-input"><select data-mail="frequency"><option>Sofort</option><option>Alle 30 Minuten</option><option>Täglich</option></select><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span></label>
+<div class="field choice" data-mail="batch-field"><span>Treffer pro Mail<small data-mail="batch-text"></small></span><div class="segment" role="group" aria-label="Treffer pro Mail"><button type="button" data-batch="1">1</button><button type="button" data-batch="2">2</button><button type="button" data-batch="3">3</button></div></div>
+</div>
+</div>
+<div class="group-title recipients-head"><span>Empfänger</span><button type="button" class="text-button" id="test-mail">Testmail senden</button></div>
+<div class="group form-group"><div id="recipient-items" class="recipient-items"></div><div class="field"><input type="email" id="recipient-add" class="add-input" autocomplete="email" maxlength="254" placeholder="Mailadresse hinzufügen" aria-label="Empfänger hinzufügen"><button type="button" class="round-button small" id="add-recipient" aria-label="Hinzufügen" title="Hinzufügen" disabled><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div></div>
+<p class="group-note" id="mail-pending" hidden></p><p class="group-note down" id="mail-error" hidden></p></form>
+<ul id="mail-log" class="group form-group"></ul>
+</div>
+<div data-settings-panel="sources" id="source-list" hidden></div>
+<div data-settings-panel="data" hidden>
+<div class="group form-group">
+<div class="field"><span><b>Ausgeblendete Treffer</b><small id="hidden-text"></small></span><button class="pill compact" id="restore-hidden">Wiederherstellen</button></div>
+<div class="field" id="clear-field"><span><b>Alle Treffer löschen</b><small id="clear-text"></small></span><span class="confirm-actions" id="clear-actions"></span></div>
+</div>
+</div>
+</section>
+</main>
+</div>
+<div id="message" class="toast" role="status" hidden></div>
+<dialog id="detail" class="sheet" tabindex="-1" aria-labelledby="detail-title"><div class="sheet-body" id="detail-body"></div></dialog>
+<dialog id="application" class="sheet" tabindex="-1" aria-labelledby="application-title"><div class="sheet-body">
+<div class="sheet-grip" aria-hidden="true"></div>
+<div class="sheet-top"><h2 id="application-title" class="sheet-heading">Bewerbung</h2><button type="button" class="round-button small" data-close aria-label="Bewerbung schließen"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+<p class="sheet-address" id="application-flat"></p>
+<p class="sheet-applied" id="application-applied" hidden></p>
+<div class="apply-reminder" id="application-remind" role="alert" hidden><p><b>Im Portal abgeschickt?</b> Dann jetzt markieren – sonst vergisst du es.</p><button type="button" class="pill primary" id="application-remind-mark">Als beworben markieren</button></div>
+<div class="group"><label class="sr-only" for="application-text">Bewerbungstext</label><textarea id="application-text" class="plain-textarea" rows="8" maxlength="20000" placeholder="Bewerbungstext eingeben …"></textarea></div>
+<p class="group-note" id="application-feedback" role="status"></p>
+<div class="sheet-actions"><button type="button" class="pill primary" id="application-open">Kopieren &amp; öffnen</button><button type="button" class="pill" id="application-copy">Nur kopieren</button></div>
+<div class="sheet-secondary"><button type="button" class="text-button" id="application-mark">Als beworben markieren</button><button type="button" class="text-button" id="application-unmark" hidden>Markierung entfernen</button><button type="button" class="text-button" id="application-template">Als Vorlage speichern</button></div>
+</div></dialog>
+<dialog id="editor" class="sheet" aria-labelledby="editor-title"><form id="search-form" class="sheet-body" novalidate>
+<div class="sheet-grip" aria-hidden="true"></div>
+<div class="sheet-top"><h2 id="editor-title" class="sheet-heading">Neue Suche</h2><button type="button" id="close-editor" class="round-button small" aria-label="Schließen"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+<input type="hidden" id="search-id">
+<div class="category-chips" id="category-chips" role="group" aria-label="Kategorie"></div>
+<div class="group form-group">
+<label class="field stacked"><span>Suchbegriff</span><input id="query" required minlength="2" maxlength="180" placeholder="Resident Evil Requiem"></label>
+<label class="field" data-filter="platform"><span><b>Plattform</b><small>Muss im Titel stehen</small></span><span class="unit-input"><select id="platform"></select><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span></label>
+</div>
+<div class="group form-group">
+<div class="field"><span><b>Preis</b><small>von – bis</small></span><span class="range-input"><input id="min-price" type="number" inputmode="decimal" min="0" max="1000000" step="0.01" placeholder="0" aria-label="Mindestpreis in Euro"><em>–</em><input id="max-price" type="number" inputmode="decimal" min="0.01" max="1000000" step="0.01" required placeholder="35" aria-label="Höchstpreis in Euro"><em>€</em></span></div>
+<label class="field"><span><b>Auch VB-Angebote</b><small>„150 € VB“ zählt dann als 150 €</small></span><input id="negotiable" class="switch" type="checkbox"></label>
+<label class="field"><span><b>Zu verschenken</b><small>Gratis bei Kleinanzeigen</small></span><input id="free" class="switch" type="checkbox"></label>
+</div>
+<div class="segment delivery" role="group" aria-label="Lieferart"><button type="button" data-delivery="versand">Versand</button><button type="button" data-delivery="abholung">Abholung</button><button type="button" data-delivery="beides">Beides</button></div>
+<p class="group-note" id="delivery-hint"></p>
+<div class="group form-group" data-pickup>
+<div class="field"><span><b>Umkreis</b></span><span class="area-input"><span class="unit-input"><select id="radius" aria-label="Umkreis"></select><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span><em>um</em><input id="plz" inputmode="numeric" autocomplete="postal-code" maxlength="5" pattern="[0-9]{5}" placeholder="PLZ" aria-label="Postleitzahl"></span></div>
+</div>
+<div data-filter="vehicle">
+<div class="group form-group">
+<label class="field"><span><b>Erstzulassung ab</b></span><span class="unit-input"><input id="year-from" type="number" inputmode="numeric" min="1950" max="2100" step="1" placeholder="2012"></span></label>
+<label class="field"><span><b>Kilometerstand bis</b></span><span class="unit-input"><input id="km-to" type="number" inputmode="numeric" min="1000" max="2000000" step="1000" placeholder="150000"><em>km</em></span></label>
+</div>
+</div>
+<div class="picker-head"><span id="sources-label">Quellen<small id="sources-count"></small></span><button type="button" class="text-button" id="toggle-sources">Keine</button></div>
+<div class="source-picker" role="group" aria-labelledby="sources-label"><label class="chip source-chip"><input type="checkbox" name="source" value="ebay"><span class="source-mark ebay" aria-hidden="true">EB</span>eBay</label><label class="chip source-chip"><input type="checkbox" name="source" value="kleinanzeigen"><span class="source-mark kleinanzeigen" aria-hidden="true">KA</span>Kleinanzeigen</label><label class="chip source-chip"><input type="checkbox" name="source" value="vinted"><span class="source-mark vinted" aria-hidden="true">VI</span>Vinted</label><label class="chip source-chip"><input type="checkbox" name="source" value="idealo"><span class="source-mark idealo" aria-hidden="true">ID</span>idealo</label></div>
+<p class="group-note" id="source-note" hidden></p>
+<details class="more" id="more"><summary><span>Weitere Optionen</span><small id="more-summary"></small><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></summary>
+<fieldset class="chip-set"><legend>Angebote mit diesen Wörtern ausblenden</legend><span id="word-chips" class="chips"></span><span class="chip-add"><input id="word" maxlength="60" placeholder="z. B. defekt" aria-label="Wort hinzufügen"><button type="button" class="pill compact" id="add-word" disabled>Hinzufügen</button></span></fieldset>
+<div class="group form-group">
+<label class="field" id="shipping-field"><span><b>Versand einrechnen</b><small id="shipping-hint"></small></span><input id="include-shipping" class="switch" type="checkbox" checked></label>
+<label class="field" id="fee-field"><span><b>Käuferschutz einrechnen</b><small>Vinted: 5 % + 0,70 € pro Kauf</small></span><input id="include-fee" class="switch" type="checkbox" checked></label>
+<label class="field"><span><b>Suche aktiv</b><small>Pausierte Suchen verschicken keine Mails</small></span><input id="active" class="switch" type="checkbox" checked></label>
+</div>
+</details>
+<p id="form-error" class="group-note down" role="alert" hidden></p>
+<div class="sheet-actions"><button type="submit" class="pill primary" id="save-search">Speichern</button><button type="button" class="pill" id="cancel-editor">Abbrechen</button></div>
+<div class="sheet-secondary" id="delete-wrap" hidden><button type="button" class="text-button danger" id="delete-search">Suche löschen</button></div>
+</form></dialog>
+<dialog id="flat-editor" class="sheet" aria-labelledby="flat-title"><form id="flat-form" class="sheet-body" novalidate>
+<div class="sheet-grip" aria-hidden="true"></div>
+<div class="sheet-top"><h2 id="flat-title" class="sheet-heading">Neue Wohnungssuche</h2><button type="button" class="round-button small" data-close aria-label="Schließen"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+<input type="hidden" id="flat-id">
+<div class="group form-group">
+<label class="field stacked"><span>Ort oder Postleitzahl</span><input id="flat-place" required minlength="2" maxlength="120" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="flat-place-options" aria-autocomplete="list" placeholder="Darmstadt"></label>
+<div id="flat-place-options" class="place-options" role="listbox" aria-label="Orte" hidden></div>
+<label class="field"><span><b>Umkreis</b><small id="flat-radius-hint"></small></span><span class="unit-input"><select id="flat-radius" aria-label="Umkreis"></select><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span></label>
+</div>
+<p class="group-note" id="flat-place-hint" hidden>Nicht aus der Liste gewählt – der Ort wird beim Abruf per Name gesucht.</p>
+<div class="group form-group">
+<label class="field"><span><b>Warmmiete bis</b><small>Nennt ein Inserat nur die Kaltmiete, wird geschätzt</small></span><span class="unit-input"><input id="flat-rent" type="number" inputmode="numeric" min="1" max="100000" step="10" required placeholder="1300"><em>€</em></span></label>
+<label class="field"><span><b>Fläche ab</b></span><span class="unit-input"><input id="flat-area" type="number" inputmode="decimal" min="0" max="10000" step="1" placeholder="0"><em>m²</em></span></label>
+<label class="field"><span><b>Zimmer ab</b></span><span class="unit-input"><input id="flat-rooms" type="number" inputmode="decimal" min="0" max="100" step="0.5" placeholder="0"></span></label>
+</div>
+<div class="category-chips" id="flat-traits" role="group" aria-label="Ausschließen"></div>
+<div class="picker-head"><span id="flat-sources-label">Portale<small id="flat-sources-count"></small></span><button type="button" class="text-button" id="flat-toggle-sources">Keine</button></div>
+<div class="source-picker" id="flat-source-picker" role="group" aria-labelledby="flat-sources-label"><label class="chip source-chip"><input type="checkbox" name="flat-source" value="immoscout24"><span class="source-mark immoscout24" aria-hidden="true">IS</span>ImmoScout24</label><label class="chip source-chip"><input type="checkbox" name="flat-source" value="kleinanzeigen-wohnung"><span class="source-mark kleinanzeigen-wohnung" aria-hidden="true">KA</span>Kleinanzeigen</label><label class="chip source-chip"><input type="checkbox" name="flat-source" value="wg-gesucht"><span class="source-mark wg-gesucht" aria-hidden="true">WG</span>WG-Gesucht</label><label class="chip source-chip"><input type="checkbox" name="flat-source" value="immowelt"><span class="source-mark immowelt" aria-hidden="true">IW</span>Immowelt</label><label class="chip source-chip"><input type="checkbox" name="flat-source" value="bauverein"><span class="source-mark bauverein" aria-hidden="true">BV</span>bauverein</label><label class="chip source-chip"><input type="checkbox" name="flat-source" value="nhw"><span class="source-mark nhw" aria-hidden="true">NH</span>NHW</label></div>
+<p class="group-note" id="flat-source-note" hidden></p>
+<details class="more" id="flat-more"><summary><span>Weitere Optionen</span><small id="flat-more-summary"></small><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></summary>
+<fieldset class="chip-set"><legend>Inserate mit diesen Wörtern ausblenden</legend><span id="flat-word-chips" class="chips"></span><span class="chip-add"><input id="flat-word" maxlength="60" placeholder="z. B. möbliert" aria-label="Wort hinzufügen"><button type="button" class="pill compact" id="flat-add-word" disabled>Hinzufügen</button></span></fieldset>
+<div class="group form-group">
+<label class="field"><span><b>Frei ab frühestens</b></span><span class="unit-input"><input id="flat-from" type="date"></span></label>
+<label class="field"><span><b>Frei spätestens ab</b></span><span class="unit-input"><input id="flat-by" type="date"></span></label>
+<label class="field"><span><b>Suche aktiv</b><small>Pausierte Suchen verschicken keine Mails</small></span><input id="flat-active" class="switch" type="checkbox" checked></label>
+</div>
+</details>
+<p id="flat-error" class="group-note down" role="alert" hidden></p>
+<div class="sheet-actions"><button type="submit" class="pill primary" id="flat-save">Speichern</button><button type="button" class="pill" data-close>Abbrechen</button></div>
+<div class="sheet-secondary" id="flat-delete-wrap" hidden><button type="button" class="text-button danger" id="flat-delete">Suche löschen</button></div>
+</form></dialog>
+</body></html>

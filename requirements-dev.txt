@@ -1,0 +1,6 @@
+-r requirements.txt
+httpx==0.28.1
+playwright==1.64.0
+ruff==0.16.9
+mypy==2.4.0
+pip-tools==7.6.2

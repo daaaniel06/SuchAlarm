@@ -1,0 +1,41 @@
+name: Fehler melden
+description: Etwas funktioniert nicht wie erwartet.
+labels: [fehler]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Bitte keine SMTP-Zugangsdaten, Mailadressen oder privaten Adressen einfügen.
+        Hinweis: WG-Gesucht, NHW und bauverein sind nur für Darmstadt und Umgebung eingerichtet (siehe README).
+  - type: dropdown
+    id: area
+    attributes:
+      label: Bereich
+      options: [Wohnungen, Preise, Mails, Oberfläche, Installation/Docker]
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Betroffene Quelle
+      placeholder: z. B. Kleinanzeigen, ImmoScout24, keine
+  - type: textarea
+    id: what
+    attributes:
+      label: Was passiert?
+      description: Was hast du erwartet, was ist stattdessen passiert, und wie lässt es sich nachvollziehen?
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Quellenstatus und Logs
+      description: Den Text unter „Details“ beim Quellenstatus und passende Zeilen aus dem Container-Log.
+      render: text
+  - type: input
+    id: setup
+    attributes:
+      label: Umgebung
+      placeholder: z. B. Docker auf Debian 13, Commit abc1234
+    validations:
+      required: true

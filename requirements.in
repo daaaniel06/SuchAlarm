@@ -1,0 +1,5 @@
+# Direct dependencies. After a change: pip-compile requirements.in (writes the pinned requirements.txt)
+fastapi==0.151.0
+uvicorn==0.54.0
+invisible-playwright==0.43.0
+Pillow==13.0.0

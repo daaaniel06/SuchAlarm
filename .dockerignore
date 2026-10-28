@@ -1,0 +1,7 @@
+.git
+.venv
+**/__pycache__
+.impeccable
+*.db*
+tests/test_browser.py
+node_modules
