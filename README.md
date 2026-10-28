@@ -77,12 +77,40 @@ Seiten laufen standardmäßig über ein getarntes Firefox. Direkte Abrufe gibt e
 
 ## Schnellstart
 
-**Voraussetzungen:** Python 3.13, Node.js 20+ und Linux oder Windows. Anbieterseiten lädt ein getarntes Firefox über [invisible_playwright](https://github.com/feder-cr/invisible_playwright); unter Linux braucht es Xvfb, unter macOS läuft es nur im Docker-Image.
+Am einfachsten mit Docker und dem fertigen Image. Es bringt das getarnte Firefox ([invisible_playwright](https://github.com/feder-cr/invisible_playwright)) samt Xvfb mit, läuft als Benutzer mit UID 10001 und gibt es für `linux/amd64`.
 
 ```bash
-git clone https://github.com/daaaniel06/suchalarm.git
-cd suchalarm
+curl -O https://raw.githubusercontent.com/daaaniel06/SuchAlarm/main/compose.example.yml
+mv compose.example.yml compose.yml   # SMTP_* und APP_URL eintragen
+docker compose up -d
+```
 
+Danach läuft die App unter <http://127.0.0.1:8000>. Ohne Compose geht es auch direkt:
+
+```bash
+docker run -p 127.0.0.1:8000:8000 -v suchalarm-data:/data ghcr.io/daaaniel06/suchalarm
+```
+
+Die Versionen stehen im [CHANGELOG](CHANGELOG.md); statt `latest` lässt sich eine feste Version wie `ghcr.io/daaaniel06/suchalarm:1.0.0` verwenden.
+
+> [!WARNING]
+> Suchalarm hat **keine Benutzeranmeldung**. Wer die Oberfläche erreicht, kann Suchen, Empfänger und Einstellungen ändern. Die App gehört deshalb nur an `127.0.0.1` oder in ein privates Netz (VPN, Tailnet), nie ungeschützt ins Internet. Wer sie trotzdem von außen erreichbar machen will, braucht davor einen Reverse-Proxy mit Anmeldung.
+
+### Selbst bauen
+
+```bash
+git clone https://github.com/daaaniel06/suchalarm.git && cd suchalarm
+docker build -t suchalarm .
+docker run -p 127.0.0.1:8000:8000 -v suchalarm-data:/data suchalarm
+```
+
+In `compose.yml` dafür `image:` durch `build: .` ersetzen.
+
+### Ohne Docker
+
+**Voraussetzungen:** Python 3.13, Node.js 20+ und Linux oder Windows; unter Linux braucht es Xvfb, unter macOS läuft das getarnte Firefox nur im Docker-Image.
+
+```bash
 python3.13 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/invisible-playwright fetch   # einmalig, lädt die Browser-Engine (~250 MB)
@@ -91,28 +119,7 @@ npm install
 DATA_DIR=./data .venv/bin/uvicorn suchalarm.app:app --host 127.0.0.1 --port 8000
 ```
 
-Danach läuft die App unter <http://127.0.0.1:8000>. Ohne Browser startet sie trotzdem; Abrufe schlagen dann fehl und werden später erneut versucht.
-
-> [!WARNING]
-> Suchalarm hat **keine Benutzeranmeldung**. Wer die Oberfläche erreicht, kann Suchen, Empfänger und Einstellungen ändern. Die App gehört deshalb nur an `127.0.0.1` oder in ein privates Netz (VPN, Tailnet), nie ungeschützt ins Internet. Wer sie trotzdem von außen erreichbar machen will, braucht davor einen Reverse-Proxy mit Anmeldung.
-
-### Mit Docker
-
-```bash
-docker build -t suchalarm .
-docker run -p 127.0.0.1:8000:8000 -v suchalarm-data:/data suchalarm
-```
-
-Das Image bringt das getarnte Firefox samt Xvfb mit und läuft als Benutzer mit UID 10001.
-
-### Mit Docker Compose
-
-[`compose.example.yml`](compose.example.yml) ist ein vollständiges Beispiel mit Datenvolume und Mailversand:
-
-```bash
-cp compose.example.yml compose.yml   # SMTP_* und APP_URL eintragen
-docker compose up -d --build
-```
+Ohne Browser startet die App trotzdem; Abrufe schlagen dann fehl und werden später erneut versucht.
 
 ## Konfiguration
 

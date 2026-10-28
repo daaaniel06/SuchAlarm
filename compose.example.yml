@@ -1,8 +1,9 @@
-# Example setup: copy to compose.yml, fill in the mail settings, then `docker compose up -d --build`.
+# Example setup: copy to compose.yml, fill in the mail settings, then `docker compose up -d`.
+# To build from source instead, replace `image:` with `build: .` and run `docker compose up -d --build`.
 # Suchalarm has no login: keep the port on 127.0.0.1 or in a private network (see README).
 services:
   suchalarm:
-    build: .
+    image: ghcr.io/daaaniel06/suchalarm:latest
     restart: unless-stopped
     ports:
       - '127.0.0.1:8000:8000'
