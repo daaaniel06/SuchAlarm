@@ -14,6 +14,10 @@ flat twice. So listings are linked only on clear evidence:
   units of one estate. A picture that a portal shows for two listings, or that belongs to listings whose
   facts differ, is such a stock picture and proves nothing; neither does a photo of listings that name
   different postcodes.
+- Or, also within 12 hours, the landlord's own title word for word (at least 25 characters) with the exact
+  area: NHW names only the town, ImmoScout24 only the district, and their photos are cropped differently.
+- The street may follow the town ("Darmstadt, Eichbergstraße 12"); a postcode only one side names does not
+  contradict.
 - A building where one portal itself lists several matching flats within 12 hours has identical units: none
   of them is linked.
 - "Nicht dieselbe Wohnung" in the app keeps two listings apart for good (APART pairs).
@@ -35,21 +39,34 @@ SIDE_COSTS = (1.0, 1.6)  # warm rent / cold rent that is plausible for the same 
 MOVE_IN_DAYS = 14
 NEAR_KM = 0.05
 PHOTO_BITS = 6  # of 64 differing bits: the same picture, resized or recompressed
-HOUSE = re.compile(r'(.+?)\s+(\d+)\s*([a-z])?\b')
+HOUSE = re.compile(r'(.+?)\s+(\d+)\s*([a-z])?\b.*')
+TITLE_CHARS = 25  # a title this long, word for word on two portals, is the landlord's own ad text
 
 
 def street_key(place):
-    """ "heinrichstr12|64283" for "Heinrichstraße 12, 64283 Darmstadt"; None without a house number."""
+    """ "heinrichstr12|64283" for "Heinrichstraße 12, 64283 Darmstadt"; the street may come after the town
+    ("Darmstadt, Eichbergstraße 12" at NHW). None without a house number."""
     place = place or ''
-    match = HOUSE.match(place.split(',')[0].casefold().replace('ß', 'ss'))
-    if not match:
-        return None
-    street = re.sub(r'strasse\b|str\b\.?', 'str', match.group(1))
-    street = re.sub(r'[^a-z0-9äöü]', '', street)
-    if not street:
-        return None
-    postcode = re.search(r'\b\d{5}\b', place)
-    return f'{street}{match.group(2)}{match.group(3) or ""}|{postcode.group() if postcode else ""}'
+    for part in place.split(','):
+        part = part.strip().casefold().replace('ß', 'ss')
+        match = HOUSE.fullmatch(part)
+        if not match or re.match(r'\d{5}\b', part):
+            continue  # "64283 Darmstadt" is no street
+        street = re.sub(r'strasse\b|str\b\.?', 'str', match.group(1))
+        street = re.sub(r'[^a-z0-9äöü]', '', street)
+        if not re.search(r'[a-zäöü]', street):
+            continue
+        postcode = re.search(r'\b\d{5}\b', place)
+        return f'{street}{match.group(2)}{match.group(3) or ""}|{postcode.group() if postcode else ""}'
+    return None
+
+
+def _same_street(first, second):
+    """The same street and house number; a postcode missing on one side does not contradict."""
+    if not first or not second:
+        return False
+    (house, code), (other, other_code) = first.split('|'), second.split('|')
+    return house == other and (not code or not other_code or code == other_code)
 
 
 def _close(a, b, share):
@@ -96,8 +113,7 @@ def _spot(listing):
 
 
 def same_place(a, b):
-    key = street_key(a.get('place'))
-    if key and key == street_key(b.get('place')):
+    if _same_street(street_key(a.get('place')), street_key(b.get('place'))):
         return True
     spot, other = _spot(a), _spot(b)
     return bool(spot and other) and distance_km(spot, other) <= NEAR_KM
@@ -136,14 +152,28 @@ def photo_proof(a, b, stock):
     return not (first and second and first != second)
 
 
+def _title(listing):
+    return ' '.join(re.findall(r'\w+', (listing.get('title') or '').casefold()))
+
+
+def title_proof(a, b):
+    """The landlord's own long title word for word, the exact area and no other postcode: one ad on two
+    portals (NHW names only the town, ImmoScout24 the district, the photos are cropped differently)."""
+    title = _title(a)
+    if len(title) < TITLE_CHARS or title != _title(b) or abs(a['area'] - b['area']) > 0.1:
+        return False
+    first, second = _postcode(a), _postcode(b)
+    return not (first and second and first != second)
+
+
 def _twin(a, b, stock=frozenset(), apart=frozenset()):
-    """The same flat: its facts agree, and the address or (within WINDOW) the photo proves the place."""
+    """The same flat: its facts agree, and the address or (within WINDOW) the photo or the title proves it."""
     if frozenset((a['url'], b['url'])) in apart:
         return False  # "Nicht dieselbe Wohnung"
     gap = abs(a['first_seen'] - b['first_seen'])
     if gap <= ADDRESS_WINDOW and same_place(a, b) and same_facts(a, b, mixed=True):
         return True
-    return gap <= WINDOW and same_facts(a, b) and photo_proof(a, b, stock)
+    return gap <= WINDOW and same_facts(a, b) and (photo_proof(a, b, stock) or title_proof(a, b))
 
 
 def groups(listings, apart=frozenset()):

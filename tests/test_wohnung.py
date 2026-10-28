@@ -1155,6 +1155,15 @@ class DuplicateTests(unittest.TestCase):
             self.assertTrue(duplicates_close(big, small))
             self.assertIsNone(images._fingerprint('grey.webp'))  # a uniform placeholder proves nothing
             self.assertIsNone(images._fingerprint('missing.webp'))
+            # One portal shows the 3:2 original, the other its centred 4:3 crop.
+            import math
+
+            wide = Image.new('L', (540, 360))
+            wide.putdata([int(128 + 90 * math.sin(x / 37) * math.cos(y / 23) + 30 * math.sin((x + y) / 61))
+                          for y in range(360) for x in range(540)])  # fmt: skip
+            wide.save(images.root() / 'wide.webp', quality=90)
+            wide.crop((30, 0, 510, 360)).resize((480, 360)).save(images.root() / 'crop.webp', quality=70)
+            self.assertTrue(duplicates_close(images._fingerprint('wide.webp'), images._fingerprint('crop.webp')))
             images._fingerprint.cache_clear()
 
     def test_doubt_keeps_flats_apart(self):
@@ -1216,7 +1225,29 @@ class DuplicateTests(unittest.TestCase):
         a = self.flat('a', 'nhw', 100, place='Eichbergstraße 12, Darmstadt', lat=49.864, lon=8.649)
         b = self.flat('b', 'immoscout24', 200, place='Eichberg Str 12a, 64285 Darmstadt', lat=49.8641, lon=8.6491)
         self.assertEqual(duplicates.groups([a, b]), {'a': 'a', 'b': 'a'})
-        self.assertEqual(duplicates.street_key('Darmstadt, Eichbergstraße 12'), None)  # town first: no street
+        self.assertEqual(duplicates.street_key('Darmstadt, Eichbergstraße 12'), 'eichbergstr12|')  # NHW: town first
+        self.assertEqual(duplicates.street_key('64285 Darmstadt, Bessungen'), None)
+        # A postcode only one side names does not contradict the street.
+        nhw = self.flat('a', 'nhw', 100, place='Darmstadt, Heinrichstraße 12')
+        self.assertEqual(duplicates.groups([nhw, self.flat('b', 'immoscout24', 4 * 86400)]), {'a': 'a', 'b': 'a'})
+        other_code = self.flat('b', 'immoscout24', 200, place='Heinrichstraße 12, 64289 Darmstadt')
+        self.assertEqual(duplicates.groups([self.flat('a', 'nhw', 100), other_code]), {})
+
+    def test_the_landlords_own_title_links_town_and_district(self):
+        from suchalarm.wohnung import duplicates
+
+        title = 'Kurzfristig frei: 3-Zimmer-Wohnung mit Balkon'
+        a = self.flat('a', 'nhw', 100, place='Darmstadt', title=title, area=65.68)
+        b = self.flat('b', 'immoscout24', 5000, place='Bessungen', title=title + ' ', area=65.68)
+        self.assertEqual(duplicates.groups([a, b]), {'a': 'a', 'b': 'a'})
+        for other in (
+            dict(b, title='3-Zimmer-Wohnung'),  # too short to tell
+            dict(b, title='Kurzfristig frei: 3-Zimmer-Wohnung mit Garten'),
+            dict(b, area=66.2),  # identical title, another unit
+            dict(b, first_seen=100 + duplicates.WINDOW + 1),
+            dict(b, place='64289 Darmstadt') | {'title': title},
+        ):
+            self.assertEqual(duplicates.groups([dict(a, place='64285 Darmstadt'), other]), {}, other)
 
 
 class DuplicateMailTests(ApiAndMailTests):
