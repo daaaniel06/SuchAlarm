@@ -1,7 +1,7 @@
 <h1 align="center">SuchAlarm: Wohnungsbot &amp; Preisalarm für Gebrauchtwaren</h1>
 
 <p align="center">
-  <b>Dein eigener Alarm für neue Wohnungen und gute Preise.</b><br>
+  <b>Dein eigener Alarm für neue Wohnungen und günstige Gebrauchtwaren.</b><br>
   Selbst gehosteter Wohnungsbot für ImmoScout24, Immowelt, Kleinanzeigen und WG-Gesucht, dazu Preisvergleich und Preisalarm für Gebrauchtwaren: vergleicht Kleinanzeigen, eBay und Vinted, gleicht mit dem Neupreis auf idealo ab und meldet Schnäppchen unter deinem Wunschpreis. Prüft die Portale im Hintergrund und meldet sich per Mail.
 </p>
 
