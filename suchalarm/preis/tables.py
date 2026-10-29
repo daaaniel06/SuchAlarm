@@ -3,7 +3,7 @@
 from .. import store
 from .domain import clean_title
 
-TABLES = ('offers', 'shipping_baselines', 'idealo_references')
+TABLES = ('offers', 'shipping_baselines', 'idealo_references', 'hidden_titles')
 
 
 def _create(conn):
@@ -35,4 +35,12 @@ def _clean_titles(conn):
             )
 
 
-MIGRATIONS = (_create, _move, _clean_titles)
+def _hidden_titles(conn):
+    """Titles of hidden offers, kept after the offer itself is gone: hiding teaches the category (learning.py)."""
+    conn.execute(
+        'CREATE TABLE IF NOT EXISTS preis.hidden_titles '
+        '(search_id INTEGER, url TEXT NOT NULL, title TEXT NOT NULL, PRIMARY KEY(search_id, url))'
+    )
+
+
+MIGRATIONS = (_create, _move, _clean_titles, _hidden_titles)

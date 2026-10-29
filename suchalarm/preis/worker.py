@@ -10,7 +10,7 @@ import time
 from .. import store
 from ..core import images
 from ..status import STATUS_COLUMNS
-from . import delivery, sources
+from . import delivery, learning, sources
 from . import mail as mail  # the kind's mail presentation (kinds.py)
 from .domain import (
     CATEGORIES,
@@ -59,7 +59,8 @@ def compared(offer, search):
 
 
 async def prepare(search):
-    """Nothing to look up before a product search."""
+    """What hiding taught the search's category filters this check too (domain.excluded_words)."""
+    search['learned'] = learning.learned(search)
 
 
 def rests(search, source):

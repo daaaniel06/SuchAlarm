@@ -402,7 +402,7 @@ def repair_cached(source, search, value, observed_at):
     return {'offers': [asdict(o) for o in offers], 'reference': reference}
 
 
-@cadence.shared_search(cache_version=6, cached_parser=repair_cached)
+@cadence.shared_search(cache_version=5, cached_parser=repair_cached)
 async def fetch(source, search):
     """(offers, idealo reference) of one provider query; the decorator shares, caches and times it."""
     return await _visit(source, search)

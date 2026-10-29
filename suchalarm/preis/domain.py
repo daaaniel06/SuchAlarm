@@ -1,6 +1,7 @@
 import re
 import unicodedata
 from bisect import bisect_left
+from collections import Counter
 from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
@@ -37,16 +38,6 @@ VINTED_PLATFORMS = {
     'xbox-one': ('1290',),
     'pc': ('1276',),
 }
-# Decoration sold under a game's name and filed as the game itself (Vinted, checked 29.10.2026): posters,
-# mouse pads, signs, flags, figures. A category drops such titles on top of a search's own excluded words.
-MERCHANDISE = {
-    'videospiele': (
-        'poster, plakat, affiche, locandina, mauspad, mousepad, tapis de souris, schild, targa, cadre, '
-        'bilderrahmen, flagge, fahne, drapeau, figur, figurine, statue, sticker, aufkleber'
-    ),
-}
-# Print and mat sizes ("20x10cm", "80 x 40 cm") only appear on decoration, never on a game.
-DIMENSIONS = re.compile(r'\b\d+ ?x ?\d+ ?cm\b')
 # A category presets a new search and narrows the provider search to its own section.
 # Section IDs were checked live on 23.10.2026 (eBay _sacat, Kleinanzeigen c…, Vinted catalog[]).
 CATEGORIES: dict[str, dict[str, Any]] = {
@@ -55,7 +46,9 @@ CATEGORIES: dict[str, dict[str, Any]] = {
         hint='PlayStation, Switch, Xbox',
         delivery='versand',
         sources=['ebay', 'kleinanzeigen', 'vinted', 'idealo'],
-        excluded='Hülle, nur Cover, Code, Download',
+        # Decoration is sold under a game's name and filed as the game itself (Vinted, 29.10.2026).
+        excluded='Hülle, nur Cover, Code, Download, Poster, Plakat, Affiche, Mauspad, Mousepad, Tapis de souris, '
+        'Schild, Targa, Bilderrahmen, Cadre, Flagge, Drapeau, Figur, Figurine, Sticker',
         negotiable=False,
         free=False,
         radius=0,
@@ -276,17 +269,36 @@ def title_fits(source, title, search):
     """Whether an offer title belongs to the search: all its words, nothing excluded, not only other platforms.
     A provider's platform filter fills up with other platforms once its matches run out."""
     chosen, named = platform(search), named_platforms(title)
-    return (
-        matches(title, wanted_words(source, search), excluded_words(search))
-        and not DIMENSIONS.search(normalized(title))
-        and (chosen is None or not named or chosen in named)
+    return matches(title, wanted_words(source, search), search.get('excluded', '')) and (
+        chosen is None or not named or chosen in named
     )
 
 
-def excluded_words(search):
-    """The search's own excluded words plus the merchandise its category never wants."""
-    merchandise = MERCHANDISE.get(search.get('category') or 'sonstiges')
-    return ', '.join(filter(None, (search.get('excluded', ''), merchandise)))
+def taught_away(title, search):
+    """Whether TITLE carries a word hiding taught the search's category (learning.py), never one of its own words.
+    Applied per search after a shared provider result, like the search's own excluded words."""
+    own = set(normalized(terms(search)).split())
+    return any(word not in own for word in set(normalized(title).split()) & set(search.get('learned', ())))
+
+
+LEARN_FROM = 2  # hidden titles a word needs before it filters on its own
+
+
+def learned_words(hidden, kept_titles):
+    """Words that mark what gets hidden: in at least LEARN_FROM hidden titles and in more hidden than kept ones.
+    HIDDEN holds (title, the words its search asked for); those words say what was wanted, never why it was hidden.
+    Numbers never count: they are editions, sizes and years, not a kind of junk."""
+
+    def words(title):
+        return set(normalized(title).split())
+
+    hidden_counts = Counter(word for title, wanted in hidden for word in words(title) - words(wanted))
+    kept_counts = Counter(word for title in kept_titles for word in words(title))
+    return sorted(
+        word
+        for word, count in hidden_counts.items()
+        if count >= LEARN_FROM and count > kept_counts[word] and not word.isdigit()
+    )
 
 
 def section(source, search):
@@ -362,7 +374,7 @@ def select_offers(offers, search):
 
     for offer in offers:
         offer = replace(offer, title=clean_title(offer.source, offer.title))
-        if not title_fits(offer.source, offer.title, search):
+        if not title_fits(offer.source, offer.title, search) or taught_away(offer.title, search):
             continue
         if offer.url not in result or rank(offer) < rank(result[offer.url]):
             result[offer.url] = offer
