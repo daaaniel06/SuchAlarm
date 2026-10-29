@@ -30,7 +30,7 @@ PLATFORMS = {
 }
 # Vinted files games under one section and filters the platform separately (video_game_platform_ids[]).
 # IDs checked live on 29.10.2026; PS5 games are also tagged "PS5 Pro".
-VINTED_PLATFORMS = {
+VINTED_PLATFORMS: dict[str, tuple[str, ...]] = {
     'ps5': ('1281', '8582'),
     'ps4': ('1280',),
     'switch2': ('6478',),
@@ -39,6 +39,17 @@ VINTED_PLATFORMS = {
     'xbox-one': ('1290',),
     'pc': ('1276',),
 }
+# eBay's item specific "Plattform" in the video game section, as its own filter links name it (checked live on
+# 29.10.2026). Sellers set it themselves, so other platforms slip in; Switch 2 has no value yet.
+EBAY_PLATFORMS: dict[str, tuple[str, ...]] = {
+    'ps5': ('Sony PlayStation 5',),
+    'ps4': ('Sony PlayStation 4',),
+    'switch': ('Nintendo Switch',),
+    'xbox-series': ('Microsoft Xbox Series X|S',),
+    'xbox-one': ('Microsoft Xbox One',),
+    'pc': ('PC',),
+}
+PROVIDER_PLATFORMS = {'vinted': VINTED_PLATFORMS, 'ebay': EBAY_PLATFORMS}
 # A category presets a new search and narrows the provider search to its own section.
 # Section IDs were checked live on 23.10.2026 (eBay _sacat, Kleinanzeigen c…, Vinted catalog[]).
 CATEGORIES: dict[str, dict[str, Any]] = {
@@ -237,22 +248,41 @@ def platform(search):
     return chosen if chosen in PLATFORMS else None
 
 
-def terms(search):
-    """The words of a search: the query plus a chosen platform."""
-    chosen = platform(search)
-    return f'{search["query"]} {PLATFORMS[chosen]}' if chosen else search['query']
+MAX_ALTERNATIVES = 2  # each one is a further page in the provider's budget
+
+
+def alternatives(search):
+    """Other spellings the search also looks for ("RE Requiem" besides "Resident Evil Requiem")."""
+    return [' '.join(phrase.split()) for phrase in (search.get('alternatives') or '').split(',') if phrase.strip()]
+
+
+def phrases(source, search):
+    """What the provider is searched for, one request each. idealo's new price belongs to the query alone."""
+    return [search['query']] if source == 'idealo' else [search['query'], *alternatives(search)]
+
+
+def terms(search, phrase=None):
+    """The words of a search: its query (or PHRASE, one of its other spellings) plus a chosen platform."""
+    chosen, phrase = platform(search), phrase or search['query']
+    return f'{phrase} {PLATFORMS[chosen]}' if chosen else phrase
+
+
+def all_terms(search):
+    """Every word the search asks for, in any of its spellings."""
+    return ' '.join(terms(search, phrase) for phrase in [search['query'], *alternatives(search)])
 
 
 def platform_ids(source, search):
     """The provider's own platform filter for the search; empty where the platform must be in the text."""
     chosen = platform(search)
-    return VINTED_PLATFORMS[chosen] if source == 'vinted' and chosen else ()
+    return PROVIDER_PLATFORMS.get(source, {}).get(chosen, ()) if chosen else ()
 
 
-def wanted_words(source, search):
+def wanted_words(source, search, phrase=None):
     """The words a provider is searched for and an offer title must contain. Where the provider filters the
     platform itself, the title need not name it: sellers often leave it out ("Resident Evil Requiem")."""
-    return search['query'] if platform_ids(source, search) else terms(search)
+    phrase = phrase or search['query']
+    return phrase if platform_ids(source, search) else terms(search, phrase)
 
 
 def named_platforms(title):
@@ -267,18 +297,19 @@ def named_platforms(title):
 
 
 def title_fits(source, title, search):
-    """Whether an offer title belongs to the search: all its words, nothing excluded, not only other platforms.
-    A provider's platform filter fills up with other platforms once its matches run out."""
+    """Whether an offer title belongs to the search: all words of one of its spellings, nothing excluded, not
+    only other platforms. A provider's platform filter fills up with other platforms once its matches run out."""
     chosen, named = platform(search), named_platforms(title)
-    return matches(title, wanted_words(source, search), search.get('excluded', '')) and (
-        chosen is None or not named or chosen in named
-    )
+    excluded = search.get('excluded', '')
+    return any(
+        matches(title, wanted_words(source, search, phrase), excluded) for phrase in phrases(source, search)
+    ) and (chosen is None or not named or chosen in named)
 
 
 def taught_away(title, search):
     """Whether TITLE carries a word hiding taught the search's category (learning.py), never one of its own words.
     Applied per search after a shared provider result, like the search's own excluded words."""
-    own = set(normalized(terms(search)).split())
+    own = set(normalized(all_terms(search)).split())
     return any(word not in own for word in set(normalized(title).split()) & set(search.get('learned', ())))
 
 
@@ -521,6 +552,8 @@ def eligible(offer, search):
 def query_text(source, search):
     """The normalized provider query of a search; searches with the same text share one request."""
     query = ' '.join(terms(search).casefold().split())
+    if others := phrases(source, search)[1:]:
+        query += '\nalso:' + '|'.join(' '.join(phrase.casefold().split()) for phrase in others)
     category, place = section(source, search), around(source, search)
     # Section, place, vehicle limits and VB change the provider's answer; without them the key stays as before.
     if category:
@@ -537,6 +570,8 @@ def query_text(source, search):
         query += '\nfree'
     if search.get('delivery') == 'beides' and place:
         query += '\nand-nationwide-shipping'
+    if platform_ids(source, search):
+        query += '\nplatform-filter'
     if source == 'ebay':
         query += '\nitem-location:DE'
     if source == 'vinted':

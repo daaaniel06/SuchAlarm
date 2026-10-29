@@ -14,6 +14,7 @@ from .domain import (
     canonical,
     clean_title,
     money,
+    phrases,
     platform_ids,
     portal_price_bounds,
     section,
@@ -50,6 +51,9 @@ def search_url(source, query, search=None):
         }
         if category:
             params['_sacat'] = category
+        if platforms := platform_ids(source, search):
+            # eBay's own filter links encode the value twice ("Sony%2520PlayStation%25205").
+            params['Plattform'] = quote('|'.join(platforms), safe='')
         if place:
             # Around a postcode instead of all of Germany; the cards then say "… km von <PLZ>".
             del params['LH_LocatedIn'], params['_salic']
@@ -379,8 +383,8 @@ def idealo_result(data, detail, product, search):
 
 
 def repair_cached(source, search, value, observed_at):
-    if search.get('delivery') == 'beides' and around(source, search):
-        return None  # two pages per result; not worth reassembling from the page cache
+    if (search.get('delivery') == 'beides' and around(source, search)) or len(phrases(source, search)) > 1:
+        return None  # several pages per result; not worth reassembling from the page cache
     if source not in ('idealo', 'ebay', 'vinted'):
         return value
     try:
@@ -418,25 +422,44 @@ async def _visit(source, search):
         place = around(source, search)
         if source == 'kleinanzeigen' and place and cadence.location('kleinanzeigen', place[0]) is None:
             await find_location(page, place[0])
-        data = await load_page(page, source, search_url(source, wanted_words(source, search), search))
         if source == 'idealo':
+            data = await load_page(page, source, search_url(source, wanted_words(source, search), search))
             product = idealo_product(data, search)
             detail = await load_page(page, source, product['url'], follow=True) if product else None
             return idealo_result(data, detail, product, search)
-        rows = listing_rows(source, data)
-        if search.get('delivery') == 'beides' and place:
-            # The area around the postcode is read above; from all of Germany only what can be shipped.
-            nationwide = dict(search, delivery='versand')
-            wide = await load_page(
-                page, source, search_url(source, wanted_words(source, nationwide), nationwide), follow=True
-            )
-            near = {row.get('url') for row in rows}
-            rows += [row for row in listing_rows(source, wide) if shippable(source, row) and row.get('url') not in near]
-        offers = parse_rows(source, rows, search)
+        rows = []
+        for number, phrase in enumerate(phrases(source, search)):
+            # Every further spelling is a page of its own and waits for its slot in the budget.
+            rows += await _phrase_rows(page, source, search, phrase, follow=number > 0)
+        offers = parse_rows(source, _unique(rows), search)
         if source == 'vinted':
             offers = delivery.enrich(offers)
         images.remember(source, pictures(source, offers, rows))
         return offers, None  # the new-price reference comes from idealo only
+
+
+async def _phrase_rows(page, source, search, phrase, follow):
+    """The offer cards for one spelling of the search."""
+    data = await load_page(page, source, search_url(source, wanted_words(source, search, phrase), search), follow)
+    rows = listing_rows(source, data)
+    if search.get('delivery') == 'beides' and around(source, search):
+        # The area around the postcode is read above; from all of Germany only what can be shipped.
+        nationwide = dict(search, delivery='versand')
+        wide = await load_page(
+            page, source, search_url(source, wanted_words(source, nationwide, phrase), nationwide), follow=True
+        )
+        rows += [row for row in listing_rows(source, wide) if shippable(source, row)]
+    return rows
+
+
+def _unique(rows):
+    """Each card once, where the area, all of Germany or two spellings list the same offer."""
+    seen, unique = set(), []
+    for row in rows:
+        if row.get('url') not in seen:
+            seen.add(row.get('url'))
+            unique.append(row)
+    return unique
 
 
 def pictures(source, offers, rows):

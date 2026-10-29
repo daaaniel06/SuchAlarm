@@ -18,11 +18,11 @@ from .domain import (
     PLATFORMS,
     RADII,
     Offer,
+    all_terms,
     compared_price,
     eligible,
     in_range,
     search_fee,
-    terms,
     title_fits,
     too_cheap,
     wanted_words,
@@ -293,7 +293,7 @@ def reset(conn, search_id, old, payload):
     if (
         old['include_shipping'] != payload.include_shipping
         or old['include_fee'] != payload.include_fee
-        or terms(old) != payload.terms()
+        or all_terms(old) != payload.terms()
     ):
         conn.execute('DELETE FROM notifications WHERE search_id=?', (search_id,))
 

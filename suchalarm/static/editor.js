@@ -97,7 +97,9 @@ function sourceNote() {
 }
 // The closed "Weitere Optionen" still says what is set inside.
 function moreSummary() {
-  const parts = [];
+  const parts = [],
+    spellings = splitWords($('alternatives').value).length;
+  if (spellings) parts.push(spellings === 1 ? '1 andere Schreibweise' : `${spellings} andere Schreibweisen`);
   if (words.length) parts.push(words.length === 1 ? '1 Wort ausgeblendet' : `${words.length} Wörter ausgeblendet`);
   if (!$('fee-field').hidden && !$('include-fee').checked) parts.push('ohne Käuferschutz');
   if (!$('active').checked) parts.push('pausiert');
@@ -116,6 +118,7 @@ export function openEditor(id) {
       .join('');
   $('radius').innerHTML = state.choices.radii.map(km => `<option value="${km}">${km} km</option>`).join('');
   $('query').value = search?.query || '';
+  $('alternatives').value = search?.alternatives || '';
   $('max-price').value = priceInput(search?.max_price);
   $('min-price').value = priceInput(search?.min_price);
   $('include-shipping').checked = search ? !!search.include_shipping : true;
@@ -166,6 +169,7 @@ function formError(text) {
 $('include-shipping').addEventListener('change', shippingHint);
 $('include-fee').addEventListener('change', moreSummary);
 $('active').addEventListener('change', moreSummary);
+$('alternatives').addEventListener('input', moreSummary);
 $('category-chips').addEventListener('click', e => {
   const chip = e.target.closest('[data-category]');
   // Choosing another category takes its presets; the search term and prices stay.
@@ -227,6 +231,7 @@ $('search-form').addEventListener('submit', async event => {
   const number = id => ($(id).value ? Math.round(Number($(id).value)) : null);
   const payload = {
     query: $('query').value,
+    alternatives: splitWords($('alternatives').value).join(', '),
     min_price: Math.round(Number($('min-price').value || 0) * 100),
     max_price: Math.round(Number($('max-price').value) * 100),
     include_shipping: !pickup && $('include-shipping').checked,
