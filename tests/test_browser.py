@@ -56,7 +56,7 @@ class BrowserExtractionTests(unittest.IsolatedAsyncioTestCase):
             # Live layout of 29.10.2026: the owner only in the embedded page data, the condition as subtitle.
             await page.set_content(
                 '<div data-testid="grid-item"><div data-testid="product-item-id-10580057914"><a href="https://www.vinted.de/items/10580057914-resident-evil-requiem" title="Résident evil requiem"></a><p data-testid="product-item-id-10580057914--description-title">Résident evil requiem</p><p data-testid="product-item-id-10580057914--description-subtitle">Sehr gut</p><p data-testid="product-item-id-10580057914--price-text">40,00&nbsp;€</p></div></div>'
-                '<script>self.__next_f = [[0], [1, \'{"catalogTracking":{"itemId":10580057914,"position":1,"ownerId":57997699}}\']]</script>'
+                r'<script>self.__next_f.push([1,"{\"badge\":\"$undefined\",\"itemId\":\"10580057914\"}},\"catalogTracking\":{\"contentSource\":\"search\",\"ownerId\":57997699,\"searchScore\":1}"])</script>'
             )
             data = await page.evaluate(EXTRACT, 'vinted')
             offer = parse_rows('vinted', data['rows'], dict(query='Resident Evil Requiem'))[0]

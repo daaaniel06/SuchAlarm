@@ -109,12 +109,14 @@ source => {
     }
     return '';
   };
-  // Vinted names no seller on its cards; the page's embedded data has each item's owner ID next to the item ID.
+  // Vinted names no seller on its cards. The page's embedded data (script text, still there after hydration)
+  // follows each item ID with a tracking block holding the owner ID (live layout of 29.10.2026).
   const vintedOwners = new Map();
   if (source === 'vinted') {
-    const data = (self.__next_f || []).map(chunk => chunk?.[1] || '').join('');
-    for (const [, item, owner] of data.matchAll(/\\?"itemId\\?":(\d+)[^{}]{0,400}?\\?"ownerId\\?":(\d+)/g))
-      vintedOwners.set(item, owner);
+    const data = [...document.scripts].map(script => script.textContent).join('');
+    const pattern =
+      /\\?"itemId\\?":\\?"?(\d+)\\?"?\}\},\\?"catalogTracking\\?":\{[^{}]{0,200}?\\?"ownerId\\?":(\d+)/g;
+    for (const [, item, owner] of data.matchAll(pattern)) vintedOwners.set(item, owner);
   }
   const owner = card =>
     vintedOwners.get(card.querySelector('[data-testid^="product-item-id-"]')?.dataset.testid.match(/\d+/)?.[0]) || '';
