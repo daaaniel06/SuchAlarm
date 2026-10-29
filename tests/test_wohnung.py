@@ -1166,6 +1166,36 @@ class ApiAndMailTests(TempData):
         with store.db() as conn:
             self.assertEqual([r[0][-1] for r in conn.execute('SELECT url FROM outbox')], ['2'])
 
+    def queued(self):
+        with store.db() as conn:
+            return sorted(r[0][-1] for r in conn.execute('SELECT url FROM outbox'))
+
+    def test_a_known_flat_is_mailed_again_once_its_rent_falls(self):
+        flat_search = self.create(sources=['immoscout24'], filters={'min_area': 40, 'min_rooms': 2, 'exclusions': []})
+        with store.db() as conn:
+            store.put_setting(conn, 'recipients', json.dumps(['a@example.com']))
+            store.put_setting(conn, 'mail_enabled:wohnung', '1')
+        dear = [self.card(1, rent=1400), self.card(2)]
+        pages.save_result(flat_search, 'immoscout24', dear[:1], time.time() - 60)  # the starting stock, too dear
+        pages.save_result(flat_search, 'immoscout24', dear, time.time() - 60)
+        with store.db() as conn:
+            conn.execute("UPDATE listing_details SET state='done', body='{}'")
+        outbox.queue_mails()
+        self.assertEqual(self.queued(), ['2'])
+        with store.db() as conn:  # the mail went out
+            conn.execute('INSERT INTO notifications SELECT search_id, url, price, ? FROM outbox', (time.time() - 30,))
+            conn.execute('DELETE FROM outbox')
+        pages.save_result(flat_search, 'immoscout24', dear, time.time())
+        outbox.queue_mails()
+        self.assertEqual(self.queued(), [])  # the same rent: nothing new
+        pages.save_result(flat_search, 'immoscout24', [self.card(1, rent=1200), self.card(2, rent=1000)], time.time())
+        outbox.queue_mails()
+        self.assertEqual(self.queued(), [])  # their detail pages are read first
+        with store.db() as conn:
+            conn.execute("UPDATE listing_details SET state='done', body='{}'")
+        outbox.queue_mails()
+        self.assertEqual(self.queued(), ['1', '2'])  # 1 now fits, 2 is cheaper than mailed
+
 
 def duplicates_close(first, second):
     from suchalarm.wohnung import duplicates

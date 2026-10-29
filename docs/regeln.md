@@ -98,7 +98,7 @@ Zentrale Taktung (`cadence.py`, `cadence.db`):
 
 - Unter Mails bis zu fünf Empfänger eintragen, Rhythmus wählen (sofort, alle 30 Minuten, täglich; bei „Sofort“ optional Pakete von 2–3 Angeboten, spätestens nach 2 Stunden), Testmail senden und Benachrichtigungen einschalten. Es werden keine Empfänger oder aktiven Suchaufträge vorab angelegt.
 - Neue Treffer aller Suchen landen in einem Postausgang und kommen gesammelt in einer Mail (Text und HTML).
-- Der erste lesbare Abruf einer Quelle ist der Startstand und löst keine Mail aus. Gleiche Angebote melden sich erst bei einem weiteren Preisrückgang erneut.
+- Der erste lesbare Abruf einer Quelle ist der Startstand und löst keine Mail aus. Gleiche Angebote melden sich erst bei einem weiteren Preisrückgang erneut. Bei Wohnungen gilt das für die Warmmiete: Sinkt sie bei einem bekannten Inserat, auch aus dem Startstand oder einem vorher zu teuren, liest Suchalarm die Detailseite neu und meldet es, wenn es jetzt passt und günstiger ist als zuletzt gemeldet.
 - Was bei ausgeschalteten Mails oder pausierten Suchen gefunden wird, gilt als bekannt und wird später nicht nachgeschickt.
 - Lehnt der Mailserver eine Mail sicher ab, bleiben die Angebote im Postausgang und werden nach 10 Minuten erneut versucht.
 - Ist unklar, ob die Mail angekommen ist (Verbindung während der Übergabe abgebrochen oder Neustart beim Versand), wird sie nicht erneut gesendet: Doppelte Mails zu vermeiden ist wichtiger als eine fehlende. Die Mails-Seite zeigt den Ausgang jeder Mail.
