@@ -37,6 +37,7 @@ class PriceFilterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((ebay['_udlo'], ebay['_udhi']), (['20.00'], ['44.99']))
         self.assertEqual(ebay['LH_BIN'], ['1'])
         self.assertEqual(ebay['_sop'], ['12'])  # Best Match, not price order
+        self.assertEqual(ebay['_ipg'], ['240'])  # eBay's largest page
         self.assertEqual(ebay['LH_LocatedIn'], ['1'])
         self.assertEqual(ebay['_salic'], ['77'])
 

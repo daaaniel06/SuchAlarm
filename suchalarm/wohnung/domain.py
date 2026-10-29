@@ -287,13 +287,10 @@ def query_text(source, search):
         return 'whole stock'
     p = profile(search)
     values = [place_query(p).casefold(), (p['place'] or {}).get('kind') or '', str(p['radius'])]
+    if source in ('immoscout24', 'kleinanzeigen-wohnung', 'wg-gesucht'):
+        values += [f'{p["maxRent"]:g}', f'{p["minArea"]:g}', f'{p["minRooms"]:g}']
     if source in ('immoscout24', 'kleinanzeigen-wohnung'):
-        values += [
-            f'{p["maxRent"]:g}',
-            f'{p["minArea"]:g}',
-            f'{p["minRooms"]:g}',
-            str('Tauschwohnung' in p['exclusions']),
-        ]
+        values.append(str('Tauschwohnung' in p['exclusions']))
     return '\n'.join(values)
 
 

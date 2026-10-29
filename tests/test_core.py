@@ -66,6 +66,14 @@ class DomainTests(unittest.TestCase):
         self.assertTrue(matches('Nintendo Switch Produkt Maxi', 'nintendo switch', 'pro, max'))
         self.assertFalse(matches('iPhone 13 Pro Max', 'iphone 13', 'pro max'))
         self.assertFalse(matches('Switch OLED ohne Spiel', 'switch', 'ohne spiel'))
+
+    def test_two_words_written_as_one_still_match(self):
+        self.assertTrue(matches("Marvel's Spiderman 2 PS5", 'spider-man 2'))
+        self.assertTrue(matches('Marvel Spider-Man 2', 'spiderman 2'))
+        self.assertTrue(matches('Apple iPhone13 128GB', 'iphone 13'))
+        self.assertTrue(matches('Apple iPhone 13 128GB', 'iphone13'))
+        self.assertFalse(matches('Apple iPhone 12 128GB', 'iphone13'))
+        self.assertFalse(matches('Marvel Spider 2', 'spider-man 2'))  # one half alone is not enough
         self.assertEqual(
             canonical('ebay', 'https://www.ebay.de/itm/Spiel/12345?tracking=x'), 'https://www.ebay.de/itm/12345'
         )

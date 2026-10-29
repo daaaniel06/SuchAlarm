@@ -5,6 +5,7 @@ from collections import Counter
 from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
+from itertools import pairwise
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
@@ -401,10 +402,25 @@ def normalized(text):
     return re.sub(r'\b(?:playstation|ps) ?([1-5])\b', r'ps\1', text)
 
 
+def _with_glued_pairs(words):
+    """WORDS plus each neighbouring pair written as one word ("spider man" also gives "spiderman")."""
+    return set(words) | {first + second for first, second in pairwise(words)}
+
+
+def _has_all_words(title_words, wanted):
+    """Whether every wanted word is in the title, also where one side writes two words as one:
+    "Spiderman" is "Spider-Man", "iPhone13" is "iPhone 13"."""
+    present = _with_glued_pairs(title_words)
+    found = {index for index, word in enumerate(wanted) if word in present}
+    for index, (first, second) in enumerate(pairwise(wanted)):
+        if first + second in present:
+            found |= {index, index + 1}
+    return len(found) == len(wanted)
+
+
 def matches(title, query, excluded=''):
     text = normalized(title)
-    words = set(text.split())
-    if not all(w in words for w in normalized(query).split()):
+    if not _has_all_words(text.split(), normalized(query).split()):
         return False
     padded = f' {text} '
     return not any(term and f' {term} ' in padded for term in map(normalized, excluded.split(',')))

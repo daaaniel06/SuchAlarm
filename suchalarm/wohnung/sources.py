@@ -259,7 +259,7 @@ async def _wg_gesucht(p, page=1):
     city = await _location(source, place, lambda: _wg_city(place))
     if city == WG_UNKNOWN:
         raise RuntimeError(f'WG-Gesucht kennt den Ort „{place}“ nicht.')
-    html = await http.get_html(source, portals.wg_url(json.loads(city), page), follow=looked_up)
+    html = await http.get_html(source, portals.wg_url(json.loads(city), p, page), follow=looked_up)
     return portals.wg_parse(html)
 
 

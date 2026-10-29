@@ -38,8 +38,10 @@ def search_url(source, query, search=None):
     if source == 'ebay':
         # Best Match keeps the searched game on page one; price order fills it with
         # cheap unrelated titles. The app sorts matching offers by price itself.
+        # 240 cards per page (eBay's largest page) instead of 60: one visit sees four times as many offers.
         params = {
             '_nkw': query,
+            '_ipg': '240',
             'LH_BIN': '1',
             '_sop': '12',
             'LH_ItemCondition': '2750|3000|4000|5000|6000',
@@ -64,7 +66,8 @@ def search_url(source, query, search=None):
             else ''
         )
         slug = quote(query.replace(' ', '-'), safe='')
-        return f'https://www.kleinanzeigen.de/s-{price}{slug}/k0{kleinanzeigen_code(category, place, search)}?sortingField=SORTING_PRICE'
+        # Newest first: checked every 15 minutes, every new offer is on page one at least once.
+        return f'https://www.kleinanzeigen.de/s-{price}{slug}/k0{kleinanzeigen_code(category, place, search)}?sortingField=SORTING_DATE'
     if source == 'vinted':
         # Native relevance prevents cheap unrelated games from filling the first page.
         # The app sorts the matching offers by item/total price after extraction.

@@ -1,10 +1,11 @@
-"""WG-Gesucht (HTML, flats only)."""
+"""WG-Gesucht (HTML, flats and one-room flats, no WG rooms)."""
 
 import logging
+import math
 import re
 import unicodedata
 from html import unescape
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from ...core.browser import Unreadable
 from ..domain import (
@@ -63,9 +64,23 @@ def wg_slug(name):
     return re.sub(r'[^A-Za-z0-9]+', '-', plain).strip('-')
 
 
-def wg_url(city, page=1):
+# Categories in the list address: 1 = 1-Zimmer-Wohnung, 2 = Wohnung (0 WG-Zimmer, 3 Haus). Only "1+2" in the
+# path gives one list of both; categories[] in the query is ignored (checked live 29.10.2026).
+FLATS = '1+2'
+
+
+def wg_url(city, profile, page=1):
+    """The town's list of flats and one-room flats, already cut to the search's rent, size and rooms.
+    rMax is the total rent the cards show; the limits are widened to whole numbers, the exact check stays local."""
     slug, identifier = city
-    return f'https://www.wg-gesucht.de/wohnungen-in-{slug}.{identifier}.2.1.{page - 1}.html'
+    limits = {
+        'rMax': math.ceil(profile['maxRent']),
+        'sMin': math.floor(profile['minArea']),
+        'rmMin': math.floor(profile['minRooms']),
+    }
+    query = urlencode({name: value for name, value in limits.items() if value})
+    address = f'https://www.wg-gesucht.de/wohnungen-in-{slug}.{identifier}.{FLATS}.1.{page - 1}.html'
+    return f'{address}?{query}' if query else address
 
 
 def wg_place(street, district, postcode=''):
@@ -85,7 +100,7 @@ def wg_parse(html):
     if not tags:
         if re.search(r'keine\s+(?:passenden\s+)?(?:Angebote|Anzeigen|Ergebnisse)', html, re.I):
             return []
-        link = r'^(?:https://www\.wg-gesucht\.de)?/wohnungen-in-[\w-]+\.\d+\.html$'
+        link = r'^(?:https://www\.wg-gesucht\.de)?/(?:1-zimmer-)?wohnungen-in-[\w-]+\.\d+\.html$'
         if listings := rescue('WG-Gesucht', html, link, 'https://www.wg-gesucht.de', warm=True):
             return listings
         raise Unreadable('WG-Gesucht-Seite enthält keine erkennbaren Anzeigen (Layout geändert oder gesperrt).')

@@ -5,7 +5,7 @@ Wie Suchalarm Preise vergleicht, Anbieter abfragt und Mails verschickt. Der Übe
 ## Suchen und Treffer
 
 - Eine Suche hat Suchbegriff, Preisspanne (optionaler Mindestpreis, Höchstpreis), Quellen und Ausschlusswörter.
-- Alle Suchwörter müssen im Angebotstitel vorkommen, Akzente zählen nicht („Résident“ = „Resident“). Plattform und Edition gehören daher in den Suchbegriff.
+- Alle Suchwörter müssen im Angebotstitel vorkommen, Akzente zählen nicht („Résident“ = „Resident“). Zwei Wörter dürfen auch zusammengeschrieben sein und umgekehrt („Spiderman“ = „Spider-Man“, „iPhone13“ = „iPhone 13“). Plattform und Edition gehören daher in den Suchbegriff.
 - Angebote unter dem Mindestpreis (etwa 3-€-Ramsch) werden komplett ausgeblendet und lösen keine Mail aus. Maßgeblich ist der Vergleichspreis, bei unbekanntem Versand der Artikelpreis.
 - „Passend“ richtet sich nach den Preis- und Versandfiltern. Eine aktuelle Quellenstörung verschiebt bereits gespeicherte passende Angebote nicht nach „Alle“; der Quellenstatus bleibt separat sichtbar.
 - Über den Treffern steht der idealo-Neupreis als Vergleich. Ein Klick auf einen Treffer öffnet das Angebot beim Anbieter.
@@ -24,6 +24,8 @@ Wie Suchalarm Preise vergleicht, Anbieter abfragt und Mails verschickt. Der Übe
   - Kleinanzeigen-Grenzen werden nach außen auf ganze Euro gerundet.
 - Die genaue Prüfung von Centbeträgen, Versand und Suchwörtern bleibt lokal.
 - eBay wird explizit auf Artikelstandort Deutschland begrenzt; erkennbar ausländische Artikelstandorte werden zusätzlich beim Auslesen verworfen. Alte weltweite eBay-Ergebnisse teilen sich keinen Cache mit dieser Suche.
+- eBay sortiert nach „Beste Ergebnisse“ und liefert 240 Angebote pro Seite statt 60.
+- Kleinanzeigen sortiert nach „Neueste“: Bei Abrufen alle 15 Minuten steht jedes neue Angebot mindestens einmal auf der ersten Seite.
 - Vinted nutzt die native Relevanzsortierung, damit billige andere Spiele nicht die erste Seite füllen; passende Treffer sortiert die App anschließend nach Artikel- oder Gesamtpreis.
 - idealo bleibt für den unabhängigen Neupreisvergleich ohne Preisgrenze. Bei idealo zählt immer der Gesamtpreis inklusive Versand, unabhängig von „Versand einrechnen“: Gewählt wird der Shop mit dem günstigsten Gesamtpreis, und nur dieser löst einen Alarm aus. Shops mit unbekanntem Versand haben keinen gültigen Gesamtpreis. Zeigt eine Angebotskarte Artikel- und Gesamtpreis inklusive Versand, wird die Differenz als Versandkosten übernommen.
 - Unveränderte gespeicherte Seiten können nach einer Parserkorrektur lokal neu ausgewertet werden. Das startet keinen zusätzlichen Anbieterabruf und verändert weder Prüfzeitpunkt noch 12-Stunden-Takt.

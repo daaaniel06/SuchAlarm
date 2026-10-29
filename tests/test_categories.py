@@ -48,11 +48,11 @@ class CategoryTests(unittest.TestCase):
         cadence.save_location('kleinanzeigen', '10115', '9668')
         self.assertEqual(
             search_url('kleinanzeigen', 'Ecksofa', self.sofa),
-            'https://www.kleinanzeigen.de/s-preis::300/Ecksofa/k0c80l9668r25?sortingField=SORTING_PRICE',
+            'https://www.kleinanzeigen.de/s-preis::300/Ecksofa/k0c80l9668r25?sortingField=SORTING_DATE',
         )
         self.assertEqual(
             search_url('kleinanzeigen', 'VW Golf', self.car),
-            'https://www.kleinanzeigen.de/s-preis::300/VW-Golf/k0c216l9668r100+autos.ez_i:2012%2C+autos.km_i:%2C150000?sortingField=SORTING_PRICE',
+            'https://www.kleinanzeigen.de/s-preis::300/VW-Golf/k0c216l9668r100+autos.ez_i:2012%2C+autos.km_i:%2C150000?sortingField=SORTING_DATE',
         )
 
     def test_ebay_searches_around_postcode_instead_of_germany(self):
