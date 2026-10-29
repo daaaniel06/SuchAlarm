@@ -60,9 +60,19 @@ class PriceFilterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(offer.compared_price(dict(with_fee, include_shipping=True)), 4834)
         ebay = Offer('ebay', 'https://www.ebay.de/itm/1', 'Spiel', 4300, 249)
         self.assertEqual(ebay.compared_price(with_fee), 4300)
-        # The item itself may cost less than the minimum once protection is added.
-        self.assertEqual(portal_price_bounds('vinted', with_fee), (0, 4499))
+        # Vinted filters the item price: the window covers exactly the items whose price with protection fits.
+        self.assertEqual(portal_price_bounds('vinted', with_fee), (1838, 4218))  # 20,00 € and 44,99 € inkl.
+        self.assertEqual(portal_price_bounds('vinted', dict(with_fee, include_shipping=True)), (0, 4218))
         self.assertEqual(portal_price_bounds('ebay', with_fee), (2000, 4499))
+
+    def test_vinted_price_filter_keeps_every_item_that_fits_with_buyer_protection(self):
+        search = dict(self.search, include_fee=True)
+        minimum, maximum = portal_price_bounds('vinted', search)
+        for price in range(1, 5000):
+            fits = eligible(Offer('vinted', 'https://www.vinted.de/items/1', 'Spiel', price, 0), search)
+            self.assertEqual(minimum <= price <= maximum, fits, price)
+        query = parse_qs(urlsplit(search_url('vinted', search['query'], search)).query)
+        self.assertEqual((query['price_from'], query['price_to']), (['18.38'], ['42.18']))
 
     def test_kleinanzeigen_rounds_outwards_not_into_the_price_range(self):
         search = dict(self.search, min_price=2050, max_price=4450)
