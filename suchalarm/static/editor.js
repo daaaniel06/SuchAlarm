@@ -99,7 +99,6 @@ function sourceNote() {
 function moreSummary() {
   const parts = [];
   if (words.length) parts.push(words.length === 1 ? '1 Wort ausgeblendet' : `${words.length} Wörter ausgeblendet`);
-  if (draft.delivery === 'versand') parts.push($('include-shipping').checked ? 'inkl. Versand' : 'ohne Versand');
   if (!$('fee-field').hidden && !$('include-fee').checked) parts.push('ohne Käuferschutz');
   if (!$('active').checked) parts.push('pausiert');
   $('more-summary').textContent = parts.join(' · ');
@@ -164,10 +163,7 @@ function formError(text) {
   $('form-error').hidden = false;
 }
 
-$('include-shipping').addEventListener('change', () => {
-  shippingHint();
-  moreSummary();
-});
+$('include-shipping').addEventListener('change', shippingHint);
 $('include-fee').addEventListener('change', moreSummary);
 $('active').addEventListener('change', moreSummary);
 $('category-chips').addEventListener('click', e => {
