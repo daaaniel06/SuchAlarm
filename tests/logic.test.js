@@ -169,3 +169,21 @@ test('the map keeps a flat in its frame and points to one outside', () => {
   assert.equal(logic.mapView(map, null).dot, null);
   assert.ok(Math.abs(logic.kilometres(49.8728, 8.6512, 50.1109, 8.6821) - 26.6) < 0.5);
 });
+
+test('mailProvider finds the server of common mail addresses', () => {
+  assert.equal(logic.mailProvider('Daniel@GMail.com').host, 'smtp.gmail.com');
+  assert.equal(logic.mailProvider('a@gmx.net').host, 'mail.gmx.net');
+  assert.equal(logic.mailProvider('a@t-online.de').port, 465);
+  assert.equal(logic.mailProvider('a@example.org'), null);
+  assert.equal(logic.mailProvider(''), null);
+});
+
+test('the mail server is typed as host and optional port', () => {
+  assert.deepEqual(logic.parseServer('smtp.web.de'), { host: 'smtp.web.de', port: 587 });
+  assert.deepEqual(logic.parseServer(' SMTP.example.org:465 '), { host: 'smtp.example.org', port: 465 });
+  assert.deepEqual(logic.parseServer(''), { host: '', port: 587 });
+  assert.equal(logic.parseServer('smtp.example.org:99999'), null);
+  assert.equal(logic.parseServer('smtp example'), null);
+  assert.equal(logic.serverText({ host: 'smtp.gmail.com', port: 587 }), 'smtp.gmail.com:587');
+  assert.equal(logic.serverText({ host: '', port: 587 }), '');
+});

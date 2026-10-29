@@ -9,14 +9,15 @@ import logging
 import os
 import smtplib
 import ssl
+from dataclasses import dataclass
 from email.message import EmailMessage
-from email.utils import make_msgid
+from email.utils import formataddr, make_msgid, parseaddr
 from html import escape
 from pathlib import Path
 
 from PIL import Image
 
-from . import kinds
+from . import kinds, store
 
 log = logging.getLogger('suchalarm')
 
@@ -29,8 +30,55 @@ class DeliveryError(Exception):
         self.maybe_sent = maybe_sent
 
 
-def configured():
-    return bool(os.environ.get('SMTP_HOST') and os.environ.get('SMTP_FROM'))
+@dataclass(frozen=True)
+class Server:
+    """Where mails go out: from SMTP_* in compose.yml, which wins, or else from the settings page."""
+
+    host: str
+    port: int
+    security: str
+    user: str
+    password: str
+    sender: str  # the From header
+    fixed: bool  # set in compose.yml; the page shows it but cannot change it
+
+    @property
+    def address(self):
+        return parseaddr(self.sender)[1]
+
+
+def security_for(port):
+    """Port 465 speaks TLS from the start; every other port upgrades with STARTTLS."""
+    return 'ssl' if port == 465 else 'starttls'
+
+
+def server():
+    env = os.environ
+    if env.get('SMTP_HOST'):
+        return Server(
+            host=env['SMTP_HOST'],
+            port=int(env.get('SMTP_PORT', '587')),
+            security=env.get('SMTP_SECURITY', 'starttls'),
+            user=env.get('SMTP_USER', ''),
+            password=env.get('SMTP_PASSWORD', ''),
+            sender=env.get('SMTP_FROM', ''),
+            fixed=True,
+        )
+    saved = store.mail_server()
+    return Server(
+        host=saved['host'],
+        port=saved['port'],
+        security=security_for(saved['port']),
+        user=saved['sender'],  # the mailbox logs in with its own address
+        password=saved['password'],
+        sender=formataddr(('Suchalarm', saved['sender'])) if saved['sender'] else '',
+        fixed=False,
+    )
+
+
+def configured(current=None):
+    current = current or server()
+    return bool(current.host and current.sender)
 
 
 UNREACHABLE = 'Mailserver nicht erreichbar – Host und Port prüfen.'
@@ -43,15 +91,13 @@ REFUSALS = (
 )
 
 
-def _server():
-    if not configured():
-        raise DeliveryError(
-            'Der Mailversand ist auf dem Server noch nicht eingerichtet (SMTP_* in runtime.env).', False
-        )
-    mode = os.environ.get('SMTP_SECURITY', 'starttls')
-    if mode not in ('ssl', 'starttls'):
+def _usable_server():
+    current = server()
+    if not configured(current):
+        raise DeliveryError('Der Mailserver ist noch nicht eingerichtet (Einstellungen → Mails).', False)
+    if current.security not in ('ssl', 'starttls'):
         raise DeliveryError('SMTP_SECURITY muss ssl oder starttls sein.', False)
-    return os.environ['SMTP_HOST'], int(os.environ.get('SMTP_PORT', '587')), mode
+    return current
 
 
 def _explain(error, sending):
@@ -71,20 +117,22 @@ def _explain(error, sending):
 
 def deliver(message):
     """Send over SMTP. Raises DeliveryError with a short German reason, never secrets."""
-    host, port, mode = _server()
+    current = _usable_server()
+    del message['From']  # the mailbox that sends it, whatever the server is set to now
+    message['From'] = current.sender
     context = ssl.create_default_context()
     sending = False
     client: smtplib.SMTP
     try:
-        if mode == 'ssl':
-            client = smtplib.SMTP_SSL(host, port, timeout=SMTP_TIMEOUT, context=context)
+        if current.security == 'ssl':
+            client = smtplib.SMTP_SSL(current.host, current.port, timeout=SMTP_TIMEOUT, context=context)
         else:
-            client = smtplib.SMTP(host, port, timeout=SMTP_TIMEOUT)
+            client = smtplib.SMTP(current.host, current.port, timeout=SMTP_TIMEOUT)
         with client:
-            if mode == 'starttls':
+            if current.security == 'starttls':
                 client.starttls(context=context)
-            if os.environ.get('SMTP_USER'):
-                client.login(os.environ['SMTP_USER'], os.environ.get('SMTP_PASSWORD', ''))
+            if current.user:
+                client.login(current.user, current.password)
             sending = True
             client.send_message(message)
     except Exception as error:
@@ -169,7 +217,6 @@ def digest_html(entries, photos=None):
 def compose_digest(entries, recipients, batch):
     """entries: (search, offer) pairs, both plain dicts."""
     message = EmailMessage()
-    message['From'] = os.environ.get('SMTP_FROM', '')
     message['To'] = ', '.join(recipients)
     kind = _mail(entries[0][0])
     title = ' '.join(entries[0][1]['title'].split())[:80]  # headers may not contain line breaks
@@ -216,7 +263,6 @@ def test_message(recipients, entries, batch):
         message['Subject'] = 'Suchalarm: Testmail – so sehen Benachrichtigungen aus'
         return message
     message = EmailMessage()
-    message['From'] = os.environ.get('SMTP_FROM', '')
     message['To'] = ', '.join(recipients)
     message['Subject'] = 'Suchalarm: Testmail'
     message.set_content(

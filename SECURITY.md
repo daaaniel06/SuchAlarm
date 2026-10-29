@@ -15,4 +15,4 @@ Interessant sind dagegen zum Beispiel:
 - Daten von Anbieterseiten, die im Browser Skripte ausführen (XSS) oder die Content-Security-Policy umgehen
 - Anfragen fremder Websites, die trotz Origin-Prüfung Daten ändern (CSRF)
 - Wege, über den Browser oder den Bild-Abruf Adressen im privaten Netz zu erreichen (SSRF)
-- SMTP-Zugangsdaten oder andere Secrets, die über die API oder in Fehlermeldungen sichtbar werden
+- SMTP-Zugangsdaten oder andere Secrets, die über die API oder in Fehlermeldungen sichtbar werden, auch das in der Oberfläche gespeicherte Mail-Passwort (es geht nur an den Server, für den es eingegeben wurde)

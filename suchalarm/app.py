@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from . import mailer, scheduler, store, worker
 from .core import cadence, images
 from .kinds import KINDS, ROUTERS
-from .models import AnySearch, Applied, Bookmark, Hide, MailSettings, Preferences, Template
+from .models import AnySearch, Applied, Bookmark, Hide, MailServer, MailSettings, Preferences, Template
 
 STATIC = Path(__file__).with_name('static')
 # What the search editors offer, from every kind.
@@ -144,6 +144,18 @@ def _area_mail(settings):
     return {key: settings[key] for key in ('enabled', 'frequency', 'batch_size')}
 
 
+def _mail_server():
+    """What the page shows of the mail server; whether a password is saved, never the password."""
+    current = mailer.server()
+    return {
+        'sender': current.address,
+        'host': current.host,
+        'port': current.port,
+        'password_set': bool(current.password),
+        'fixed': current.fixed,
+    }
+
+
 @app.get('/api/state')
 async def state():
     """Everything the page shows, in one response; polled every few seconds."""
@@ -161,6 +173,7 @@ async def state():
     mail = {
         'recipients': store.mail_settings(settings)['recipients'],
         'configured': mailer.configured(),
+        'server': _mail_server(),
         'error': settings.get('mail_error'),
         'pending': pending,
         **{kind: _area_mail(store.mail_settings(settings, kind)) for kind in KINDS},
@@ -355,6 +368,22 @@ async def mail_settings(payload: MailSettings):
             store.put_setting(conn, store.mail_key('frequency', kind), area.frequency)
             store.put_setting(conn, store.mail_key('batch_size', kind), str(area.batch_size))
     scheduler.wake.set()
+    return {'ok': True}
+
+
+@app.put('/api/mail/server')
+async def mail_server(payload: MailServer):
+    if mailer.server().fixed:
+        raise HTTPException(409, 'Der Mailserver ist in der compose.yml festgelegt.')
+    saved = store.mail_server()
+    # The saved password only ever goes to the server and mailbox it was entered for; otherwise anyone
+    # reaching the page could point the server elsewhere and catch it at the login.
+    moved = (payload.sender, payload.host, payload.port) != (saved['sender'], saved['host'], saved['port'])
+    if payload.password is not None or moved:
+        saved['password'] = payload.password or ''
+    saved.update(sender=payload.sender, host=payload.host, port=payload.port)
+    with store.db() as conn:
+        store.put_setting(conn, 'mail_server', json.dumps(saved))
     return {'ok': True}
 
 

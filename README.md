@@ -90,7 +90,7 @@ Am einfachsten mit Docker und dem fertigen Image. Es bringt das getarnte Firefox
 
 ```bash
 curl -O https://raw.githubusercontent.com/daaaniel06/SuchAlarm/main/compose.example.yml
-mv compose.example.yml compose.yml   # SMTP_* und APP_URL eintragen
+mv compose.example.yml compose.yml   # APP_URL eintragen
 docker compose up -d
 ```
 
@@ -132,13 +132,13 @@ Ohne Browser startet die App trotzdem; Abrufe schlagen dann fehl und werden spä
 
 ## Konfiguration
 
-Alles Weitere (Empfänger, Mail-Rhythmus, Quellen) stellt man in der Oberfläche ein und es liegt in SQLite.
+Alles Weitere (Mailserver, Empfänger, Mail-Rhythmus, Quellen) stellt man in der Oberfläche ein und es liegt in SQLite.
 
 | Variable | Standard | Bedeutung |
 | --- | --- | --- |
 | `DATA_DIR` | `/data` | Datenverzeichnis für Datenbanken, Bilder und Backups |
 | `APP_URL` | – | Link zur App in den Mails |
-| `SMTP_HOST`, `SMTP_PORT` | –, `587` | Mailserver |
+| `SMTP_HOST`, `SMTP_PORT` | –, `587` | Mailserver fest vorgeben (optional, sonst in der Oberfläche) |
 | `SMTP_SECURITY` | `starttls` | `starttls` oder `ssl` |
 | `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | – | Anmeldung und Absender |
 | `FORWARDED_ALLOW_IPS` | `127.0.0.1` | Adressen von Reverse-Proxys, deren `X-Forwarded-*`-Header gelten (Uvicorn), etwa das Docker-Netz des Proxys |
@@ -147,24 +147,24 @@ Secrets werden nie über die API ausgeliefert.
 
 ### Mailversand einrichten
 
-Die Zugangsdaten zum Mailserver kommen aus Sicherheitsgründen nicht in die Oberfläche, sondern als Umgebungsvariablen in `compose.yml`. Empfänger, Rhythmus und eine Testmail stellt man danach in der App unter **Einstellungen → Mails** ein.
+Alles geht in der App unter **Einstellungen → Mails**:
 
-Am einfachsten geht es mit einem bestehenden Postfach, zum Beispiel Gmail:
+1. Bei **Mailserver** auf **Einrichten** tippen und die Adresse des Postfachs eingeben, über das die Mails rausgehen. Für Gmail, GMX, Web.de, iCloud, Posteo, mailbox.org und T-Online trägt Suchalarm den Server selbst ein; bei anderen Anbietern steht er in deren Hilfe, oft unter „SMTP“ oder „E-Mail-Programm einrichten“ (etwa `smtp.beispiel.de:587`, Port 465 geht auch).
+2. Das Passwort eingeben. Gmail und iCloud wollen dafür ein eigenes App-Passwort, bei Gmail unter [App-Passwörter](https://myaccount.google.com/apppasswords) (vorher die Bestätigung in zwei Schritten einschalten).
+3. Empfänger hinzufügen und eine Testmail senden.
 
-1. Im Google-Konto die Bestätigung in zwei Schritten einschalten und unter [App-Passwörter](https://myaccount.google.com/apppasswords) ein Passwort für Suchalarm erzeugen.
-2. In `compose.yml` eintragen:
-   ```yaml
-   SMTP_HOST: smtp.gmail.com
-   SMTP_PORT: '587'
-   SMTP_SECURITY: starttls
-   SMTP_USER: deine.adresse@gmail.com
-   SMTP_PASSWORD: das-app-passwort
-   SMTP_FROM: Suchalarm <deine.adresse@gmail.com>
-   APP_URL: http://127.0.0.1:8000
-   ```
-3. `docker compose up -d` und in der App eine Testmail senden.
+Jedes Feld wird beim Verlassen gespeichert. Das Passwort liegt in der Datenbank im Datenverzeichnis (auch in deren Backups) und wird nie an den Browser zurückgegeben. Wer Adresse oder Server ändert, muss das Passwort neu eingeben, damit es nie an einen anderen Server geht.
 
-Andere Anbieter funktionieren genauso. Host, Port und Verschlüsselung stehen in deren Hilfe, oft unter dem Stichwort „SMTP“ oder „E-Mail-Programm einrichten“. Mit Port 465 gilt `SMTP_SECURITY: ssl`.
+**Fest vorgeben:** Steht `SMTP_HOST` in `compose.yml`, gelten die `SMTP_*`-Variablen aus der Tabelle oben, und die Oberfläche zeigt den Mailserver nur an. So bleibt das Passwort außerhalb der Datenbank:
+
+```yaml
+SMTP_HOST: smtp.gmail.com
+SMTP_PORT: '587'
+SMTP_SECURITY: starttls
+SMTP_USER: deine.adresse@gmail.com
+SMTP_PASSWORD: das-app-passwort
+SMTP_FROM: Suchalarm <deine.adresse@gmail.com>
+```
 
 ## Entwicklung
 
