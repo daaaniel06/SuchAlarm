@@ -21,10 +21,11 @@ from .domain import (
     compared_price,
     eligible,
     in_range,
-    matches,
     search_fee,
     terms,
+    title_fits,
     too_cheap,
+    wanted_words,
     with_shipping,
 )
 from .domain import SOURCES as SOURCES  # the kind's source labels (kinds.py)
@@ -249,8 +250,7 @@ def _apply_shipping(url, amount):
         rows = [
             r
             for r in conn.execute("SELECT * FROM offers WHERE source='vinted' AND url=?", (url,)).fetchall()
-            if r['search_id'] in searches
-            and matches(r['title'], terms(searches[r['search_id']]), searches[r['search_id']].get('excluded', ''))
+            if r['search_id'] in searches and title_fits('vinted', r['title'], searches[r['search_id']])
         ]
         baselines = {r[0] for r in conn.execute('SELECT search_id FROM shipping_baselines WHERE url=?', (url,))}
         if amount is not None:
@@ -300,7 +300,7 @@ def reset(conn, search_id, old, payload):
 def search_url(source, search):
     """The provider's result page of a search, for the settings; None while Kleinanzeigen lacks the location ID."""
     try:
-        return sources.search_url(source, terms(search), search)
+        return sources.search_url(source, wanted_words(source, search), search)
     except LookupError:
         return None
 

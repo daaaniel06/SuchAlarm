@@ -5,7 +5,7 @@ Wie Suchalarm Preise vergleicht, Anbieter abfragt und Mails verschickt. Der Übe
 ## Suchen und Treffer
 
 - Eine Suche hat Suchbegriff, Preisspanne (optionaler Mindestpreis, Höchstpreis), Quellen und Ausschlusswörter.
-- Alle Suchwörter müssen im Angebotstitel vorkommen. Plattform und Edition gehören daher in den Suchbegriff.
+- Alle Suchwörter müssen im Angebotstitel vorkommen, Akzente zählen nicht („Résident“ = „Resident“). Plattform und Edition gehören daher in den Suchbegriff.
 - Angebote unter dem Mindestpreis (etwa 3-€-Ramsch) werden komplett ausgeblendet und lösen keine Mail aus. Maßgeblich ist der Vergleichspreis, bei unbekanntem Versand der Artikelpreis.
 - „Passend“ richtet sich nach den Preis- und Versandfiltern. Eine aktuelle Quellenstörung verschiebt bereits gespeicherte passende Angebote nicht nach „Alle“; der Quellenstatus bleibt separat sichtbar.
 - Über den Treffern steht der idealo-Neupreis als Vergleich. Ein Klick auf einen Treffer öffnet das Angebot beim Anbieter.
@@ -33,7 +33,7 @@ Wie Suchalarm Preise vergleicht, Anbieter abfragt und Mails verschickt. Der Übe
 - Eine neue Suche beginnt mit einer Kategorie (Chips oben im Formular): Videospiele, Elektronik, Möbel, Fahrräder, Autos oder Sonstiges. Die Kategorie füllt Quellen, Lieferart, Umkreis, Verhandlungsbasis und Ausschlusswörter vor; alles bleibt änderbar.
 - Ausschlusswörter, „Versand einrechnen“ und „Suche aktiv“ liegen unter „Weitere Optionen“; zugeklappt nennt die Zeile, was darin gesetzt ist.
 - Bei eBay (`_sacat`), Kleinanzeigen (`c…`) und Vinted (`catalog[]`) sucht die App nur in der passenden Rubrik (Stand 23.10.2026 live geprüft; Elektronik bei eBay ohne Rubrik, weil es dort keine gemeinsame gibt).
-- Videospiele haben eine Plattform, die wie ein Suchwort im Titel stehen muss.
+- Videospiele haben eine Plattform, die wie ein Suchwort im Titel stehen muss. Ausnahme Vinted: Dort filtert Vinted selbst nach Plattform (`video_game_platform_ids[]`, Stand 29.10.2026 live geprüft), der Titel muss sie nicht nennen. Ein Titel, der nur andere Plattformen nennt, fliegt überall raus, weil Vinted die Liste sonst mit anderen Plattformen auffüllt.
 - Autos haben „Erstzulassung ab“ und „Kilometerstand bis“. Beides geht als Filter an Kleinanzeigen, und auf der Karte genannte Werte außerhalb der Grenzen werden zusätzlich lokal verworfen. Fehlende Angaben bleiben drin. Bei eBay gelten diese Filter nicht, das Formular sagt das.
 - „Verhandlungsbasis zulassen“ nimmt VB-Angebote mit Preis auf, der genannte Betrag zählt. Ohne diese Option werden VB-Angebote ausgeschlossen, ebenso Auktionen.
 - „Zu verschenken“ nimmt Gratis-Angebote von Kleinanzeigen auf. Für sie gilt der Mindestpreis nicht, und Kleinanzeigen bekommt dann keine untere Preisgrenze (sonst blendet es sie selbst aus).

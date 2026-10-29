@@ -12,7 +12,7 @@ from suchalarm import store, worker
 from suchalarm.app import app
 from suchalarm.core import cadence
 from suchalarm.preis import sources
-from suchalarm.preis.domain import Offer, in_range, select_offers, terms, too_cheap, vehicle
+from suchalarm.preis.domain import Offer, in_range, select_offers, terms, title_fits, too_cheap, vehicle, wanted_words
 from suchalarm.preis.sources import parse_rows, place_of, search_url
 
 
@@ -73,8 +73,30 @@ class CategoryTests(unittest.TestCase):
         self.assertEqual(
             (params['_sacat'], params['_nkw'], params['LH_LocatedIn']), (['139973'], ['Resident Evil PS5'], ['1'])
         )
-        vinted = parse_qs(urlsplit(search_url('vinted', terms(game), game)).query)
+        vinted = parse_qs(urlsplit(search_url('vinted', wanted_words('vinted', game), game)).query)
         self.assertEqual(vinted['catalog[]'], ['3026'])
+        # Vinted filters the platform itself, so the platform word stays out of the search text.
+        self.assertEqual(vinted['search_text'], ['Resident Evil'])
+        self.assertEqual(vinted['video_game_platform_ids[]'], ['1281', '8582'])
+
+    def test_vinted_titles_need_not_name_the_platform_but_must_not_name_another(self):
+        game = dict(query='Resident Evil Requiem', category='videospiele', filters={'platform': 'ps5'}, excluded='')
+        self.assertTrue(title_fits('vinted', 'Résident evil requiem', game))
+        self.assertTrue(title_fits('vinted', 'Resident Evil Requiem PS5 jacquette japonaise', game))
+        self.assertTrue(title_fits('vinted', 'Resident Evil Requiem PS4 / PS5', game))
+        self.assertFalse(title_fits('vinted', 'Resident Evil Requiem PS4', game))
+        self.assertFalse(title_fits('vinted', 'Resident Evil Requiem Xbox Series X', game))
+        self.assertFalse(title_fits('vinted', 'Alan Wake 2 PS5', game))
+        # Without a platform filter at the provider the title still has to name it.
+        self.assertFalse(title_fits('ebay', 'Resident Evil Requiem', game))
+        self.assertTrue(title_fits('ebay', 'Resident Evil Requiem PlayStation 5', game))
+
+    def test_switch_2_is_not_also_switch(self):
+        switch = dict(query='Mario Kart World', filters={'platform': 'switch'}, excluded='')
+        self.assertFalse(title_fits('vinted', 'Mario Kart World Nintendo Switch 2', switch))
+        self.assertTrue(
+            title_fits('vinted', 'Mario Kart World Switch 2', dict(switch, filters={'platform': 'switch2'}))
+        )
 
     def test_old_searches_keep_their_cache_key(self):
         old = dict(query='Spiel PS5', max_price=3500, include_shipping=True, excluded='')

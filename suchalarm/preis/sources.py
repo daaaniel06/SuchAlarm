@@ -13,13 +13,14 @@ from .domain import (
     around,
     canonical,
     clean_title,
-    matches,
     money,
+    platform_ids,
     portal_price_bounds,
     section,
     shipping,
-    terms,
+    title_fits,
     vehicle_fits,
+    wanted_words,
 )
 
 # A function expression for page.evaluate; a formatter's trailing semicolon would make it a statement.
@@ -74,7 +75,10 @@ def search_url(source, query, search=None):
             params['price_from'] = euros(minimum)
         if maximum is not None:
             params['price_to'] = euros(maximum)
-        return 'https://www.vinted.de/catalog?' + urlencode(params)
+        platforms = platform_ids(source, search)
+        if platforms:
+            params['video_game_platform_ids[]'] = platforms
+        return 'https://www.vinted.de/catalog?' + urlencode(params, doseq=True)
     return 'https://www.idealo.de/preisvergleich/MainSearchProductCategory.html?' + urlencode({'q': query})
 
 
@@ -196,7 +200,7 @@ def row_price(row, search=None):
 
 def usable(source, row, title, url, search):
     """Whether a card is a single, buyable offer that matches the search."""
-    if not title or not url or not matches(title, terms(search), search.get('excluded', '')):
+    if not title or not url or not title_fits(source, title, search):
         return False
     if source == 'ebay' and not ebay_in_germany(row):
         return False
@@ -315,7 +319,7 @@ def idealo_product(data, search):
         (
             item
             for item in data['links']
-            if matches(item['title'], terms(search), search.get('excluded', '')) and canonical('idealo', item['url'])
+            if title_fits('idealo', item['title'], search) and canonical('idealo', item['url'])
         ),
         None,
     )
@@ -327,9 +331,7 @@ def _references(pages, search):
         r
         for page in pages
         for r in page['structured']
-        if r.get('reference')
-        and r.get('currency') == 'EUR'
-        and matches(r['title'], terms(search), search.get('excluded', ''))
+        if r.get('reference') and r.get('currency') == 'EUR' and title_fits('idealo', r['title'], search)
     ]
 
 
@@ -378,7 +380,7 @@ def repair_cached(source, search, value, observed_at):
     if source not in ('idealo', 'ebay', 'vinted'):
         return value
     try:
-        data = cadence.historical_page(source, search_url(source, terms(search), search), observed_at)
+        data = cadence.historical_page(source, search_url(source, wanted_words(source, search), search), observed_at)
     except LookupError:
         return None
     if data is None:
@@ -400,7 +402,7 @@ def repair_cached(source, search, value, observed_at):
     return {'offers': [asdict(o) for o in offers], 'reference': reference}
 
 
-@cadence.shared_search(cache_version=4, cached_parser=repair_cached)
+@cadence.shared_search(cache_version=5, cached_parser=repair_cached)
 async def fetch(source, search):
     """(offers, idealo reference) of one provider query; the decorator shares, caches and times it."""
     return await _visit(source, search)
@@ -412,7 +414,7 @@ async def _visit(source, search):
         place = around(source, search)
         if source == 'kleinanzeigen' and place and cadence.location('kleinanzeigen', place[0]) is None:
             await find_location(page, place[0])
-        data = await load_page(page, source, search_url(source, terms(search), search))
+        data = await load_page(page, source, search_url(source, wanted_words(source, search), search))
         if source == 'idealo':
             product = idealo_product(data, search)
             detail = await load_page(page, source, product['url'], follow=True) if product else None
@@ -421,7 +423,9 @@ async def _visit(source, search):
         if search.get('delivery') == 'beides' and place:
             # The area around the postcode is read above; from all of Germany only what can be shipped.
             nationwide = dict(search, delivery='versand')
-            wide = await load_page(page, source, search_url(source, terms(nationwide), nationwide), follow=True)
+            wide = await load_page(
+                page, source, search_url(source, wanted_words(source, nationwide), nationwide), follow=True
+            )
             near = {row.get('url') for row in rows}
             rows += [row for row in listing_rows(source, wide) if shippable(source, row) and row.get('url') not in near]
         offers = parse_rows(source, rows, search)

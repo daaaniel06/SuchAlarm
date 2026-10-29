@@ -1,4 +1,5 @@
 import re
+import unicodedata
 from bisect import bisect_left
 from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
@@ -24,6 +25,17 @@ PLATFORMS = {
     'xbox-series': 'Xbox Series',
     'xbox-one': 'Xbox One',
     'pc': 'PC',
+}
+# Vinted files games under one section and filters the platform separately (video_game_platform_ids[]).
+# IDs checked live on 29.10.2026; PS5 games are also tagged "PS5 Pro".
+VINTED_PLATFORMS = {
+    'ps5': ('1281', '8582'),
+    'ps4': ('1280',),
+    'switch2': ('6478',),
+    'switch': ('1273',),
+    'xbox-series': ('1291',),
+    'xbox-one': ('1290',),
+    'pc': ('1276',),
 }
 # A category presets a new search and narrows the provider search to its own section.
 # Section IDs were checked live on 23.10.2026 (eBay _sacat, Kleinanzeigen c…, Vinted catalog[]).
@@ -215,10 +227,48 @@ def clean_title(source, title):
     return title
 
 
+def platform(search):
+    """The platform a search is limited to, or None."""
+    chosen = (search.get('filters') or {}).get('platform')
+    return chosen if chosen in PLATFORMS else None
+
+
 def terms(search):
-    """The words an offer title must contain: the query plus a chosen platform."""
-    platform = (search.get('filters') or {}).get('platform')
-    return f'{search["query"]} {PLATFORMS[platform]}' if platform in PLATFORMS else search['query']
+    """The words of a search: the query plus a chosen platform."""
+    chosen = platform(search)
+    return f'{search["query"]} {PLATFORMS[chosen]}' if chosen else search['query']
+
+
+def platform_ids(source, search):
+    """The provider's own platform filter for the search; empty where the platform must be in the text."""
+    chosen = platform(search)
+    return VINTED_PLATFORMS[chosen] if source == 'vinted' and chosen else ()
+
+
+def wanted_words(source, search):
+    """The words a provider is searched for and an offer title must contain. Where the provider filters the
+    platform itself, the title need not name it: sellers often leave it out ("Resident Evil Requiem")."""
+    return search['query'] if platform_ids(source, search) else terms(search)
+
+
+def named_platforms(title):
+    """The platforms a title names; "Switch 2" is not also "Switch"."""
+    text, named = f' {normalized(title)} ', set()
+    for key, label in sorted(PLATFORMS.items(), key=lambda item: -len(item[1])):
+        phrase = f' {normalized(label)} '
+        if phrase in text:
+            named.add(key)
+            text = text.replace(phrase, ' ')
+    return named
+
+
+def title_fits(source, title, search):
+    """Whether an offer title belongs to the search: all its words, none excluded, not only other platforms.
+    A provider's platform filter fills up with other platforms once its matches run out."""
+    chosen, named = platform(search), named_platforms(title)
+    return matches(title, wanted_words(source, search), search.get('excluded', '')) and (
+        chosen is None or not named or chosen in named
+    )
 
 
 def section(source, search):
@@ -282,7 +332,6 @@ def portal_price_bounds(source, search):
 def select_offers(offers, search):
     """One destination per result; choose its cheapest shop using this search's price basis."""
     result: dict[str, Offer] = {}
-    wanted, excluded = terms(search), search.get('excluded', '')
 
     def rank(offer):
         value = offer.compared_price(search)
@@ -295,7 +344,7 @@ def select_offers(offers, search):
 
     for offer in offers:
         offer = replace(offer, title=clean_title(offer.source, offer.title))
-        if not matches(offer.title, wanted, excluded):
+        if not title_fits(offer.source, offer.title, search):
             continue
         if offer.url not in result or rank(offer) < rank(result[offer.url]):
             result[offer.url] = offer
@@ -304,7 +353,9 @@ def select_offers(offers, search):
 
 @lru_cache(maxsize=4096)  # the same titles and search words come back with every check
 def normalized(text):
-    text = re.sub(r'[^\w]+', ' ', text.casefold()).strip()
+    # Accents are spelled either way ("Résident Evil", "Hulle"); compare the base letters.
+    text = ''.join(c for c in unicodedata.normalize('NFKD', text.casefold()) if not unicodedata.combining(c))
+    text = re.sub(r'[^\w]+', ' ', text).strip()
     # Sellers write PS5, PS 5 and PlayStation 5 interchangeably.
     return re.sub(r'\b(?:playstation|ps) ?([1-5])\b', r'ps\1', text)
 

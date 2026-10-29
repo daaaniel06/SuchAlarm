@@ -55,6 +55,8 @@ class DomainTests(unittest.TestCase):
 
     def test_matching_and_safe_identity(self):
         self.assertTrue(matches('Resident Evil: Requiem – PS5', 'resident evil requiem ps5'))
+        self.assertTrue(matches('Résident evil requiem PS5', 'resident evil requiem ps5'))
+        self.assertFalse(matches('Resident Evil Requiem Hulle', 'resident evil requiem', 'Hülle'))
         self.assertFalse(matches('Resident Evil Requiem Hülle', 'resident evil requiem', 'Hülle, defekt'))
         self.assertFalse(matches('Resident Evil Requiem PS50', 'resident evil requiem ps5'))
         self.assertTrue(matches('Capcom Resident Evil 3 – Sony PlayStation 5 (PAL)', 'resident evil 3 ps5'))
