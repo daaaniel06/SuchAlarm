@@ -258,6 +258,7 @@ class AreaInterfaceTests(unittest.IsolatedAsyncioTestCase):
             saved=[], statuses=[], mail_log=[], paused=False, running=None, running_source=None, queued=[],
             sources=ALL_SOURCES, source_kinds=SOURCE_KINDS, choices=CHOICES, schedule=[],
             mail=dict(recipients=[], configured=False, error=None, pending=dict(preis=0, wohnung=0),
+                      server=dict(sender='', host='', port=587, password_set=False, fixed=False),
                       preis=dict(enabled=False, frequency='Sofort', batch_size=1),
                       wohnung=dict(enabled=False, frequency='Sofort', batch_size=1)),
         )  # fmt: skip

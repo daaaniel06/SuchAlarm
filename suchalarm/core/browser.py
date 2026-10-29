@@ -38,6 +38,14 @@ PAGE_TIMEOUT_MS = 35_000
 SETTLE_ATTEMPTS, SETTLE_PAUSE_MS = 16, 750  # up to 12 s for consent pages and client redirects
 REFUSAL_STATUSES = (401, 403, 429)
 LOST_CONTEXT = ('Execution context was destroyed', 'Cannot find context')
+CHALLENGE_PAUSE_MS = 2_000  # Akamai's 403 page runs its sensor script, then the same URL loads
+
+
+def akamai_challenge(response):
+    """A fresh browser's first visit to an Akamai-guarded site (eBay) gets 403 while the page
+    runs the bot-manager script; a reload in the same browser then passes."""
+    headers = getattr(response, 'headers', None) or {}
+    return response is not None and response.status == 403 and headers.get('server') == 'AkamaiGHost'
 
 
 def check_response(response):
@@ -72,6 +80,10 @@ async def load_page(page, source, url, follow=False, *, extract, readable, keep_
         raise cadence.Deferred(exc.until, continuation=follow) from None
     note(stage='Seite laden', url=url, status=None, final_url=None, title=None, text=None, cards=None)
     response = await page.goto(url, wait_until='domcontentloaded', timeout=PAGE_TIMEOUT_MS)
+    if akamai_challenge(response):
+        # Part of the same visit, like a client redirect; a second 403 is a real block.
+        await page.wait_for_timeout(CHALLENGE_PAUSE_MS)
+        response = await page.goto(url, wait_until='domcontentloaded', timeout=PAGE_TIMEOUT_MS)
     note(status=getattr(response, 'status', None), final_url=getattr(page, 'url', None))
     check_response(response)
     # Consent pages and client redirects can replace the document immediately

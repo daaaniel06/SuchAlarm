@@ -84,6 +84,21 @@ class SourceLoadingTests(unittest.IsolatedAsyncioTestCase):
             await load_page(page, 'ebay', 'https://www.ebay.de/')
         page.evaluate.assert_not_awaited()
 
+    async def test_akamai_challenge_reloads_once_in_the_same_browser(self):
+        challenge = SimpleNamespace(status=403, headers={'server': 'AkamaiGHost'})
+        page = self.page([self.listing()])
+        page.goto.side_effect = [challenge, SimpleNamespace(status=200)]
+        self.assertEqual(await load_page(page, 'ebay', 'https://www.ebay.de/'), self.listing())
+        self.assertEqual(page.goto.await_count, 2)
+
+    async def test_repeated_akamai_refusal_is_a_block(self):
+        challenge = SimpleNamespace(status=403, headers={'server': 'AkamaiGHost'})
+        page = self.page([])
+        page.goto.side_effect = [challenge, challenge]
+        with self.assertRaises(browser.Blocked):
+            await load_page(page, 'ebay', 'https://www.ebay.de/')
+        self.assertEqual(page.goto.await_count, 2)
+
     async def test_unauthorized_counts_as_a_provider_block(self):
         with self.assertRaises(browser.Blocked):
             await load_page(self.page([], status=401), 'vinted', 'https://www.vinted.de/items/1')
