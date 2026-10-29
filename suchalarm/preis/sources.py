@@ -248,6 +248,7 @@ def parse_rows(source, data, search):
             row_shipping(row, price, source),
             seller[:MAX_SELLER],
             condition[:MAX_CONDITION],
+            str(row.get('owner', '')),
         )
         # Keep idealo's shop alternatives: the shared cache serves searches with both shipping settings.
         key = (url, price, offer.shipping, offer.seller) if source == 'idealo' else url

@@ -47,6 +47,24 @@ class LearnedWordsTests(unittest.TestCase):
         self.assertTrue(all(title_fits('vinted', title, search) for title in GAMES))
 
 
+class DealerTests(unittest.TestCase):
+    def offers(self, titles, owner):
+        return [
+            Offer('vinted', f'https://www.vinted.de/items/{owner}{n}', t, 4000, None, owner=owner)
+            for n, t in enumerate(titles)
+        ]
+
+    def test_a_seller_with_a_series_of_matching_listings_drops_out(self):
+        search = dict(query=GAME, excluded='', filters={'platform': 'ps5'})
+        merch = self.offers([f'Tapis de souris XXL {GAME} {n}' for n in range(3)], '43245134')
+        games = self.offers(GAMES[:1], '1') + self.offers(GAMES[1:2], '2') + self.offers(GAMES[2:], '')
+        self.assertEqual(sorted(o.title for o in select_offers(merch + games, search)), sorted(GAMES))
+
+    def test_two_copies_of_one_seller_stay(self):
+        search = dict(query=GAME, excluded='')
+        self.assertEqual(len(select_offers(self.offers(GAMES[:2], '7'), search)), 2)
+
+
 class LearningTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

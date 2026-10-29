@@ -378,7 +378,18 @@ def select_offers(offers, search):
             continue
         if offer.url not in result or rank(offer) < rank(result[offer.url]):
             result[offer.url] = offer
-    return list(result.values())
+    dealers = mass_sellers(result.values())
+    return [offer for offer in result.values() if (offer.source, offer.owner) not in dealers]
+
+
+DEALER_FROM = 3  # matching listings of one seller in one result that mark a merchandise dealer
+
+
+def mass_sellers(offers):
+    """(source, owner) of sellers with DEALER_FROM or more matching listings in one result. Someone selling their
+    own copy lists it once; posters, mouse pads and signs come in series under the product's name."""
+    counts = Counter((offer.source, offer.owner) for offer in offers if offer.owner)
+    return {seller for seller, count in counts.items() if count >= DEALER_FROM}
 
 
 @lru_cache(maxsize=4096)  # the same titles and search words come back with every check
@@ -450,6 +461,7 @@ class Offer:
     shipping: int | None = None
     seller: str = ''
     condition: str = ''
+    owner: str = ''  # the provider's ID of the seller, only for the dealer signal; never stored or shown
 
     @classmethod
     def from_row(cls, row):
