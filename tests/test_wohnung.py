@@ -202,7 +202,7 @@ class FilterTests(unittest.TestCase):
         cheap, dear = search(max_price=80000), search(max_price=150000)
         self.assertNotEqual(domain.query_text('immoscout24', cheap), domain.query_text('immoscout24', dear))
         self.assertNotEqual(domain.query_text('wg-gesucht', cheap), domain.query_text('wg-gesucht', dear))
-        self.assertEqual(domain.query_text('immowelt', cheap), domain.query_text('immowelt', dear))
+        self.assertNotEqual(domain.query_text('immowelt', cheap), domain.query_text('immowelt', dear))
         self.assertEqual(domain.query_text('nhw', cheap), domain.query_text('nhw', search(query='Wiesbaden')))
 
     def test_detail_page_completes_a_card(self):
@@ -228,14 +228,6 @@ KLEINANZEIGEN_DETAIL = """<meta property="og:title" content="Helle 2-Zimmer">
 <li class="addetailslist--detail">Warmmiete<span class="addetailslist--detail--value" >1.290 €</span></li>
 <li class="addetailslist--detail">Verfügbar ab<span class="addetailslist--detail--value" >November 2026</span></li>
 <p id="viewad-description-text" itemprop="description">Ruhige Lage.<br/>Nur mit WBS.</p>"""
-
-IMMOWELT_CARD = """<div id="classified-card-1" data-testid="serp-core-classified-card-testid" class="x"><div>
-<a href="https://www.immowelt.de/expose/4af6c3b7-90ac?serp_view=list#ln=x" target="_blank" title="Wohnung zur Miete - Erstbezug - Darmstadt - 835&nbsp;€ - 1 Zimmer, 46,6 m², 4. Geschoss, frei ab 16.11.2026" data-testid="card-mfe-covering-link-testid" class="y"></a>
-<div data-testid="cardmfe-agency-publisher-xl-test-id"><img src="https://mms.immowelt.de/1/0/logo.jpg?h=50"></div>
-<div data-testid="card-mfe-picture-box-gallery-test-id"><img alt="Wohnung" src="https://mms.immowelt.de/4/4/1/f/441f.jpg?w=626&amp;h=470"></div>
-<div aria-label="835 €" data-testid="cardmfe-price-testid" class="p"><div class="q">835&nbsp;€</div><div class="r"><span class="s">Kaltmiete</span></div></div>
-<div data-testid="cardmfe-description-box-address" class="a">Hügelstraße 73, Darmstadt, Darmstadt (64283)</div>
-<div data-testid="cardmfe-description-text-test-id" class="t"><div>Möbliert, nur mit WBS.</div></div></div></div>"""
 
 # Layout of 10/2026, shortened from a real result page.
 WG_LIST = """<div class="col-sm-6"><a
@@ -418,32 +410,56 @@ class ParserTests(unittest.TestCase):
         with self.assertRaises(Unreadable):
             portals.immoscout_parse({'error': 'x'})
 
-    def test_immowelt_card(self):
-        card = portals.immowelt_parse(IMMOWELT_CARD)[0]
-        self.assertEqual(card['url'], 'https://www.immowelt.de/expose/4af6c3b7-90ac')
-        self.assertEqual(card['title'], 'Wohnung zur Miete · Erstbezug')
-        self.assertEqual((card['coldRent'], card['rent'], card['area'], card['rooms']), (835, None, 46.6, 1))
+    def test_immowelt_cards(self):
+        # Offer contents as Immowelt's list answers them (29.10.2026), with made-up texts.
+        offers = json.loads((Path(__file__).parent / 'fixtures' / 'immowelt' / 'list.json').read_text())
+        new_build, ground_floor, room = portals.immowelt_cards(offers)  # a project page is no flat
+        self.assertEqual(new_build['url'], 'https://www.immowelt.de/expose/11111111-2222-3333-4444-555555555555')
         self.assertEqual(
-            (card['place'], card['availableFrom']), ('Hügelstraße 73, Darmstadt, Darmstadt (64283)', '2026-11-16')
+            (new_build['title'], new_build['place'], new_build['availableFrom']),
+            ('Neubau mit Gemeinschaftsgarten', '64285 Darmstadt', '2028-06-01'),
         )
         self.assertEqual(
-            card['imageSource'], 'https://mms.immowelt.de/4/4/1/f/441f.jpg?w=480&h=360'
-        )  # not the agency logo
-        self.assertEqual(card['traits'], ['WBS'])
-        warm = IMMOWELT_CARD.replace('>Kaltmiete<', '>Warmmiete<')
-        self.assertEqual(
-            (portals.immowelt_parse(warm)[0]['rent'], portals.immowelt_parse(warm)[0]['coldRent']), (835, None)
+            (new_build['coldRent'], new_build['rent'], new_build['area'], new_build['rooms']), (335, None, 46, 2)
         )
+        self.assertEqual(new_build['traits'], ['WBS'])
+        self.assertEqual(new_build['imageSource'], 'https://mms.immowelt.de/b/b/b/b/front.jpg?w=480&h=360')  # no logo
+        # The labelled prices count, not rawData.price (here the warm rent).
+        self.assertEqual((ground_floor['coldRent'], ground_floor['rent'], ground_floor['area']), (795, 1106, 64.45))
+        self.assertEqual(ground_floor['place'], 'Musterweg 15, 64291 Darmstadt, Wixhausen')
         self.assertEqual(
-            portals.immowelt_location(
-                'https://www.immowelt.de/suche/mieten/wohnung/hessen/darmstadt-64283/ad08de2508', 'x'
-            ),
-            '/suche/mieten/wohnung/hessen/darmstadt-64283/ad08de2508',
+            (room['traits'], room['title'], room['imageSource']), (['WG-Zimmer'], 'Zimmer in der Innenstadt', None)
         )
+        self.assertEqual(portals.immowelt_cards([]), [])
+        with self.assertRaises(Unreadable):
+            portals.immowelt_cards({'error': 'x'})
+
+    def test_immowelt_search_is_newest_first_within_the_limits(self):
+        path = portals.immowelt_location(
+            'https://www.immowelt.de/suche/mieten/wohnung/hessen/darmstadt-64283/ad08de2508', 'x'
+        )
+        self.assertEqual(path, '/suche/mieten/wohnung/hessen/darmstadt-64283/ad08de2508')
         with self.assertRaises(RuntimeError):
             portals.immowelt_location('https://www.immowelt.de/suche/darmstadt/wohnungen/mieten', 'x')
-        with self.assertRaises(Unreadable):
-            portals.immowelt_parse('<html>Zugriff verweigert</html>')
+        page, request = portals.immowelt_search(
+            path, profile(search(max_price=89950, filters={'min_area': 40.5, 'min_rooms': 2, 'exclusions': []}))
+        )
+        self.assertEqual(
+            page,
+            'https://www.immowelt.de/classified-search?distributionTypes=Rent&estateTypes=Apartment'
+            '&locations=AD08DE2508&priceMax=900&spaceMin=40&numberOfRoomsMin=2',
+        )
+        self.assertEqual(
+            request['criteria'],
+            {'distributionTypes': ['Rent'], 'estateTypes': ['Apartment'], 'location': {'placeIds': ['AD08DE2508']},
+             'priceMax': 900, 'spaceMin': 40, 'numberOfRoomsMin': 2},
+        )  # fmt: skip
+        self.assertEqual(request['paging'], {'page': 1, 'size': 30, 'order': 'DateDesc'})
+        page, request = portals.immowelt_search(
+            path, profile(search(filters={'min_area': 0, 'min_rooms': 0, 'exclusions': []}))
+        )
+        self.assertNotIn('spaceMin', page)
+        self.assertNotIn('numberOfRoomsMin', request['criteria'])
 
     def test_immowelt_detail(self):
         # The exposé sections of live pages (27.10.2026) as sources.IMMOWELT_EXPOSE reads them.
@@ -532,12 +548,6 @@ class ParserTests(unittest.TestCase):
             [(1300, None, 82, 3, '2026-10-01'), (800, None, 30, None, '2026-10-01')],
         )
         self.assertEqual(cards[0]['imageSource'], 'https://img.wg-gesucht.de/media/up/a.small.jpg')
-
-        [offer] = portals.immowelt_parse(without_markup(IMMOWELT_CARD))
-        self.assertEqual(
-            (offer['coldRent'], offer['area'], offer['rooms'], offer['availableFrom']), (835, 46.6, 1, '2026-11-16')
-        )
-        self.assertEqual(offer['place'], 'Hügelstraße 73, Darmstadt, Darmstadt (64283)')
 
         cards = portals.nhw_parse(without_markup(NHW_PAGE))
         self.assertEqual(cards[0]['url'], 'https://www.nhw.de/zuhause-finden/immobilie/5000-S2133-001-102')
@@ -953,9 +963,9 @@ class WorkerTests(TempData):
 
 class BrowserExtractTests(unittest.TestCase):
     def test_card_extract_is_a_function_expression_with_the_selector(self):
-        script = sources._extract_cards(sources.CARDS['immowelt'])
+        script = sources._extract_cards(sources.KLEINANZEIGEN_CARDS)
         self.assertTrue(script.startswith('() => {'))
-        self.assertIn('"[data-testid=\\"serp-core-classified-card-testid\\"]"', script)
+        self.assertIn('"article[data-adid]"', script)
         self.assertIn(".join('\\n')", script)
 
 

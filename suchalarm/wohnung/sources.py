@@ -21,10 +21,7 @@ BROWSER_HOSTS = {
     'kleinanzeigen-wohnung': {'www.kleinanzeigen.de', 'kleinanzeigen.de'},
     'immowelt': {'www.immowelt.de', 'immowelt.de'},
 }
-CARDS = {
-    'kleinanzeigen-wohnung': 'article[data-adid]',
-    'immowelt': '[data-testid="serp-core-classified-card-testid"]',
-}
+KLEINANZEIGEN_CARDS = 'article[data-adid]'
 DETAILS = ('immoscout24', 'kleinanzeigen-wohnung', 'wg-gesucht', 'immowelt', 'bauverein', 'nhw')
 
 
@@ -180,15 +177,8 @@ async def _immoscout(search, p, page=1):
     return await http.get_json('immoscout24', url, headers, portals.IMMOSCOUT_BODY, follow=looked_up)
 
 
-def _readable_cards(source):
-    def readable(data, follow):
-        return (
-            bool(data['rows'])
-            or browser.EMPTY.search(data['text'])
-            or (source == 'kleinanzeigen-wohnung' and 'Leider keine' in data['text'])
-        )
-
-    return readable
+def _kleinanzeigen_readable(data, follow):
+    return bool(data['rows']) or browser.EMPTY.search(data['text']) or 'Leider keine' in data['text']
 
 
 async def _kleinanzeigen(p, number=1):
@@ -214,18 +204,43 @@ async def _kleinanzeigen(p, number=1):
             source,
             portals.kleinanzeigen_url(p, identifier, number),  # the result page's number
             looked_up,
-            extract=_extract_cards(CARDS[source]),
-            readable=_readable_cards(source),
+            extract=_extract_cards(KLEINANZEIGEN_CARDS),
+            readable=_kleinanzeigen_readable,
         )
     return portals.kleinanzeigen_parse(data['html']) if data['rows'] else []  # an empty page passed on its text
 
 
-async def _immowelt(p):
-    """The place's page as Immowelt shows it (order "Relevanz").
+def _immowelt_list(request):
+    """A function expression for page.evaluate: the offers of REQUEST (portals.immowelt_search), asked for
+    from inside Immowelt's own result page, then their contents in one further request. A refusal reads
+    as a blocked page; any other failed answer leaves 'total' empty, so the page counts as unreadable."""
+    return f"""async () => {{
+  const page = {{ title: document.title, text: document.body ? document.body.innerText.slice(0, 20000) : '',
+                 rows: [], total: null }};
+  const read = async response => {{
+    if ({json.dumps(browser.REFUSAL_STATUSES)}.includes(response.status)) page.text = 'Zugriff verweigert\\n' + page.text;
+    return response.ok ? response.json() : null;
+  }};
+  const found = await read(await fetch('/serp-bff/search', {{
+    method: 'POST', headers: {{ 'content-type': 'application/json' }}, body: JSON.stringify({json.dumps(request)}) }}));
+  if (!found) return page;
+  const ids = found.classifieds.map(offer => offer.id);
+  if (ids.length) {{
+    const offers = await read(await fetch('/classifiedList/' + ids.join(','), {{ headers: {{ 'x-language': 'de' }} }}));
+    if (!offers) return page;
+    page.rows = offers;
+  }}
+  page.total = found.totalCount;
+  return page;
+}}"""
 
-    Sorting by date is not possible: Immowelt answers the sorted search, also when chosen in its own menu,
-    with a DataDome captcha, and no captcha is worked around. The place's page is found once through its
-    old address, which redirects to it; that visit then waits for the next slot like any second page."""
+
+async def _immowelt(p):
+    """The place's newest offers, already cut to the search's limits.
+
+    The place's page is found once through its old address, which redirects to it; that visit then waits
+    for the next slot like any second page. The list is asked for from the search's own result page,
+    which keys the page cache."""
     source, query = 'immowelt', place_query(p)
     async with browser.browser_page(BROWSER_HOSTS[source]) as page:
 
@@ -237,16 +252,16 @@ async def _immowelt(p):
         looked_up = cadence.location(source, _key(query)) is None
         if looked_up:
             cadence.book(source, 'page')
-        path = await _location(source, query, location)
+        address, request = portals.immowelt_search(await _location(source, query, location), p)
         data = await browser.load_page(
             page,
             source,
-            portals.IMMOWELT + path,
+            address,
             looked_up,
-            extract=_extract_cards(CARDS[source]),
-            readable=_readable_cards(source),
+            extract=_immowelt_list(request),
+            readable=lambda data, follow: data['total'] is not None,
         )
-    return portals.immowelt_parse(data['html']) if data['rows'] else []
+    return portals.immowelt_cards(data['rows'])
 
 
 async def _wg_gesucht(p, page=1):

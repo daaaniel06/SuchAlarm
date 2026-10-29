@@ -50,10 +50,11 @@ from .immoscout import (  # noqa: F401
 from .immowelt import (  # noqa: F401
     IMMOWELT,
     IMMOWELT_SECTIONS,
+    immowelt_cards,
     immowelt_detail,
     immowelt_location,
-    immowelt_parse,
     immowelt_place_url,
+    immowelt_search,
 )
 from .kleinanzeigen import (  # noqa: F401
     KLEINANZEIGEN,

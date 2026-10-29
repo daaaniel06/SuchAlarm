@@ -82,7 +82,7 @@ Die genauen Regeln (Preisgrenzen, Taktung, Grenzen der Quellen, Mails, Bilder) s
 
 Seiten laufen standardmäßig über ein getarntes Firefox. Direkte Abrufe gibt es nur dort, wo sie ohne Mehraufwand gehen, etwa bei Vorschaubildern und App-Schnittstellen. Jeder Abruf läuft durch dieselbe zentrale Taktung.
 
-**Regionale Grenzen:** ImmoScout24, Kleinanzeigen, Immowelt und WG-Gesucht funktionieren bundesweit. WG-Gesucht sucht nur nach Ortsnamen, nicht nach Postleitzahl, und liest Wohnungen und 1-Zimmer-Wohnungen mit Höchstmiete, Mindestfläche und -zimmern; die Orts-ID holt Suchalarm einmal über WG-Gesuchts eigene Ortssuche und merkt sie sich. NHW und bauverein haben ohnehin nur Bestand in der Region.
+**Regionale Grenzen:** ImmoScout24, Kleinanzeigen, Immowelt und WG-Gesucht funktionieren bundesweit. Immowelt liest die neuesten Inserate, schon nach Miete, Fläche und Zimmern vorgefiltert. WG-Gesucht sucht nur nach Ortsnamen, nicht nach Postleitzahl, und liest Wohnungen und 1-Zimmer-Wohnungen mit Höchstmiete, Mindestfläche und -zimmern; die Orts-ID holt Suchalarm einmal über WG-Gesuchts eigene Ortssuche und merkt sie sich. NHW und bauverein haben ohnehin nur Bestand in der Region.
 
 ## Schnellstart
 
