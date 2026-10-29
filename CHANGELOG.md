@@ -1,11 +1,12 @@
 # Changelog
 
-## Unveröffentlicht
+## v1.1.0 (2026-10-29)
 
 ### Mails
 - Der Mailserver lässt sich in der App einrichten (Einstellungen → Mails): Adresse, Passwort, Server, für bekannte Anbieter füllt sich der Server selbst. `SMTP_*` in `compose.yml` geht weiter und hat Vorrang.
 
 ### Wohnungen
+- WG-Gesucht sucht in jedem Ort in Deutschland, nicht mehr nur in einer festen Städteliste. Kennt WG-Gesucht einen Ort nicht, ruht die Quelle mit Hinweis.
 - Duplikate werden auch erkannt, wenn ein Portal nur den Ort und das andere nur den Stadtteil nennt: Die Straße darf nach dem Ort stehen, derselbe lange Titel mit gleicher Fläche zählt als Beweis, und unterschiedlich beschnittene Fotos gelten als gleich.
 
 ## v1.0.0 (2026-10-28)
