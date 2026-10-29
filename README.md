@@ -82,7 +82,7 @@ Die genauen Regeln (Preisgrenzen, Taktung, Grenzen der Quellen, Mails, Bilder) s
 
 Seiten laufen standardmäßig über ein getarntes Firefox. Direkte Abrufe gibt es nur dort, wo sie ohne Mehraufwand gehen, etwa bei Vorschaubildern und App-Schnittstellen. Jeder Abruf läuft durch dieselbe zentrale Taktung.
 
-**Regionale Grenzen:** ImmoScout24, Kleinanzeigen und Immowelt funktionieren bundesweit. WG-Gesucht ist nur für Darmstadt und Umgebung eingerichtet, NHW und bauverein haben ohnehin nur Bestand in der Region. Andere Städte bei WG-Gesucht brauchen einen Eintrag in `suchalarm/wohnung/portals/wg.py`.
+**Regionale Grenzen:** ImmoScout24, Kleinanzeigen, Immowelt und WG-Gesucht funktionieren bundesweit. WG-Gesucht sucht nur nach Ortsnamen, nicht nach Postleitzahl; die Orts-ID holt Suchalarm einmal über WG-Gesuchts eigene Ortssuche und merkt sie sich. NHW und bauverein haben ohnehin nur Bestand in der Region.
 
 ## Schnellstart
 

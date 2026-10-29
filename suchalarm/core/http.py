@@ -21,6 +21,10 @@ TIMEOUT = 20
 MAX_BYTES = 3_000_000
 
 
+class NotFound(RuntimeError):
+    """HTTP 404: the provider does not know what was asked for."""
+
+
 def ssl_context():
     """The system's certificates; certifi's where installed (Python from python.org on macOS has none)."""
     try:
@@ -45,6 +49,8 @@ def _download(url, headers, data):
             raise Blocked(
                 f'Anbieter blockiert den Abruf (HTTP {error.code}). Kein Verbindungsfehler; später erneut versuchen.'
             ) from None
+        if error.code == 404:
+            raise NotFound('Anbieter antwortet mit HTTP 404.') from None
         raise RuntimeError(f'Anbieter antwortet mit HTTP {error.code}.') from None
     except (URLError, TimeoutError, OSError) as error:
         note(text=f'{type(error).__name__}: {getattr(error, "reason", error)}'[:300])  # shown under "Details"

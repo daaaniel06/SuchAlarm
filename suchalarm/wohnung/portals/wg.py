@@ -2,7 +2,9 @@
 
 import logging
 import re
+import unicodedata
 from html import unescape
+from urllib.parse import quote
 
 from ...core.browser import Unreadable
 from ..domain import (
@@ -21,28 +23,48 @@ log = logging.getLogger('suchalarm')
 
 # The result list already carries the total rent ("Gesamtmiete" = rent plus service
 # charges), size, rooms, district and move-in date, so most offers never need more.
-# WG-Gesucht has no public place search; its own pages link these town IDs.
 
-WG_TOWNS = {
-    'darmstadt': ('Darmstadt', 23),
-    'weiterstadt': ('Weiterstadt', 3212),
-    'messel': ('Messel', 3201),
-    'erzhausen': ('Erzhausen', 3195),
-    'egelsbach': ('Egelsbach', 3298),
-    'mörfelden-walldorf': ('Moerfelden-Walldorf', 3220),
-}
+# The site's own place field; a town it does not know is answered with 404.
+WG_CITIES = 'https://www.wg-gesucht.de/api/location/cities/names/'
+UMLAUTS = str.maketrans({'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'Ä': 'Ae', 'Ö': 'Oe', 'Ü': 'Ue', 'ß': 'ss'})
 
 
-def wg_town(town):
-    key = re.split(r'[,(]| - ', town)[0].strip().casefold()
-    key = re.sub(r'^\d{5}\s*', '', key)
-    if key not in WG_TOWNS:
-        raise RuntimeError(f'WG-Gesucht ist für „{town}“ nicht eingerichtet (nur Darmstadt und Umgebung).')
-    return WG_TOWNS[key]
+def wg_town(place):
+    """The town's name as typed into WG-Gesucht's place field: "64283 Frankfurt (Oder), Brandenburg"
+    -> "Frankfurt"."""
+    return re.split(r'[,(]| - ', _without_postcode(place))[0].strip()
 
 
-def wg_url(town, page=1):
-    slug, identifier = wg_town(town)
+def _without_postcode(place):
+    return re.sub(r'^\d{5}\s*', '', place.strip())
+
+
+def wg_cities_url(place):
+    return WG_CITIES + quote(wg_town(place), safe='')
+
+
+def wg_city(answer, place):
+    """(slug, ID) of the place among the place field's suggestions, or None if WG-Gesucht has none.
+    They match by prefix: a town of exactly the place's name wins, then one of the town's name
+    ("Frankfurt (Oder)", then "Frankfurt"), then the first suggestion."""
+    cities = ((answer or {}).get('_embedded') or {}).get('cities') or []
+    if not cities:
+        return None
+    names = [_without_postcode(place).split(',')[0].strip().casefold(), wg_town(place).casefold()]
+    exact = (city for name in names for city in cities if city['city_name'].casefold() == name)
+    city = next(exact, cities[0])
+    return wg_slug(city['city_name']), int(city['city_id'])
+
+
+def wg_slug(name):
+    """The town's name as the site writes it in list addresses: "Frankfurt (Oder)" -> "Frankfurt-Oder".
+    Only the ID counts there; a different name is redirected."""
+    plain = unicodedata.normalize('NFKD', name.translate(UMLAUTS)).encode('ascii', 'ignore').decode()
+    return re.sub(r'[^A-Za-z0-9]+', '-', plain).strip('-')
+
+
+def wg_url(city, page=1):
+    slug, identifier = city
     return f'https://www.wg-gesucht.de/wohnungen-in-{slug}.{identifier}.2.1.{page - 1}.html'
 
 

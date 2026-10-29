@@ -302,6 +302,40 @@ NHW_PAGE = (
 )  # fmt: skip
 
 
+WG_FRANKFURT = {
+    'total_items': '2',
+    '_embedded': {
+        'cities': [
+            {'city_id': '41', 'city_name': 'Frankfurt am Main', 'city_and_state': 'Frankfurt am Main (Hessen)'},
+            {'city_id': '40', 'city_name': 'Frankfurt (Oder)', 'city_and_state': 'Frankfurt (Oder) (Brandenburg)'},
+        ]
+    },
+}
+
+
+class WgCityTests(unittest.TestCase):
+    def test_the_place_field_gets_the_bare_town(self):
+        self.assertEqual(portals.wg_town('64283 Darmstadt, Hessen'), 'Darmstadt')
+        self.assertEqual(portals.wg_town('Frankfurt (Oder)'), 'Frankfurt')
+        self.assertEqual(
+            portals.wg_cities_url('Mörfelden-Walldorf'),
+            'https://www.wg-gesucht.de/api/location/cities/names/M%C3%B6rfelden-Walldorf',
+        )
+
+    def test_the_town_of_exactly_that_name_wins_over_the_first_suggestion(self):
+        self.assertEqual(portals.wg_city(WG_FRANKFURT, 'Frankfurt am Main'), ('Frankfurt-am-Main', 41))
+        self.assertEqual(portals.wg_city(WG_FRANKFURT, 'Frankfurt (Oder)'), ('Frankfurt-Oder', 40))
+        self.assertEqual(portals.wg_city(WG_FRANKFURT, 'Frankfurt'), ('Frankfurt-am-Main', 41))  # the first
+
+    def test_no_suggestion_is_no_town(self):
+        self.assertIsNone(portals.wg_city({'_embedded': {'cities': []}}, 'Xyz'))
+
+    def test_the_slug_is_written_like_the_site_does(self):
+        self.assertEqual(portals.wg_slug('Mörfelden-Walldorf'), 'Moerfelden-Walldorf')
+        self.assertEqual(portals.wg_slug('Groß-Umstadt'), 'Gross-Umstadt')
+        self.assertEqual(portals.wg_slug('Frankfurt (Oder)'), 'Frankfurt-Oder')
+
+
 class ParserTests(unittest.TestCase):
     def test_kleinanzeigen_search_page_and_detail(self):
         cards = portals.kleinanzeigen_parse(KLEINANZEIGEN_PAGE)
@@ -437,9 +471,9 @@ class ParserTests(unittest.TestCase):
             portals.immowelt_detail('<div data-testid="cdp-hardfacts-keyfacts">1 Zimmer</div>')
 
     def test_wg_gesucht_list_and_detail(self):
-        self.assertEqual(portals.wg_url('Darmstadt'), 'https://www.wg-gesucht.de/wohnungen-in-Darmstadt.23.2.1.0.html')
-        with self.assertRaises(RuntimeError):
-            portals.wg_url('Potsdam')
+        self.assertEqual(
+            portals.wg_url(('Darmstadt', 23)), 'https://www.wg-gesucht.de/wohnungen-in-Darmstadt.23.2.1.0.html'
+        )
         cards = portals.wg_parse(WG_LIST)
         self.assertEqual(
             [(c['rent'], c['area'], c['rooms'], c['availableFrom'], c['traits']) for c in cards],
@@ -578,6 +612,7 @@ class PageTests(TempData):
         search = self.stored_search(query='Darmstadt')
         cadence.save_location('kleinanzeigen', 'darmstadt', '4868')
         cadence.save_location('immoscout24', 'darmstadt', '/de/hessen/darmstadt')
+        cadence.save_location('wg-gesucht', 'darmstadt', '["Darmstadt", 23]')
 
         @asynccontextmanager
         async def browser_page(hosts):
@@ -620,7 +655,9 @@ class AreaTests(TempData):
         self.assertEqual(
             sources.out_of_area(postcode, 'wg-gesucht'), 'Sucht nur nach Ortsnamen, nicht nach Postleitzahl'
         )
-        self.assertEqual(sources.out_of_area(potsdam, 'wg-gesucht'), 'Nur Darmstadt und Umgebung')
+        self.assertIsNone(sources.out_of_area(potsdam, 'wg-gesucht'))  # not looked up yet: asked
+        cadence.save_location('wg-gesucht', 'potsdam', sources.WG_UNKNOWN)
+        self.assertEqual(sources.out_of_area(potsdam, 'wg-gesucht'), 'Kennt diesen Ort nicht')
         self.assertIsNone(sources.out_of_area(potsdam, 'nhw'))  # place unknown yet: asked as before
         cadence.save_location('osm', 'potsdam', json.dumps([52.39, 13.06, 'Brandenburg']))
         self.assertEqual(sources.out_of_area(potsdam, 'nhw'), 'Nur in Hessen')
@@ -648,6 +685,7 @@ class AreaTests(TempData):
 
     def test_a_resting_portal_is_not_disturbed(self):
         potsdam = self.stored_search(query='Potsdam', sources=['wg-gesucht'])
+        cadence.save_location('wg-gesucht', 'potsdam', sources.WG_UNKNOWN)
         fetch = AsyncMock()
         with patch.object(flats.sources, 'fetch', new=fetch):
             done = asyncio.run(worker.check(potsdam))
@@ -655,7 +693,44 @@ class AreaTests(TempData):
         self.assertEqual(done, {'wg-gesucht'})
         with store.db() as conn:
             status = dict(conn.execute('SELECT error, note, count FROM source_status').fetchone())
-        self.assertEqual(status, {'error': None, 'note': 'Nur Darmstadt und Umgebung', 'count': 0})
+        self.assertEqual(status, {'error': None, 'note': 'Kennt diesen Ort nicht', 'count': 0})
+
+
+class WgLookupTests(TempData):
+    def setUp(self):
+        super().setUp()
+        self.visited = []
+
+    async def get_html(self, source, url, follow=False):
+        self.visited.append((url, follow))
+        return 'keine Angebote'
+
+    def fetch(self, search, answer):
+        with (
+            patch.object(sources.http, 'get_json', new=AsyncMock(side_effect=answer)) as get_json,
+            patch.object(sources.http, 'get_html', self.get_html),
+        ):
+            for _ in range(2):
+                try:
+                    asyncio.run(sources.cards('wg-gesucht', search))
+                except RuntimeError as exc:
+                    self.visited.append(str(exc))
+        return get_json
+
+    def test_a_town_is_looked_up_once_and_its_list_follows_in_the_same_fetch(self):
+        frankfurt = self.stored_search(query='Frankfurt am Main', sources=['wg-gesucht'])
+        get_json = self.fetch(frankfurt, [WG_FRANKFURT])
+        self.assertEqual(get_json.await_count, 1)
+        self.assertEqual(cadence.location('wg-gesucht', 'frankfurt am main'), '["Frankfurt-am-Main", 41]')
+        page = 'https://www.wg-gesucht.de/wohnungen-in-Frankfurt-am-Main.41.2.1.0.html'
+        self.assertEqual(self.visited, [(page, True), (page, False)])
+
+    def test_an_unknown_town_is_asked_once_and_then_rests(self):
+        unknown = self.stored_search(query='Xyzqwv', sources=['wg-gesucht'])
+        get_json = self.fetch(unknown, [sources.http.NotFound('Anbieter antwortet mit HTTP 404.')])
+        self.assertEqual(get_json.await_count, 1)
+        self.assertEqual(self.visited, ['WG-Gesucht kennt den Ort „Xyzqwv“ nicht.'] * 2)
+        self.assertEqual(sources.out_of_area(unknown, 'wg-gesucht'), 'Kennt diesen Ort nicht')
 
 
 class BauvereinTests(TempData):
