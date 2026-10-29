@@ -114,8 +114,7 @@ source => {
   const vintedOwners = new Map();
   if (source === 'vinted') {
     const data = [...document.scripts].map(script => script.textContent).join('');
-    const pattern =
-      /\\?"itemId\\?":\\?"?(\d+)\\?"?\}\},\\?"catalogTracking\\?":\{[^{}]{0,200}?\\?"ownerId\\?":(\d+)/g;
+    const pattern = /\\?"itemId\\?":\\?"?(\d+)\\?"?\}\},\\?"catalogTracking\\?":\{[^{}]{0,200}?\\?"ownerId\\?":(\d+)/g;
     for (const [, item, owner] of data.matchAll(pattern)) vintedOwners.set(item, owner);
   }
   const owner = card =>
