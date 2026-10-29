@@ -1,4 +1,5 @@
 import re
+from bisect import bisect_left
 from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
@@ -253,14 +254,21 @@ def vehicle_fits(text, search):
     return not (filters.get('year_from') and year is not None and year < filters['year_from'])
 
 
+def lowest_item_price(source, search, compared):
+    """The lowest item price whose price before shipping (item + buyer protection) reaches COMPARED."""
+    return bisect_left(range(compared), compared, key=lambda price: price + search_fee(source, price, search))
+
+
 def portal_price_bounds(source, search):
     """Conservative item-price window; never drop a valid total-price match because of shipping."""
     if source == 'idealo':
         return 0, None  # the independent new-price reference must survive even above the alarm limit
-    # Shipping and buyer protection count on top of the item price, so the item itself may cost less.
-    extras = search.get('include_shipping', False) or (source == 'vinted' and search.get('include_fee', False))
-    minimum = 0 if extras else search.get('min_price', 0)
-    maximum = search['max_price'] - 1 if search.get('max_price') is not None else None
+    # Buyer protection counts on top of the item price, so the window shifts down to the item prices that fit.
+    # Shipping is unknown until read, so with shipping the item itself may cost anything below the maximum.
+    minimum = 0 if search.get('include_shipping') else lowest_item_price(source, search, search.get('min_price', 0))
+    maximum = (
+        lowest_item_price(source, search, search['max_price']) - 1 if search.get('max_price') is not None else None
+    )
     if source == 'kleinanzeigen':
         # "Zu verschenken" has no price: any lower bound would hide it at the provider.
         if search.get('free'):
