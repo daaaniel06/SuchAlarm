@@ -6,12 +6,13 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from .domain import CATEGORIES, PICKUP_SOURCES, PLATFORMS, RADII, terms
+from .domain import CATEGORIES, MAX_ALTERNATIVES, PICKUP_SOURCES, PLATFORMS, RADII, all_terms, alternatives
 
 Source = Literal['ebay', 'kleinanzeigen', 'vinted', 'idealo']
 # Changing one of these needs a fresh result; active and sources do not.
 SEARCH_FILTERS = (
     'query',
+    'alternatives',
     'min_price',
     'max_price',
     'include_shipping',
@@ -27,6 +28,7 @@ SEARCH_FILTERS = (
 )
 SEARCH_COLUMNS = (
     'query',
+    'alternatives',
     'min_price',
     'max_price',
     'include_shipping',
@@ -58,6 +60,7 @@ class Filters(BaseModel):
 class Search(BaseModel):
     kind: Literal['preis'] = 'preis'
     query: str = Field(min_length=2, max_length=180)
+    alternatives: str = Field(default='', max_length=200)  # other spellings, comma-separated
     min_price: int = Field(default=0, ge=0, le=100_000_000)
     max_price: int = Field(gt=0, le=100_000_000)
     include_shipping: bool = True
@@ -81,6 +84,7 @@ class Search(BaseModel):
         """Column values in the order of SEARCH_COLUMNS."""
         return (
             self.query,
+            self.alternatives,
             self.min_price,
             self.max_price,
             self.include_shipping,
@@ -102,7 +106,7 @@ class Search(BaseModel):
         return self.filters.stored() if name == 'filters' else getattr(self, name)
 
     def terms(self):
-        return terms({'query': self.query, 'filters': self.filters.stored()})
+        return all_terms({'query': self.query, 'alternatives': self.alternatives, 'filters': self.filters.stored()})
 
     @field_validator('query')
     @classmethod
@@ -111,6 +115,16 @@ class Search(BaseModel):
         if len(value) < 2:
             raise ValueError('Suchbegriff ist zu kurz.')
         return value
+
+    @field_validator('alternatives')
+    @classmethod
+    def clean_alternatives(cls, value):
+        spellings = list(dict.fromkeys(alternatives({'alternatives': value})))
+        if len(spellings) > MAX_ALTERNATIVES:
+            raise ValueError(f'Höchstens {MAX_ALTERNATIVES} andere Schreibweisen.')
+        if any(len(spelling) < 2 for spelling in spellings):
+            raise ValueError('Eine andere Schreibweise ist zu kurz.')
+        return ', '.join(spellings)
 
     @field_validator('sources')
     @classmethod

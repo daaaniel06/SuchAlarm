@@ -8,7 +8,7 @@ from dataclasses import asdict
 from .. import store
 from ..core import images
 from . import duplicates, sources
-from .domain import SOURCES, Listing, estimated_rent, match, profile
+from .domain import SOURCES, Listing, match, profile, warm_rent
 
 STALE = 86400  # a listing unseen this long is shown as "zuletzt gesehen" (rows.js); its twin leads instead
 
@@ -23,12 +23,11 @@ def offer(item, verdict, reasons):
     """A listing as a row of the hit list and the mail: the same keys for both kinds where they mean the same.
 
     PRICE is the warm rent in cents, ESTIMATED when only the cold rent was known."""
-    stated = item.rent
     return dict(
         asdict(item),
         kind='wohnung',
-        price=cents(stated if stated is not None else estimated_rent(item)),
-        estimated=stated is None and item.cold_rent is not None,
+        price=cents(warm_rent(item)),
+        estimated=item.rent is None and item.cold_rent is not None,
         status=verdict,
         reasons=reasons,
     )

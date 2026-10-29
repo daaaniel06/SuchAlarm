@@ -201,7 +201,8 @@ class FilterTests(unittest.TestCase):
     def test_query_text_is_shared_where_the_portal_ignores_the_filters(self):
         cheap, dear = search(max_price=80000), search(max_price=150000)
         self.assertNotEqual(domain.query_text('immoscout24', cheap), domain.query_text('immoscout24', dear))
-        self.assertEqual(domain.query_text('wg-gesucht', cheap), domain.query_text('wg-gesucht', dear))
+        self.assertNotEqual(domain.query_text('wg-gesucht', cheap), domain.query_text('wg-gesucht', dear))
+        self.assertEqual(domain.query_text('immowelt', cheap), domain.query_text('immowelt', dear))
         self.assertEqual(domain.query_text('nhw', cheap), domain.query_text('nhw', search(query='Wiesbaden')))
 
     def test_detail_page_completes_a_card(self):
@@ -471,8 +472,14 @@ class ParserTests(unittest.TestCase):
             portals.immowelt_detail('<div data-testid="cdp-hardfacts-keyfacts">1 Zimmer</div>')
 
     def test_wg_gesucht_list_and_detail(self):
+        p = {'maxRent': 700.5, 'minArea': 30.5, 'minRooms': 1.5}
         self.assertEqual(
-            portals.wg_url(('Darmstadt', 23)), 'https://www.wg-gesucht.de/wohnungen-in-Darmstadt.23.2.1.0.html'
+            portals.wg_url(('Darmstadt', 23), p, page=2),
+            'https://www.wg-gesucht.de/wohnungen-in-Darmstadt.23.1+2.1.1.html?rMax=701&sMin=30&rmMin=1',
+        )
+        self.assertEqual(
+            portals.wg_url(('Darmstadt', 23), {'maxRent': 700, 'minArea': 0, 'minRooms': 0}),
+            'https://www.wg-gesucht.de/wohnungen-in-Darmstadt.23.1+2.1.0.html?rMax=700',
         )
         cards = portals.wg_parse(WG_LIST)
         self.assertEqual(
@@ -641,9 +648,9 @@ class PageTests(TempData):
         ):
             for source in sources.PAGED:
                 asyncio.run(sources.more(source, search, 2))
-        self.assertIn('pagenumber=2', visited[0])
+        self.assertIn('pagenumber=2&pagesize=100', visited[0])
         self.assertIn('/seite:2/', visited[1])
-        self.assertTrue(visited[2].endswith('.1.html'))  # WG-Gesucht counts from 0
+        self.assertIn('.1+2.1.1.html', visited[2])  # WG-Gesucht counts from 0
 
 
 class AreaTests(TempData):
@@ -722,7 +729,7 @@ class WgLookupTests(TempData):
         get_json = self.fetch(frankfurt, [WG_FRANKFURT])
         self.assertEqual(get_json.await_count, 1)
         self.assertEqual(cadence.location('wg-gesucht', 'frankfurt am main'), '["Frankfurt-am-Main", 41]')
-        page = 'https://www.wg-gesucht.de/wohnungen-in-Frankfurt-am-Main.41.2.1.0.html'
+        page = 'https://www.wg-gesucht.de/wohnungen-in-Frankfurt-am-Main.41.1+2.1.0.html?rMax=1500&rmMin=1'
         self.assertEqual(self.visited, [(page, True), (page, False)])
 
     def test_an_unknown_town_is_asked_once_and_then_rests(self):
@@ -1158,6 +1165,36 @@ class ApiAndMailTests(TempData):
         outbox.queue_mails(time.time() + outbox.DETAIL_WAIT + 1)
         with store.db() as conn:
             self.assertEqual([r[0][-1] for r in conn.execute('SELECT url FROM outbox')], ['2'])
+
+    def queued(self):
+        with store.db() as conn:
+            return sorted(r[0][-1] for r in conn.execute('SELECT url FROM outbox'))
+
+    def test_a_known_flat_is_mailed_again_once_its_rent_falls(self):
+        flat_search = self.create(sources=['immoscout24'], filters={'min_area': 40, 'min_rooms': 2, 'exclusions': []})
+        with store.db() as conn:
+            store.put_setting(conn, 'recipients', json.dumps(['a@example.com']))
+            store.put_setting(conn, 'mail_enabled:wohnung', '1')
+        dear = [self.card(1, rent=1400), self.card(2)]
+        pages.save_result(flat_search, 'immoscout24', dear[:1], time.time() - 60)  # the starting stock, too dear
+        pages.save_result(flat_search, 'immoscout24', dear, time.time() - 60)
+        with store.db() as conn:
+            conn.execute("UPDATE listing_details SET state='done', body='{}'")
+        outbox.queue_mails()
+        self.assertEqual(self.queued(), ['2'])
+        with store.db() as conn:  # the mail went out
+            conn.execute('INSERT INTO notifications SELECT search_id, url, price, ? FROM outbox', (time.time() - 30,))
+            conn.execute('DELETE FROM outbox')
+        pages.save_result(flat_search, 'immoscout24', dear, time.time())
+        outbox.queue_mails()
+        self.assertEqual(self.queued(), [])  # the same rent: nothing new
+        pages.save_result(flat_search, 'immoscout24', [self.card(1, rent=1200), self.card(2, rent=1000)], time.time())
+        outbox.queue_mails()
+        self.assertEqual(self.queued(), [])  # their detail pages are read first
+        with store.db() as conn:
+            conn.execute("UPDATE listing_details SET state='done', body='{}'")
+        outbox.queue_mails()
+        self.assertEqual(self.queued(), ['1', '2'])  # 1 now fits, 2 is cheaper than mailed
 
 
 def duplicates_close(first, second):

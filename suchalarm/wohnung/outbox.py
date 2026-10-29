@@ -6,24 +6,26 @@ import time
 from .. import store
 from . import sources
 from .catalog import DETAIL_WINDOW, cents, completed, listings, mailable, offer, twins_by_url
-from .domain import Listing, estimated_rent, match, profile
+from .domain import Listing, match, profile, warm_rent
 
 DETAIL_WAIT = 15 * 60  # a matching listing waits this long for its detail page before it is mailed without
 
 QUEUE_SQL = (
-    'SELECT l.search_id, l.url, l.body, l.first_seen, d.state, d.body AS detail FROM listings l '
+    'SELECT l.search_id, l.url, l.body, MAX(l.first_seen, COALESCE(l.cheaper_at, 0)) AS seen, d.state, '
+    'd.body AS detail, n.price AS reported FROM listings l '
     'LEFT JOIN listing_details d ON d.url=l.url '
-    'WHERE l.first_seen>=? '
+    'LEFT JOIN notifications n ON n.search_id=l.search_id AND n.url=l.url '
+    'WHERE (l.first_seen>=? OR l.cheaper_at>=?) AND (n.url IS NULL OR l.cheaper_at>n.sent_at) '
     'AND NOT EXISTS (SELECT 1 FROM start_offers s WHERE s.search_id=l.search_id AND s.url=l.url) '
-    'AND NOT EXISTS (SELECT 1 FROM notifications n WHERE n.search_id=l.search_id AND n.url=l.url) '
     'AND NOT EXISTS (SELECT 1 FROM outbox x WHERE x.search_id=l.search_id AND x.url=l.url) '
     'AND NOT EXISTS (SELECT 1 FROM hidden h WHERE h.search_id=l.search_id AND h.url=l.url)'
 )
 
 
 def queue_mails(now=None):
-    """New listings whose check is complete go to the outbox if they fit. While mails are off or the
-    search is paused they only count as known, so switching on later sends no flood."""
+    """New listings whose check is complete go to the outbox if they fit, and so do known ones whose rent fell
+    below what was last mailed. While mails are off or the search is paused they only count as known, so
+    switching on later sends no flood."""
     now = time.time() if now is None else now
     mail = store.mail_settings(kind='wohnung')
     mailing = mail['enabled'] and mail['recipients']
@@ -32,9 +34,10 @@ def queue_mails(now=None):
         (search_id, row['url']) for search_id, search in searches.items() for row in listings(search) if row['copy']
     }
     with store.db() as conn:
-        for row in conn.execute(QUEUE_SQL, (now - DETAIL_WINDOW,)).fetchall():
+        recent = now - DETAIL_WINDOW
+        for row in conn.execute(QUEUE_SQL, (recent, recent)).fetchall():
             search = searches.get(row['search_id'])
-            if search is None or (row['state'] == 'pending' and row['first_seen'] > now - DETAIL_WAIT):
+            if search is None or (row['state'] == 'pending' and row['seen'] > now - DETAIL_WAIT):
                 continue  # the detail page decides; a paused portal must not hold a clear match for hours
             if (row['search_id'], row['url']) in followers:
                 # Another portal's copy of a flat that is mailed through its first listing: only known.
@@ -46,7 +49,9 @@ def queue_mails(now=None):
             verdict, _ = match(item, profile(search), sources.centre(search))
             if not mailable(item, verdict, row['state']):
                 continue  # looked at again while it is recent: a changed search may still want it
-            price = cents(item.rent if item.rent is not None else estimated_rent(item)) or 0
+            price = cents(warm_rent(item)) or 0
+            if row['reported'] is not None and price >= row['reported']:
+                continue  # already mailed at this rent or a lower one
             if search['active'] and mailing:
                 conn.execute(
                     'INSERT OR IGNORE INTO outbox(search_id,url,price,created_at) VALUES (?,?,?,?)',

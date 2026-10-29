@@ -5,7 +5,8 @@ Wie Suchalarm Preise vergleicht, Anbieter abfragt und Mails verschickt. Der Übe
 ## Suchen und Treffer
 
 - Eine Suche hat Suchbegriff, Preisspanne (optionaler Mindestpreis, Höchstpreis), Quellen und Ausschlusswörter.
-- Alle Suchwörter müssen im Angebotstitel vorkommen, Akzente zählen nicht („Résident“ = „Resident“). Plattform und Edition gehören daher in den Suchbegriff.
+- Unter „Weitere Optionen → Auch suchen nach“ stehen bis zu zwei andere Schreibweisen („RE Requiem“). Jede ist ein eigener Seitenabruf bei eBay, Kleinanzeigen und Vinted und wartet auf ihren Platz im Budget; ein Treffer muss die Wörter einer der Schreibweisen enthalten. idealo sucht den Neupreis nur mit dem Suchbegriff.
+- Alle Suchwörter müssen im Angebotstitel vorkommen, Akzente zählen nicht („Résident“ = „Resident“). Zwei Wörter dürfen auch zusammengeschrieben sein und umgekehrt („Spiderman“ = „Spider-Man“, „iPhone13“ = „iPhone 13“). Plattform und Edition gehören daher in den Suchbegriff.
 - Angebote unter dem Mindestpreis (etwa 3-€-Ramsch) werden komplett ausgeblendet und lösen keine Mail aus. Maßgeblich ist der Vergleichspreis, bei unbekanntem Versand der Artikelpreis.
 - „Passend“ richtet sich nach den Preis- und Versandfiltern. Eine aktuelle Quellenstörung verschiebt bereits gespeicherte passende Angebote nicht nach „Alle“; der Quellenstatus bleibt separat sichtbar.
 - Über den Treffern steht der idealo-Neupreis als Vergleich. Ein Klick auf einen Treffer öffnet das Angebot beim Anbieter.
@@ -24,6 +25,8 @@ Wie Suchalarm Preise vergleicht, Anbieter abfragt und Mails verschickt. Der Übe
   - Kleinanzeigen-Grenzen werden nach außen auf ganze Euro gerundet.
 - Die genaue Prüfung von Centbeträgen, Versand und Suchwörtern bleibt lokal.
 - eBay wird explizit auf Artikelstandort Deutschland begrenzt; erkennbar ausländische Artikelstandorte werden zusätzlich beim Auslesen verworfen. Alte weltweite eBay-Ergebnisse teilen sich keinen Cache mit dieser Suche.
+- eBay sortiert nach „Beste Ergebnisse“ und liefert 240 Angebote pro Seite statt 60.
+- Kleinanzeigen sortiert nach „Neueste“: Bei Abrufen alle 15 Minuten steht jedes neue Angebot mindestens einmal auf der ersten Seite.
 - Vinted nutzt die native Relevanzsortierung, damit billige andere Spiele nicht die erste Seite füllen; passende Treffer sortiert die App anschließend nach Artikel- oder Gesamtpreis.
 - idealo bleibt für den unabhängigen Neupreisvergleich ohne Preisgrenze. Bei idealo zählt immer der Gesamtpreis inklusive Versand, unabhängig von „Versand einrechnen“: Gewählt wird der Shop mit dem günstigsten Gesamtpreis, und nur dieser löst einen Alarm aus. Shops mit unbekanntem Versand haben keinen gültigen Gesamtpreis. Zeigt eine Angebotskarte Artikel- und Gesamtpreis inklusive Versand, wird die Differenz als Versandkosten übernommen.
 - Unveränderte gespeicherte Seiten können nach einer Parserkorrektur lokal neu ausgewertet werden. Das startet keinen zusätzlichen Anbieterabruf und verändert weder Prüfzeitpunkt noch 12-Stunden-Takt.
@@ -36,7 +39,7 @@ Wie Suchalarm Preise vergleicht, Anbieter abfragt und Mails verschickt. Der Übe
 - Ausblenden lehrt die Kategorie: Ein Wort, das in mindestens zwei ausgeblendeten Titeln steht (ohne die Suchwörter ihrer Suche) und dort öfter als in den behaltenen Treffern, filtert ab dem nächsten Abruf alle Suchen dieser Kategorie mit, nie aber ein Wort der eigenen Suche. Wiederherstellen nimmt die Lektion zurück; Titel ausgeblendeter Angebote bleiben gespeichert, auch wenn das Angebot verschwindet (preis.hidden_titles).
 - Händler-Signal: Hat ein Verkäufer drei oder mehr passende Inserate in einem Ergebnis, fliegen alle seine Inserate raus. Wer sein eigenes Exemplar verkauft, stellt es einmal ein; Poster, Mauspads und Schilder kommen in Serien. Bisher nur bei Vinted, wo die Verkäufer-ID in den eingebetteten Seitendaten steht (Stand 29.10.2026); eBay-Händler mit echter Ware sollen nicht wegfallen, Kleinanzeigen nennt den Verkäufer nicht auf der Karte.
 - Bei eBay (`_sacat`), Kleinanzeigen (`c…`) und Vinted (`catalog[]`) sucht die App nur in der passenden Rubrik (Stand 23.10.2026 live geprüft; Elektronik bei eBay ohne Rubrik, weil es dort keine gemeinsame gibt).
-- Videospiele haben eine Plattform, die wie ein Suchwort im Titel stehen muss. Ausnahme Vinted: Dort filtert Vinted selbst nach Plattform (`video_game_platform_ids[]`, Stand 29.10.2026 live geprüft), der Titel muss sie nicht nennen. Ein Titel, der nur andere Plattformen nennt, fliegt überall raus, weil Vinted die Liste sonst mit anderen Plattformen auffüllt.
+- Videospiele haben eine Plattform, die wie ein Suchwort im Titel stehen muss. Ausnahme Vinted und eBay: Dort filtert der Anbieter selbst nach Plattform (Vinted `video_game_platform_ids[]`, eBay das Artikelmerkmal `Plattform`, Stand 29.10.2026 live geprüft), der Titel muss sie nicht nennen. Für Switch 2 hat eBay noch kein Merkmal, dort zählt weiter der Titel. Ein Titel, der nur andere Plattformen nennt, fliegt überall raus, weil die Anbieter ihre Listen sonst mit anderen Plattformen auffüllen bzw. Verkäufer das Merkmal falsch setzen.
 - Autos haben „Erstzulassung ab“ und „Kilometerstand bis“. Beides geht als Filter an Kleinanzeigen, und auf der Karte genannte Werte außerhalb der Grenzen werden zusätzlich lokal verworfen. Fehlende Angaben bleiben drin. Bei eBay gelten diese Filter nicht, das Formular sagt das.
 - „Verhandlungsbasis zulassen“ nimmt VB-Angebote mit Preis auf, der genannte Betrag zählt. Ohne diese Option werden VB-Angebote ausgeschlossen, ebenso Auktionen.
 - „Zu verschenken“ nimmt Gratis-Angebote von Kleinanzeigen auf. Für sie gilt der Mindestpreis nicht, und Kleinanzeigen bekommt dann keine untere Preisgrenze (sonst blendet es sie selbst aus).
@@ -96,7 +99,7 @@ Zentrale Taktung (`cadence.py`, `cadence.db`):
 
 - Unter Mails bis zu fünf Empfänger eintragen, Rhythmus wählen (sofort, alle 30 Minuten, täglich; bei „Sofort“ optional Pakete von 2–3 Angeboten, spätestens nach 2 Stunden), Testmail senden und Benachrichtigungen einschalten. Es werden keine Empfänger oder aktiven Suchaufträge vorab angelegt.
 - Neue Treffer aller Suchen landen in einem Postausgang und kommen gesammelt in einer Mail (Text und HTML).
-- Der erste lesbare Abruf einer Quelle ist der Startstand und löst keine Mail aus. Gleiche Angebote melden sich erst bei einem weiteren Preisrückgang erneut.
+- Der erste lesbare Abruf einer Quelle ist der Startstand und löst keine Mail aus. Gleiche Angebote melden sich erst bei einem weiteren Preisrückgang erneut. Bei Wohnungen gilt das für die Warmmiete: Sinkt sie bei einem bekannten Inserat, auch aus dem Startstand oder einem vorher zu teuren, liest Suchalarm die Detailseite neu und meldet es, wenn es jetzt passt und günstiger ist als zuletzt gemeldet.
 - Was bei ausgeschalteten Mails oder pausierten Suchen gefunden wird, gilt als bekannt und wird später nicht nachgeschickt.
 - Lehnt der Mailserver eine Mail sicher ab, bleiben die Angebote im Postausgang und werden nach 10 Minuten erneut versucht.
 - Ist unklar, ob die Mail angekommen ist (Verbindung während der Übergabe abgebrochen oder Neustart beim Versand), wird sie nicht erneut gesendet: Doppelte Mails zu vermeiden ist wichtiger als eine fehlende. Die Mails-Seite zeigt den Ausgang jeder Mail.

@@ -92,7 +92,7 @@
 <div class="category-chips" id="category-chips" role="group" aria-label="Kategorie"></div>
 <div class="group form-group">
 <label class="field stacked"><span>Suchbegriff</span><input id="query" required minlength="2" maxlength="180" placeholder="Resident Evil Requiem"></label>
-<label class="field" data-filter="platform"><span><b>Plattform</b><small>Muss im Titel stehen</small></span><span class="unit-input"><select id="platform"></select><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span></label>
+<label class="field" data-filter="platform"><span><b>Plattform</b><small>Bei Kleinanzeigen muss sie im Titel stehen</small></span><span class="unit-input"><select id="platform"></select><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span></label>
 </div>
 <div class="group form-group">
 <div class="field"><span><b>Preis</b><small>von – bis</small></span><span class="range-input"><input id="min-price" type="number" inputmode="decimal" min="0" max="1000000" step="0.01" placeholder="0" aria-label="Mindestpreis in Euro"><em>–</em><input id="max-price" type="number" inputmode="decimal" min="0.01" max="1000000" step="0.01" required placeholder="35" aria-label="Höchstpreis in Euro"><em>€</em></span></div>
@@ -115,6 +115,9 @@
 <div class="source-picker" role="group" aria-labelledby="sources-label"><label class="chip source-chip"><input type="checkbox" name="source" value="ebay"><span class="source-mark ebay" aria-hidden="true">EB</span>eBay</label><label class="chip source-chip"><input type="checkbox" name="source" value="kleinanzeigen"><span class="source-mark kleinanzeigen" aria-hidden="true">KA</span>Kleinanzeigen</label><label class="chip source-chip"><input type="checkbox" name="source" value="vinted"><span class="source-mark vinted" aria-hidden="true">VI</span>Vinted</label><label class="chip source-chip"><input type="checkbox" name="source" value="idealo"><span class="source-mark idealo" aria-hidden="true">ID</span>idealo</label></div>
 <p class="group-note" id="source-note" hidden></p>
 <details class="more" id="more"><summary><span>Weitere Optionen</span><small id="more-summary"></small><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></summary>
+<div class="group form-group">
+<label class="field stacked"><span>Auch suchen nach</span><input id="alternatives" maxlength="200" placeholder="z. B. RE9, RE Requiem (höchstens 2)"></label>
+</div>
 <div class="group form-group">
 <label class="field" id="fee-field"><span><b>Käuferschutz einrechnen</b><small>Vinted: 5 % + 0,70 € pro Kauf</small></span><input id="include-fee" class="switch" type="checkbox" checked></label>
 <label class="field"><span><b>Suche aktiv</b><small>Pausierte Suchen verschicken keine Mails</small></span><input id="active" class="switch" type="checkbox" checked></label>

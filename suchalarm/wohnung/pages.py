@@ -11,8 +11,8 @@ from .. import store
 from ..core import cadence
 from ..status import STATUS_COLUMNS
 from . import sources
-from .details import FETCH_TIMEOUT
-from .domain import WHOLE_STOCK, could_match, profile
+from .details import FETCH_TIMEOUT, read_again
+from .domain import WHOLE_STOCK, Listing, cheaper, could_match, profile
 
 log = logging.getLogger('suchalarm')
 
@@ -39,29 +39,55 @@ def save_result(search, source, listings, now):
         ).fetchone()
         baseline = {listing.url for listing in listings} if not seen and not succeeded else set()
         conn.executemany('INSERT OR IGNORE INTO start_offers VALUES (?,?)', [(sid, url) for url in baseline])
-        if source in WHOLE_STOCK:
-            conn.execute('DELETE FROM listings WHERE search_id=? AND source=?', (sid, source))
         new = _store(
             conn, sid, source, listings, seen | dict.fromkeys(baseline, now), wanted, now, sources.centre(search)
         )
+        if source in WHOLE_STOCK:
+            _drop_let(conn, sid, source, listings)
         conn.execute(STATUS_COLUMNS + 'VALUES (?,?,?,NULL,?,0)', (sid, source, now, len(listings)))
         _more_after(conn, sid, source, 1, listings, new)
     return new
 
 
+def _drop_let(conn, sid, source, listings):
+    """A landlord's flat missing from its whole stock is let."""
+    listed = {item.url for item in listings}
+    stored = [row[0] for row in conn.execute('SELECT url FROM listings WHERE search_id=? AND source=?', (sid, source))]
+    conn.executemany(
+        'DELETE FROM listings WHERE search_id=? AND url=?', [(sid, url) for url in stored if url not in listed]
+    )
+
+
 def _store(conn, sid, source, listings, seen, wanted, now, middle=None):
     """Write listings (SEEN: url -> first_seen of those known); queue detail pages of new ones that can
     still fit. Returns the new URLs."""
+    before = {
+        url: Listing(**json.loads(body))
+        for url, body in conn.execute('SELECT url, body FROM listings WHERE search_id=? AND source=?', (sid, source))
+    }
     conn.executemany(
-        'INSERT OR REPLACE INTO listings VALUES (?,?,?,?,?,?)',
+        'INSERT INTO listings(search_id,source,url,body,first_seen,last_seen) VALUES (?,?,?,?,?,?) '
+        'ON CONFLICT(search_id,url) DO UPDATE SET body=excluded.body, last_seen=excluded.last_seen',
         [(sid, source, item.url, json.dumps(asdict(item)), seen.get(item.url) or now, now) for item in listings],
     )
+    dropped = [item.url for item in listings if item.url in before and cheaper(before[item.url], item)]
+    _mark_cheaper(conn, sid, source, dropped, now)
     new = [item for item in listings if item.url not in seen]
     conn.executemany(
         "INSERT OR IGNORE INTO listing_details(url,source,state,created_at) VALUES (?,?,'pending',?)",
         [(item.url, source, now) for item in new if source in sources.DETAILS and could_match(item, wanted, middle)],
     )
     return {item.url for item in new}
+
+
+def _mark_cheaper(conn, sid, source, urls, now):
+    """Listings that now ask less rent: their detail page is read (again; it states the rent that counts), and
+    the starting stock no longer keeps them out of the mail. outbox.py mails them if the rent is below what
+    was last mailed."""
+    conn.executemany('UPDATE listings SET cheaper_at=? WHERE search_id=? AND url=?', [(now, sid, url) for url in urls])
+    conn.executemany('DELETE FROM start_offers WHERE search_id=? AND url=?', [(sid, url) for url in urls])
+    if source in sources.DETAILS:
+        read_again(conn, source, urls, now)
 
 
 def _more_after(conn, sid, source, page, listings, new):

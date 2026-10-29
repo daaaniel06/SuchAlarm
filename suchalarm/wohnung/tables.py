@@ -34,4 +34,10 @@ def _move(conn):
         store.move(conn, 'wohnung', table)
 
 
-MIGRATIONS = (_create, _move)
+def _cheaper_at(conn):
+    """When a listing last asked less rent than before: it may be mailed again (outbox.py)."""
+    if 'cheaper_at' not in {r[1] for r in conn.execute('PRAGMA wohnung.table_info(listings)')}:
+        conn.execute('ALTER TABLE wohnung.listings ADD COLUMN cheaper_at REAL')
+
+
+MIGRATIONS = (_create, _move, _cheaper_at)

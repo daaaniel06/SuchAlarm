@@ -12,7 +12,7 @@ from suchalarm import store, worker
 from suchalarm.app import app
 from suchalarm.core import cadence
 from suchalarm.preis import sources
-from suchalarm.preis.domain import Offer, in_range, select_offers, terms, title_fits, too_cheap, vehicle, wanted_words
+from suchalarm.preis.domain import Offer, in_range, select_offers, title_fits, too_cheap, vehicle, wanted_words
 from suchalarm.preis.sources import parse_rows, place_of, search_url
 
 
@@ -48,11 +48,11 @@ class CategoryTests(unittest.TestCase):
         cadence.save_location('kleinanzeigen', '10115', '9668')
         self.assertEqual(
             search_url('kleinanzeigen', 'Ecksofa', self.sofa),
-            'https://www.kleinanzeigen.de/s-preis::300/Ecksofa/k0c80l9668r25?sortingField=SORTING_PRICE',
+            'https://www.kleinanzeigen.de/s-preis::300/Ecksofa/k0c80l9668r25?sortingField=SORTING_DATE',
         )
         self.assertEqual(
             search_url('kleinanzeigen', 'VW Golf', self.car),
-            'https://www.kleinanzeigen.de/s-preis::300/VW-Golf/k0c216l9668r100+autos.ez_i:2012%2C+autos.km_i:%2C150000?sortingField=SORTING_PRICE',
+            'https://www.kleinanzeigen.de/s-preis::300/VW-Golf/k0c216l9668r100+autos.ez_i:2012%2C+autos.km_i:%2C150000?sortingField=SORTING_DATE',
         )
 
     def test_ebay_searches_around_postcode_instead_of_germany(self):
@@ -69,10 +69,15 @@ class CategoryTests(unittest.TestCase):
             category='videospiele',
             filters={'platform': 'ps5'},
         )
-        params = parse_qs(urlsplit(search_url('ebay', terms(game), game)).query)
+        params = parse_qs(urlsplit(search_url('ebay', wanted_words('ebay', game), game)).query)
         self.assertEqual(
-            (params['_sacat'], params['_nkw'], params['LH_LocatedIn']), (['139973'], ['Resident Evil PS5'], ['1'])
+            (params['_sacat'], params['_nkw'], params['LH_LocatedIn']), (['139973'], ['Resident Evil'], ['1'])
         )
+        # eBay's own filter links carry the item specific encoded twice.
+        self.assertIn('Plattform=Sony%2520PlayStation%25205', search_url('ebay', 'Resident Evil', game))
+        switch2 = dict(game, filters={'platform': 'switch2'})  # no eBay value: the title names it
+        self.assertEqual(wanted_words('ebay', switch2), 'Resident Evil Switch 2')
+        self.assertNotIn('Plattform', search_url('ebay', 'Resident Evil Switch 2', switch2))
         vinted = parse_qs(urlsplit(search_url('vinted', wanted_words('vinted', game), game)).query)
         self.assertEqual(vinted['catalog[]'], ['3026'])
         # Vinted filters the platform itself, so the platform word stays out of the search text.
@@ -88,8 +93,10 @@ class CategoryTests(unittest.TestCase):
         self.assertFalse(title_fits('vinted', 'Resident Evil Requiem Xbox Series X', game))
         self.assertFalse(title_fits('vinted', 'Alan Wake 2 PS5', game))
         # Without a platform filter at the provider the title still has to name it.
-        self.assertFalse(title_fits('ebay', 'Resident Evil Requiem', game))
-        self.assertTrue(title_fits('ebay', 'Resident Evil Requiem PlayStation 5', game))
+        self.assertFalse(title_fits('kleinanzeigen', 'Resident Evil Requiem', game))
+        self.assertTrue(title_fits('kleinanzeigen', 'Resident Evil Requiem PlayStation 5', game))
+        self.assertTrue(title_fits('ebay', 'Resident Evil Requiem', game))  # eBay filters it as well
+        self.assertFalse(title_fits('ebay', 'Resident Evil Requiem Nintendo Switch 2', game))
 
     def test_switch_2_is_not_also_switch(self):
         switch = dict(query='Mario Kart World', filters={'platform': 'switch'}, excluded='')
@@ -205,6 +212,40 @@ class CategoryTests(unittest.TestCase):
         self.assertTrue(load.call_args_list[1].kwargs['follow'])  # the second page waits for its own slot
         self.assertNotEqual(cadence.query_key('kleinanzeigen', search), cadence.query_key('kleinanzeigen', self.sofa))
 
+    def test_other_spellings_are_searched_one_page_each_and_count_as_a_match(self):
+        cadence.save_location('kleinanzeigen', '10115', '9668')
+        search = dict(self.sofa, query='Ecksofa', alternatives='Eckcouch')
+
+        def card(n, title):
+            return dict(title=title, url=f'https://www.kleinanzeigen.de/s-anzeige/sofa/{n}-88-3331', price='100 €',
+                        text=f'10115 Mitte(2 km) {title} 100 €')  # fmt: skip
+
+        pages = {
+            search_url('kleinanzeigen', 'Ecksofa', search): [card(1, 'Ecksofa grau')],
+            search_url('kleinanzeigen', 'Eckcouch', search): [card(2, 'Eckcouch Leder'), card(1, 'Ecksofa grau')],
+        }
+        load = AsyncMock(side_effect=lambda page, source, url, follow=False: dict(rows=pages[url], text=''))
+
+        @asynccontextmanager
+        async def browser(source):
+            yield None
+
+        with (
+            patch.object(sources, 'load_page', load),
+            patch.object(sources, 'browser_page', browser),
+            patch.object(sources.images, 'remember'),
+        ):
+            offers, _ = asyncio.run(sources.fetch.__wrapped__('kleinanzeigen', search))
+        self.assertEqual(sorted(o.title for o in offers), ['Eckcouch Leder', 'Ecksofa grau'])  # each card once
+        self.assertEqual([c.args[3] for c in load.call_args_list], [False, True])  # the second waits for its slot
+        self.assertNotEqual(cadence.query_key('kleinanzeigen', search), cadence.query_key('kleinanzeigen', self.sofa))
+        self.assertTrue(title_fits('ebay', 'Eckcouch Leder', search))
+        self.assertFalse(title_fits('ebay', 'Sofa Leder', search))
+        idealo = dict(search, sources=['idealo'])
+        self.assertEqual(
+            cadence.query_key('idealo', idealo), cadence.query_key('idealo', self.sofa)
+        )  # new price: query only
+
 
 class CategoryApiTests(unittest.TestCase):
     def setUp(self):
@@ -228,6 +269,18 @@ class CategoryApiTests(unittest.TestCase):
     def tearDown(self):
         self.env.stop()
         self.tmp.cleanup()
+
+    def test_other_spellings_are_cleaned_and_limited(self):
+        created = self.client.post(
+            '/api/searches', json=dict(self.payload, alternatives=' Eckcouch ,, Ecksofa  L ,Eckcouch')
+        )
+        self.assertEqual(created.status_code, 201)
+        stored = store.search(created.json()['id'])
+        self.assertEqual(stored['alternatives'], 'Eckcouch, Ecksofa L')
+        self.assertEqual(
+            self.client.post('/api/searches', json=dict(self.payload, alternatives='a, b, c')).status_code, 422
+        )
+        self.assertEqual(self.client.post('/api/searches', json=dict(self.payload, alternatives='x')).status_code, 422)
 
     def test_pickup_rules(self):
         self.assertEqual(

@@ -1,7 +1,7 @@
 """What hiding teaches: titles of hidden offers are kept, and their typical words filter the category's next checks."""
 
 from .. import store
-from .domain import learned_words, terms
+from .domain import all_terms, learned_words
 
 
 def _remember_hidden(conn):
@@ -19,7 +19,7 @@ def _remember_hidden(conn):
 def learned(search):
     """The words hiding taught the category of SEARCH, across all product searches of that category."""
     category = search.get('category') or 'sonstiges'
-    wanted = {s['id']: terms(s) for s in store.searches('preis') if (s.get('category') or 'sonstiges') == category}
+    wanted = {s['id']: all_terms(s) for s in store.searches('preis') if (s.get('category') or 'sonstiges') == category}
     ids = list(wanted)
     marks = ','.join('?' * len(ids))
     with store.db() as conn:

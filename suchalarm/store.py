@@ -232,6 +232,12 @@ def _add_fee(conn):
         conn.execute('ALTER TABLE searches ADD COLUMN include_fee INTEGER NOT NULL DEFAULT 1')
 
 
+def _add_alternatives(conn):
+    """Other spellings a product search also looks for, comma-separated like the excluded words."""
+    if 'alternatives' not in {r[1] for r in conn.execute('PRAGMA table_info(searches)')}:
+        conn.execute("ALTER TABLE searches ADD COLUMN alternatives TEXT NOT NULL DEFAULT ''")
+
+
 # Each entry runs once; PRAGMA user_version counts the applied ones. Only ever append.
 MIGRATIONS = (
     _migrate_legacy,
@@ -246,6 +252,7 @@ MIGRATIONS = (
     _moved,  # more_pages
     _moved,  # separated
     _add_fee,
+    _add_alternatives,
 )
 
 

@@ -108,6 +108,16 @@ def backfill_step(now=None):
     return None
 
 
+def read_again(conn, source, urls, now):
+    """Queue the detail pages of URLS (of SOURCE) like new ones, also those read before."""
+    conn.executemany(
+        "INSERT INTO listing_details(url,source,state,created_at) VALUES (?,?,'pending',?) ON CONFLICT(url) DO "
+        "UPDATE SET state='pending', attempts=0, next_at=0, error=NULL, created_at=excluded.created_at "
+        "WHERE state!='pending'",
+        [(url, source, now) for url in urls],
+    )
+
+
 def request_detail(conn, url, now=None):
     """The user asks for a listing's detail page (the starting stock has none): it is queued like a new one.
     False if no search lists the URL or its portal has no detail page."""

@@ -287,13 +287,10 @@ def query_text(source, search):
         return 'whole stock'
     p = profile(search)
     values = [place_query(p).casefold(), (p['place'] or {}).get('kind') or '', str(p['radius'])]
+    if source in ('immoscout24', 'kleinanzeigen-wohnung', 'wg-gesucht'):
+        values += [f'{p["maxRent"]:g}', f'{p["minArea"]:g}', f'{p["minRooms"]:g}']
     if source in ('immoscout24', 'kleinanzeigen-wohnung'):
-        values += [
-            f'{p["maxRent"]:g}',
-            f'{p["minArea"]:g}',
-            f'{p["minRooms"]:g}',
-            str('Tauschwohnung' in p['exclusions']),
-        ]
+        values.append(str('Tauschwohnung' in p['exclusions']))
     return '\n'.join(values)
 
 
@@ -313,6 +310,17 @@ def estimated_rent(listing):
         return None
     cold = listing.cold_rent
     return round(cold + (listing.area * RUNNING_COSTS_PER_SQM if listing.area else cold * RUNNING_COSTS_SHARE))
+
+
+def warm_rent(listing):
+    """The warm rent as stated, else estimated from the cold rent; None if the listing names neither."""
+    return listing.rent if listing.rent is not None else estimated_rent(listing)
+
+
+def cheaper(old, new):
+    """Whether NEW, a later card of the same listing, asks less rent than OLD."""
+    before, now = warm_rent(old), warm_rent(new)
+    return before is not None and now is not None and now < before
 
 
 def _day(value):
@@ -374,7 +382,7 @@ def match(listing, profile, centre=None):
     if available and profile.get('moveInFrom') and available < profile['moveInFrom']:
         return 'excluded', [f'Schon ab {_day(available)} frei']
     missing = []
-    rent = listing.rent if listing.rent is not None else estimated_rent(listing)
+    rent = warm_rent(listing)
     if rent is not None and rent > profile['maxRent']:
         return 'excluded', ['Warmmiete zu hoch' if listing.rent is not None else 'Warmmiete (geschätzt) zu hoch']
     if rent is None:
