@@ -1,6 +1,7 @@
 import re
 import unicodedata
 from bisect import bisect_left
+from collections import Counter
 from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
@@ -45,7 +46,9 @@ CATEGORIES: dict[str, dict[str, Any]] = {
         hint='PlayStation, Switch, Xbox',
         delivery='versand',
         sources=['ebay', 'kleinanzeigen', 'vinted', 'idealo'],
-        excluded='Hülle, nur Cover, Code, Download',
+        # Decoration is sold under a game's name and filed as the game itself (Vinted, 29.10.2026).
+        excluded='Hülle, nur Cover, Code, Download, Poster, Plakat, Affiche, Mauspad, Mousepad, Tapis de souris, '
+        'Schild, Targa, Bilderrahmen, Cadre, Flagge, Drapeau, Figur, Figurine, Sticker',
         negotiable=False,
         free=False,
         radius=0,
@@ -263,11 +266,38 @@ def named_platforms(title):
 
 
 def title_fits(source, title, search):
-    """Whether an offer title belongs to the search: all its words, none excluded, not only other platforms.
+    """Whether an offer title belongs to the search: all its words, nothing excluded, not only other platforms.
     A provider's platform filter fills up with other platforms once its matches run out."""
     chosen, named = platform(search), named_platforms(title)
     return matches(title, wanted_words(source, search), search.get('excluded', '')) and (
         chosen is None or not named or chosen in named
+    )
+
+
+def taught_away(title, search):
+    """Whether TITLE carries a word hiding taught the search's category (learning.py), never one of its own words.
+    Applied per search after a shared provider result, like the search's own excluded words."""
+    own = set(normalized(terms(search)).split())
+    return any(word not in own for word in set(normalized(title).split()) & set(search.get('learned', ())))
+
+
+LEARN_FROM = 2  # hidden titles a word needs before it filters on its own
+
+
+def learned_words(hidden, kept_titles):
+    """Words that mark what gets hidden: in at least LEARN_FROM hidden titles and in more hidden than kept ones.
+    HIDDEN holds (title, the words its search asked for); those words say what was wanted, never why it was hidden.
+    Numbers never count: they are editions, sizes and years, not a kind of junk."""
+
+    def words(title):
+        return set(normalized(title).split())
+
+    hidden_counts = Counter(word for title, wanted in hidden for word in words(title) - words(wanted))
+    kept_counts = Counter(word for title in kept_titles for word in words(title))
+    return sorted(
+        word
+        for word, count in hidden_counts.items()
+        if count >= LEARN_FROM and count > kept_counts[word] and not word.isdigit()
     )
 
 
@@ -344,11 +374,22 @@ def select_offers(offers, search):
 
     for offer in offers:
         offer = replace(offer, title=clean_title(offer.source, offer.title))
-        if not title_fits(offer.source, offer.title, search):
+        if not title_fits(offer.source, offer.title, search) or taught_away(offer.title, search):
             continue
         if offer.url not in result or rank(offer) < rank(result[offer.url]):
             result[offer.url] = offer
-    return list(result.values())
+    dealers = mass_sellers(result.values())
+    return [offer for offer in result.values() if (offer.source, offer.owner) not in dealers]
+
+
+DEALER_FROM = 3  # matching listings of one seller in one result that mark a merchandise dealer
+
+
+def mass_sellers(offers):
+    """(source, owner) of sellers with DEALER_FROM or more matching listings in one result. Someone selling their
+    own copy lists it once; posters, mouse pads and signs come in series under the product's name."""
+    counts = Counter((offer.source, offer.owner) for offer in offers if offer.owner)
+    return {seller for seller, count in counts.items() if count >= DEALER_FROM}
 
 
 @lru_cache(maxsize=4096)  # the same titles and search words come back with every check
@@ -420,6 +461,7 @@ class Offer:
     shipping: int | None = None
     seller: str = ''
     condition: str = ''
+    owner: str = ''  # the provider's ID of the seller, only for the dealer signal; not kept with the hits, never shown
 
     @classmethod
     def from_row(cls, row):

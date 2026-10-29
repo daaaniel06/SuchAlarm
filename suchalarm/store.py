@@ -84,6 +84,7 @@ class Search(TypedDict, total=False):
     free: int
     filters: dict[str, Any]
     reference: dict[str, Any] | None  # the idealo new price, added by preis/worker.hits
+    learned: list[str]  # words hiding taught the category, added by preis/worker.prepare
 
 
 # Old per-search timers; the central queue owns all timing. The columns stay for old databases.

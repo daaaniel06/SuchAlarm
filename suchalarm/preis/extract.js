@@ -24,7 +24,7 @@ source => {
       price: '[data-testid$="--price-text"], [data-testid="item-price"]',
       link: 'a[href*="/items/"]',
       seller: '[data-testid$="--owner"]',
-      condition: '[data-testid$="--description-title"]',
+      condition: '[data-testid$="--description-subtitle"]',
       shipping:
         '[data-testid="shipping-price"], [data-testid$="--shipping-price"], [data-testid="item-shipping-price"]',
     },
@@ -109,6 +109,16 @@ source => {
     }
     return '';
   };
+  // Vinted names no seller on its cards. The page's embedded data (script text, still there after hydration)
+  // follows each item ID with a tracking block holding the owner ID (live layout of 29.10.2026).
+  const vintedOwners = new Map();
+  if (source === 'vinted') {
+    const data = [...document.scripts].map(script => script.textContent).join('');
+    const pattern = /\\?"itemId\\?":\\?"?(\d+)\\?"?\}\},\\?"catalogTracking\\?":\{[^{}]{0,200}?\\?"ownerId\\?":(\d+)/g;
+    for (const [, item, owner] of data.matchAll(pattern)) vintedOwners.set(item, owner);
+  }
+  const owner = card =>
+    vintedOwners.get(card.querySelector('[data-testid^="product-item-id-"]')?.dataset.testid.match(/\d+/)?.[0]) || '';
   const rows = [...document.querySelectorAll(c.cards)].slice(0, 100).map(card => {
     const a = card.querySelector(c.link);
     let shippingText = '';
@@ -127,6 +137,7 @@ source => {
       price: text(card, c.price),
       url: a?.href || '',
       seller: source === 'ebay' ? ebaySeller(card) : text(card, c.seller),
+      owner: owner(card),
       condition: source === 'ebay' ? ebayCondition(card) : text(card, c.condition),
       shipping: text(card, c.shipping),
       location:
