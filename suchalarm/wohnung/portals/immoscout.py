@@ -65,6 +65,9 @@ def immoscout_places(entries):
     return result[:8]
 
 
+PAGE_SIZE = 100  # the app interface's largest page (50 without it; checked live on 29.10.2026)
+
+
 def immoscout_url(profile, region, coords, page=1):
     params = {
         'realestatetype': 'apartmentrent',
@@ -72,6 +75,7 @@ def immoscout_url(profile, region, coords, page=1):
         'price': f'-{profile["maxRent"]:.1f}',
         'sorting': '-firstactivation',
         'pagenumber': str(page),
+        'pagesize': str(PAGE_SIZE),
     }
     if 'Tauschwohnung' in profile.get('exclusions', []):
         params['exclusioncriteria'] = 'swapflat'

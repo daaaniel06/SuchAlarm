@@ -648,7 +648,7 @@ class PageTests(TempData):
         ):
             for source in sources.PAGED:
                 asyncio.run(sources.more(source, search, 2))
-        self.assertIn('pagenumber=2', visited[0])
+        self.assertIn('pagenumber=2&pagesize=100', visited[0])
         self.assertIn('/seite:2/', visited[1])
         self.assertIn('.1+2.1.1.html', visited[2])  # WG-Gesucht counts from 0
 
