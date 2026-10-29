@@ -461,7 +461,7 @@ class Offer:
     shipping: int | None = None
     seller: str = ''
     condition: str = ''
-    owner: str = ''  # the provider's ID of the seller, only for the dealer signal; never stored or shown
+    owner: str = ''  # the provider's ID of the seller, only for the dealer signal; not kept with the hits, never shown
 
     @classmethod
     def from_row(cls, row):
