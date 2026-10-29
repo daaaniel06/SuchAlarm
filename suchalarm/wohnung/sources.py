@@ -89,10 +89,8 @@ def out_of_area(search, source):
     if source == 'wg-gesucht':
         if place.get('kind') == 'plz':
             return 'Sucht nur nach Ortsnamen, nicht nach Postleitzahl'
-        try:
-            portals.wg_town(place.get('label') or place_query(p))
-        except RuntimeError:
-            return 'Nur Darmstadt und Umgebung'
+        if cadence.location('wg-gesucht', _key(_wg_place(p))) == WG_UNKNOWN:
+            return 'Kennt diesen Ort nicht'
     known = cadence.location('osm', _key(place_query(p)))
     if known and source == 'bauverein':
         lat, lon, _ = json.loads(known)
@@ -133,9 +131,26 @@ async def suggest(text):
     return places
 
 
+WG_UNKNOWN = ''  # kept for a town WG-Gesucht has no suggestion for, so it is asked only once
+
+
+def _wg_place(p):
+    return (p['place'] or {}).get('label') or place_query(p)
+
+
+async def _wg_city(place):
+    """What WG-Gesucht's place field suggests for the place, as stored: '[slug, ID]' or WG_UNKNOWN."""
+    try:
+        answer = await http.get_json('wg-gesucht', portals.wg_cities_url(place))
+    except http.NotFound:
+        return WG_UNKNOWN
+    city = portals.wg_city(answer, place)
+    return json.dumps(city) if city else WG_UNKNOWN
+
+
 async def _location(source, query, resolve):
     known = cadence.location(source, _key(query))
-    if known:
+    if known is not None:
         return known
     value = await resolve()
     cadence.save_location(source, _key(query), value)
@@ -234,6 +249,20 @@ async def _immowelt(p):
     return portals.immowelt_parse(data['html']) if data['rows'] else []
 
 
+async def _wg_gesucht(p, page=1):
+    """The town's list; its ID is found once through the site's place field, which takes a visit of
+    its own in the budget, so the list then follows as a further request of the same fetch."""
+    source, place = 'wg-gesucht', _wg_place(p)
+    if (p['place'] or {}).get('kind') == 'plz':
+        raise RuntimeError('WG-Gesucht sucht nur nach Ortsnamen, nicht nach Postleitzahl.')
+    looked_up = cadence.location(source, _key(place)) is None
+    city = await _location(source, place, lambda: _wg_city(place))
+    if city == WG_UNKNOWN:
+        raise RuntimeError(f'WG-Gesucht kennt den Ort „{place}“ nicht.')
+    html = await http.get_html(source, portals.wg_url(json.loads(city), page), follow=looked_up)
+    return portals.wg_parse(html)
+
+
 async def _bauverein():
     """The landlord's stock. A flat without a picture needs one more request for its reference number;
     the stock is kept in the page cache and found references for good, so a fetch that has to wait for
@@ -271,10 +300,7 @@ async def cards(source, search, page=1):
     if source == 'immowelt':
         return await _immowelt(p)
     if source == 'wg-gesucht':
-        place = p['place'] or {}
-        if place.get('kind') == 'plz':
-            raise RuntimeError('WG-Gesucht sucht nur nach Ortsnamen, nicht nach Postleitzahl.')
-        return portals.wg_parse(await http.get_html(source, portals.wg_url(place.get('label') or place_query(p), page)))
+        return await _wg_gesucht(p, page)
     if source == 'bauverein':
         return await _bauverein()
     if source == 'nhw':

@@ -64,4 +64,14 @@ from .kleinanzeigen import (  # noqa: F401
     kleinanzeigen_url,
 )
 from .nhw import NHW, NHW_LIST, nhw_detail, nhw_parse, nhw_url  # noqa: F401
-from .wg import WG_CARD, WG_TOWNS, wg_detail, wg_parse, wg_place, wg_town, wg_url  # noqa: F401
+from .wg import (  # noqa: F401
+    WG_CARD,
+    wg_cities_url,
+    wg_city,
+    wg_detail,
+    wg_parse,
+    wg_place,
+    wg_slug,
+    wg_town,
+    wg_url,
+)
