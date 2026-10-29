@@ -75,6 +75,41 @@ export const AREA_TEXT = {
     noMatch: 'Noch kein Angebot unter deinem Höchstpreis.',
   },
 };
+// Mail servers of common providers, found by the domain of the address. help: where the provider
+// hands out the app password it wants instead of the account password.
+const MAIL_PROVIDERS = [
+  {
+    domains: ['gmail.com', 'googlemail.com'],
+    host: 'smtp.gmail.com',
+    port: 587,
+    name: 'Gmail',
+    help: 'https://myaccount.google.com/apppasswords',
+  },
+  { domains: ['gmx.de', 'gmx.net', 'gmx.at', 'gmx.ch'], host: 'mail.gmx.net', port: 587 },
+  { domains: ['web.de'], host: 'smtp.web.de', port: 587 },
+  {
+    domains: ['icloud.com', 'me.com', 'mac.com'],
+    host: 'smtp.mail.me.com',
+    port: 587,
+    name: 'iCloud',
+    help: 'https://account.apple.com',
+  },
+  { domains: ['posteo.de', 'posteo.net'], host: 'posteo.de', port: 587 },
+  { domains: ['mailbox.org'], host: 'smtp.mailbox.org', port: 587 },
+  { domains: ['t-online.de'], host: 'securesmtp.t-online.de', port: 465 },
+];
+export function mailProvider(address) {
+  const domain = String(address).split('@')[1]?.trim().toLowerCase();
+  return MAIL_PROVIDERS.find(p => p.domains.includes(domain)) || null;
+}
+// "smtp.example.org:465" as typed in one field; without a port it is 587, the usual one.
+export const serverText = server => (server.host ? `${server.host}:${server.port}` : '');
+export function parseServer(text) {
+  const parts = /^\s*([^\s:]*)(?::(\d{1,5}))?\s*$/.exec(text);
+  const port = Number(parts?.[2] || 587);
+  return parts && port >= 1 && port <= 65535 ? { host: parts[1].toLowerCase(), port } : null;
+}
+
 // The key of each area's hit rows in /api/state (HITS in preis/worker.py, wohnung/worker.py).
 export const HITS = { wohnung: 'listings', preis: 'offers' };
 export function inArea(items, area, searches) {

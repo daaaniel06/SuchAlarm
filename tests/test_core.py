@@ -1,9 +1,11 @@
 import asyncio
+import json
 import os
 import smtplib
 import tempfile
 import time
 import unittest
+from contextlib import contextmanager
 from dataclasses import replace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -18,6 +20,15 @@ from suchalarm.preis.domain import Offer, canonical, clean_title, eligible, matc
 from suchalarm.preis.sources import parse_rows
 
 PAYLOAD = dict(query='Resident Evil Requiem', max_price=3500, sources=['ebay'], include_shipping=False, active=False)
+
+
+@contextmanager
+def without_smtp_env():
+    """A clean slate for the SMTP_* variables, whatever the machine running the tests has set."""
+    with patch.dict(os.environ):
+        for key in [key for key in os.environ if key.startswith('SMTP_')]:
+            del os.environ[key]
+        yield
 
 
 class DomainTests(unittest.TestCase):
@@ -655,6 +666,71 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(mail['wohnung'], {'enabled': True, 'frequency': 'Sofort', 'batch_size': 1})
         self.assertEqual(store.mail_settings(kind='preis')['frequency'], 'Täglich')  # the keys from before flats
 
+    def test_mail_server_from_the_settings_page_never_shows_its_password(self):
+        with without_smtp_env():
+            self.assertFalse(self.state()['mail']['configured'])
+            server = {'sender': 'me@gmail.com', 'password': 'secret-app-pw', 'host': 'SMTP.gmail.com', 'port': 587}
+            self.assertEqual(self.client.put('/api/mail/server', json=server).status_code, 200)
+            self.client.put('/api/mail/server', json={**server, 'password': None})  # unchanged: kept
+            state = self.client.get('/api/state')
+            self.assertNotIn('secret-app-pw', state.text)
+            mail = state.json()['mail']
+            self.assertTrue(mail['configured'])
+            self.assertEqual(
+                mail['server'],
+                {
+                    'sender': 'me@gmail.com',
+                    'host': 'smtp.gmail.com',
+                    'port': 587,
+                    'password_set': True,
+                    'fixed': False,
+                },
+            )
+            current = mailer.server()
+            self.assertEqual((current.user, current.password), ('me@gmail.com', 'secret-app-pw'))
+            self.assertEqual(current.sender, 'Suchalarm <me@gmail.com>')
+
+    def test_a_new_mail_server_forgets_the_old_password(self):
+        """Otherwise the page could send the saved password to a server of its choosing."""
+        with without_smtp_env():
+            server = {'sender': 'me@gmail.com', 'password': 'secret', 'host': 'smtp.gmail.com', 'port': 587}
+            self.client.put('/api/mail/server', json=server)
+            for moved in ({'host': 'evil.example.org'}, {'port': 25}, {'sender': 'other@gmail.com'}):
+                self.client.put('/api/mail/server', json=server)
+                self.client.put('/api/mail/server', json={**server, 'password': None, **moved})
+                self.assertFalse(self.state()['mail']['server']['password_set'], moved)
+
+    def test_mail_server_input_is_validated(self):
+        with without_smtp_env():
+            for bad in (
+                {'sender': 'a@example.com\r\nBcc: x@example.com'},
+                {'host': 'smtp.example.org:25'},
+                {'host': 'smtp example'},
+                {'port': 0},
+            ):
+                self.assertEqual(self.client.put('/api/mail/server', json=bad).status_code, 422, bad)
+            # Half filled in is fine while typing, but not ready to send.
+            self.assertEqual(self.client.put('/api/mail/server', json={'sender': 'a@example.com'}).status_code, 200)
+            self.assertFalse(self.state()['mail']['configured'])
+
+    def test_mail_server_from_compose_wins_and_cannot_be_changed(self):
+        env = {'SMTP_HOST': 'smtp.example.org', 'SMTP_FROM': 'Suchalarm <a@example.org>', 'SMTP_PASSWORD': 'pw'}
+        with without_smtp_env(), patch.dict(os.environ, env):
+            response = self.client.put('/api/mail/server', json={'sender': 'b@example.com', 'host': 'smtp.other.de'})
+            self.assertEqual(response.status_code, 409)
+            state = self.client.get('/api/state')
+            self.assertNotIn('"pw"', state.text)
+            self.assertEqual(
+                state.json()['mail']['server'],
+                {
+                    'sender': 'a@example.org',
+                    'host': 'smtp.example.org',
+                    'port': 587,
+                    'password_set': True,
+                    'fixed': True,
+                },
+            )
+
     def test_global_pause(self):
         self.assertEqual(self.client.put('/api/settings', json={'paused': True}).status_code, 200)
         self.assertTrue(self.state()['paused'])
@@ -750,6 +826,23 @@ class DeliveryOutcomeTests(unittest.TestCase):
         self.assertEqual(self.outcome(send=TimeoutError())[1], True)
         self.assertEqual(self.outcome(send=ValueError())[1], True)
         self.assertEqual(self.outcome(login=smtplib.SMTPServerDisconnected())[1], False)
+
+    def test_saved_server_logs_in_with_its_address(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        with without_smtp_env(), patch.dict(os.environ, {'DATA_DIR': tmp.name}):
+            store.init()
+            saved = {'sender': 'me@t-online.de', 'password': 'pw', 'host': 'securesmtp.t-online.de', 'port': 465}
+            with store.db() as conn:
+                store.put_setting(conn, 'mail_server', json.dumps(saved))
+            client = Mock()
+            client.__enter__ = Mock(return_value=client)
+            client.__exit__ = Mock(return_value=False)
+            with patch('smtplib.SMTP_SSL', return_value=client) as connect:
+                mailer.deliver(mailer.EmailMessage())
+            self.assertEqual(connect.call_args.args, ('securesmtp.t-online.de', 465))
+            client.starttls.assert_not_called()
+            client.login.assert_called_once_with('me@t-online.de', 'pw')
 
     def test_missing_configuration(self):
         with patch.dict(os.environ, {'SMTP_SECURITY': 'plain'}):

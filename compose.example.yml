@@ -1,4 +1,5 @@
-# Example setup: copy to compose.yml, fill in the mail settings, then `docker compose up -d`.
+# Example setup: copy to compose.yml, then `docker compose up -d`. The mail server is set up in the app
+# (Einstellungen → Mails); SMTP_* below is optional and fixes it here instead.
 # To build from source instead, replace `image:` with `build: .` and run `docker compose up -d --build`.
 # Suchalarm has no login: keep the port on 127.0.0.1 or in a private network (see README).
 services:
@@ -11,12 +12,12 @@ services:
       - suchalarm-data:/data
     environment:
       APP_URL: http://127.0.0.1:8000
-      SMTP_HOST: smtp.example.org
-      SMTP_PORT: '587'
-      SMTP_SECURITY: starttls
-      SMTP_USER: suchalarm@example.org
-      SMTP_PASSWORD: change-me
-      SMTP_FROM: Suchalarm <suchalarm@example.org>
+      # SMTP_HOST: smtp.example.org
+      # SMTP_PORT: '587'
+      # SMTP_SECURITY: starttls
+      # SMTP_USER: suchalarm@example.org
+      # SMTP_PASSWORD: change-me
+      # SMTP_FROM: Suchalarm <suchalarm@example.org>
       # Behind a reverse proxy in another container: its address or network, e.g. 172.16.0.0/12
       # FORWARDED_ALLOW_IPS: 127.0.0.1
 

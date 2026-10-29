@@ -2,6 +2,9 @@
 
 ## Unveröffentlicht
 
+### Mails
+- Der Mailserver lässt sich in der App einrichten (Einstellungen → Mails): Adresse, Passwort, Server, für bekannte Anbieter füllt sich der Server selbst. `SMTP_*` in `compose.yml` geht weiter und hat Vorrang.
+
 ### Wohnungen
 - Duplikate werden auch erkannt, wenn ein Portal nur den Ort und das andere nur den Stadtteil nennt: Die Straße darf nach dem Ort stehen, derselbe lange Titel mit gleicher Fläche zählt als Beweis, und unterschiedlich beschnittene Fotos gelten als gleich.
 

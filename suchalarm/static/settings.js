@@ -1,6 +1,6 @@
 // Settings: automatic search on top, below it the tabs Mails, Quellen (with details) and Daten.
 
-import { AREAS, AREA_TEXT, ago, escapeHtml } from './logic.js';
+import { AREAS, AREA_TEXT, ago, escapeHtml, mailProvider, parseServer, serverText } from './logic.js';
 import { $, clock, kindOfSource, safeLink } from './ui.js';
 import { STEP_LABEL, nextFetch, pill, sourceSteps } from './steps.js';
 import { api, clearAsking, message, refresh, render, state } from './page.js';
@@ -21,10 +21,10 @@ export function renderMailStatus() {
     for (const kind of AREAS) mail[kind] = { ...state.mail[kind] };
     renderMail();
   }
+  renderServerRow();
   $('test-mail').disabled = !state.mail.configured || !state.mail.recipients.length;
-  const mailError = !state.mail.configured
-    ? 'Mailserver fehlt. SMTP-Zugangsdaten in der Server-Konfiguration hinterlegen.'
-    : state.mail.error;
+  $('server-test').disabled = !state.mail.configured;
+  const mailError = state.mail.configured ? state.mail.error : '';
   $('mail-error').hidden = !mailError;
   $('mail-error').textContent = mailError || '';
   const pending = AREAS.reduce((sum, kind) => sum + (state.mail[kind].enabled ? state.mail.pending[kind] : 0), 0);
@@ -256,14 +256,70 @@ $('recipient-add').addEventListener('keydown', e => {
 });
 $('add-recipient').addEventListener('click', addRecipient);
 $('mail-form').addEventListener('submit', e => e.preventDefault());
-$('test-mail').addEventListener('click', async () => {
-  $('test-mail').disabled = true;
+async function sendTestMail(button) {
+  button.disabled = true;
   try {
+    await serverSaving;
     await api('mail/test', { method: 'POST', body: '{}' });
     message('Testmail verschickt.');
   } catch (err) {
     message(err.message, true);
   } finally {
-    $('test-mail').disabled = false;
+    button.disabled = false;
   }
+}
+$('test-mail').addEventListener('click', () => sendTestMail($('test-mail')));
+
+// The mail server: one row in the settings, its fields in a sheet. A server set in compose.yml wins
+// and can only be looked at. Each field is saved when it is left; the password is only ever sent.
+let serverSaving = Promise.resolve();
+function renderServerRow() {
+  const server = state.mail.server,
+    where = server.host ? `${server.sender || 'Ohne Adresse'} · ${server.host}` : 'Noch nicht eingerichtet';
+  $('server-text').textContent = server.fixed ? `${where} · aus compose.yml` : where;
+  $('server-edit').hidden = server.fixed;
+  $('server-edit').textContent = server.host ? 'Ändern' : 'Einrichten';
+}
+function renderServerNote() {
+  const provider = mailProvider($('server-sender').value);
+  $('server-note').hidden = !provider?.help;
+  if (provider?.help)
+    $('server-note').innerHTML =
+      `${provider.name} braucht ein <a href="${provider.help}" target="_blank" rel="noopener noreferrer">App-Passwort</a>.`;
+}
+$('server-edit').addEventListener('click', () => {
+  const server = state.mail.server;
+  $('server-sender').value = server.sender;
+  $('server-host').value = serverText(server);
+  $('server-password').value = '';
+  $('server-password').placeholder = server.password_set ? 'Gespeichert' : 'Passwort';
+  renderServerNote();
+  $('mail-server').showModal();
 });
+$('server-sender').addEventListener('input', renderServerNote);
+$('server-form').addEventListener('change', () => {
+  // A known provider fills in its server, unless one was typed by hand.
+  const provider = mailProvider($('server-sender').value),
+    host = $('server-host');
+  if (provider && !host.value.trim()) host.value = serverText(provider);
+  const server = parseServer(host.value);
+  if (!server) {
+    message('Server als smtp.beispiel.de oder smtp.beispiel.de:465 eingeben.', true);
+    return;
+  }
+  const body = { sender: $('server-sender').value.trim(), ...server };
+  if ($('server-password').value) body.password = $('server-password').value;
+  serverSaving = serverSaving.then(async () => {
+    try {
+      await api('mail/server', { method: 'PUT', body: JSON.stringify(body) });
+      await refresh();
+      // A new address or server forgets the old password, so the field asks for it again.
+      if (body.password !== undefined) $('server-password').value = '';
+      $('server-password').placeholder = state.mail.server.password_set ? 'Gespeichert' : 'Passwort';
+    } catch (err) {
+      message(err.message, true);
+    }
+  });
+});
+$('server-form').addEventListener('submit', e => e.preventDefault());
+$('server-test').addEventListener('click', () => sendTestMail($('server-test')));

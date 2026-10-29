@@ -33,6 +33,7 @@
 <div class="segment settings-tabs" id="settings-tabs" role="group" aria-label="Bereich"><button type="button" data-settings-tab="mail" aria-pressed="true">Mails</button><button type="button" data-settings-tab="sources" aria-pressed="false">Quellen</button><button type="button" data-settings-tab="data" aria-pressed="false">Daten</button></div>
 <div data-settings-panel="mail">
 <form id="mail-form">
+<div class="group form-group"><div class="field"><span><b>Mailserver</b><small id="server-text"></small></span><button type="button" class="pill compact" id="server-edit"></button></div></div>
 <div class="group form-group mail-areas">
 <div class="mail-area" data-mail-area="wohnung">
 <label class="field"><span><b>Mails zu Wohnungen</b><small>Sobald ihr Inserat geprüft ist</small></span><input class="switch" type="checkbox" data-mail="enabled" aria-label="Mails für Wohnungen"></label>
@@ -73,6 +74,17 @@
 <div class="sheet-actions"><button type="button" class="pill primary" id="application-open">Kopieren &amp; öffnen</button><button type="button" class="pill" id="application-copy">Nur kopieren</button></div>
 <div class="sheet-secondary"><button type="button" class="text-button" id="application-mark">Als beworben markieren</button><button type="button" class="text-button" id="application-unmark" hidden>Markierung entfernen</button><button type="button" class="text-button" id="application-template">Als Vorlage speichern</button></div>
 </div></dialog>
+<dialog id="mail-server" class="sheet" tabindex="-1" aria-labelledby="mail-server-title"><form class="sheet-body" id="server-form" novalidate>
+<div class="sheet-grip" aria-hidden="true"></div>
+<div class="sheet-top"><h2 id="mail-server-title" class="sheet-heading">Mailserver</h2><button type="button" class="round-button small" data-close aria-label="Mailserver schließen"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+<div class="group form-group">
+<label class="field"><span>Adresse</span><input type="email" id="server-sender" autocomplete="email" maxlength="254" placeholder="du@gmail.com"></label>
+<label class="field"><span>Passwort</span><input type="password" id="server-password" autocomplete="new-password" maxlength="256"></label>
+<label class="field"><span>Server</span><input id="server-host" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="259" placeholder="smtp.gmail.com:587"></label>
+</div>
+<p class="group-note" id="server-note" hidden></p>
+<div class="sheet-actions"><button type="button" class="pill primary" id="server-test">Testmail senden</button></div>
+</form></dialog>
 <dialog id="editor" class="sheet" aria-labelledby="editor-title"><form id="search-form" class="sheet-body" novalidate>
 <div class="sheet-grip" aria-hidden="true"></div>
 <div class="sheet-top"><h2 id="editor-title" class="sheet-heading">Neue Suche</h2><button type="button" id="close-editor" class="round-button small" aria-label="Schließen"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>

@@ -61,6 +61,34 @@ class Recipients(BaseModel):
         return result
 
 
+HOST = re.compile(r'[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*')
+
+
+class MailServer(BaseModel):
+    """The mailbox that sends the mails. Empty fields are allowed while it is being filled in."""
+
+    sender: str = Field(default='', max_length=254)
+    password: str | None = Field(default=None, max_length=256)  # None keeps the saved password
+    host: str = Field(default='', max_length=253)
+    port: int = Field(default=587, ge=1, le=65535)
+
+    @field_validator('sender')
+    @classmethod
+    def sender_address(cls, value):
+        value = value.strip()
+        if value and not EMAIL.fullmatch(value):
+            raise ValueError('Gültige Mailadresse eingeben.')
+        return value
+
+    @field_validator('host')
+    @classmethod
+    def host_name(cls, value):
+        value = value.strip().lower()
+        if value and not HOST.fullmatch(value):
+            raise ValueError('Gültigen Server eingeben, etwa smtp.gmail.com.')
+        return value
+
+
 def _kind(value):
     return (value.get('kind') if isinstance(value, dict) else getattr(value, 'kind', None)) or DEFAULT
 

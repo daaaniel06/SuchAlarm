@@ -431,6 +431,15 @@ def mail_settings(values=None, kind='preis'):
     }
 
 
+MAIL_SERVER_DEFAULT = {'sender': '', 'password': '', 'host': '', 'port': 587}
+
+
+def mail_server(values=None):
+    """The mail server entered on the settings page; the password never leaves the server."""
+    values = settings() if values is None else values
+    return {**MAIL_SERVER_DEFAULT, **json.loads(values.get('mail_server', '{}'))}
+
+
 def backup(keep=7):
     """A consistent copy of suchalarm.db and every kind's file through SQLite's backup API, one per day;
     the newest KEEP of each stay. Returns the copy of suchalarm.db."""
