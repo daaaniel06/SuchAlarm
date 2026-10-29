@@ -37,6 +37,16 @@ VINTED_PLATFORMS = {
     'xbox-one': ('1290',),
     'pc': ('1276',),
 }
+# Decoration sold under a game's name and filed as the game itself (Vinted, checked 29.10.2026): posters,
+# mouse pads, signs, flags, figures. A category drops such titles on top of a search's own excluded words.
+MERCHANDISE = {
+    'videospiele': (
+        'poster, plakat, affiche, locandina, mauspad, mousepad, tapis de souris, schild, targa, cadre, '
+        'bilderrahmen, flagge, fahne, drapeau, figur, figurine, statue, sticker, aufkleber'
+    ),
+}
+# Print and mat sizes ("20x10cm", "80 x 40 cm") only appear on decoration, never on a game.
+DIMENSIONS = re.compile(r'\b\d+ ?x ?\d+ ?cm\b')
 # A category presets a new search and narrows the provider search to its own section.
 # Section IDs were checked live on 23.10.2026 (eBay _sacat, Kleinanzeigen c…, Vinted catalog[]).
 CATEGORIES: dict[str, dict[str, Any]] = {
@@ -263,12 +273,20 @@ def named_platforms(title):
 
 
 def title_fits(source, title, search):
-    """Whether an offer title belongs to the search: all its words, none excluded, not only other platforms.
+    """Whether an offer title belongs to the search: all its words, nothing excluded, not only other platforms.
     A provider's platform filter fills up with other platforms once its matches run out."""
     chosen, named = platform(search), named_platforms(title)
-    return matches(title, wanted_words(source, search), search.get('excluded', '')) and (
-        chosen is None or not named or chosen in named
+    return (
+        matches(title, wanted_words(source, search), excluded_words(search))
+        and not DIMENSIONS.search(normalized(title))
+        and (chosen is None or not named or chosen in named)
     )
+
+
+def excluded_words(search):
+    """The search's own excluded words plus the merchandise its category never wants."""
+    merchandise = MERCHANDISE.get(search.get('category') or 'sonstiges')
+    return ', '.join(filter(None, (search.get('excluded', ''), merchandise)))
 
 
 def section(source, search):

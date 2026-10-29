@@ -91,6 +91,19 @@ class CategoryTests(unittest.TestCase):
         self.assertFalse(title_fits('ebay', 'Resident Evil Requiem', game))
         self.assertTrue(title_fits('ebay', 'Resident Evil Requiem PlayStation 5', game))
 
+    def test_games_drop_decoration_sold_under_the_game_name(self):
+        game = dict(query='Resident Evil Requiem', category='videospiele', filters={'platform': 'ps5'}, excluded='')
+        for junk in (
+            'Affiche encadrée Resident Evil Requiem',
+            'Tapis de souris XXL Resident Evil Requiem',
+            'Targa legno Resident Evil Requiem (20x10cm)',
+            'Resident Evil Requiem Poster 80 x 40 cm',
+        ):
+            self.assertFalse(title_fits('vinted', junk, game), junk)
+        self.assertTrue(title_fits('vinted', 'Prix Ferme Resident Evil Requiem', game))
+        # Other categories keep such words: a poster search stays possible.
+        self.assertTrue(title_fits('vinted', 'Resident Evil Poster', dict(query='Resident Evil', excluded='')))
+
     def test_switch_2_is_not_also_switch(self):
         switch = dict(query='Mario Kart World', filters={'platform': 'switch'}, excluded='')
         self.assertFalse(title_fits('vinted', 'Mario Kart World Nintendo Switch 2', switch))
