@@ -1,4 +1,4 @@
-source => {
+(source, limit) => {
   const configs = {
     ebay: {
       cards: '.s-item, .s-card',
@@ -128,7 +128,7 @@ source => {
   }
   const owner = card =>
     vintedOwners.get(card.querySelector('[data-testid^="product-item-id-"]')?.dataset.testid.match(/\d+/)?.[0]) || '';
-  const rows = [...document.querySelectorAll(c.cards)].slice(0, 100).map(card => {
+  const rows = [...document.querySelectorAll(c.cards)].slice(0, limit).map(card => {
     const a = card.querySelector(c.link);
     let shippingText = '';
     if (source === 'ebay') {

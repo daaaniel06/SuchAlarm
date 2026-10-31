@@ -24,8 +24,11 @@ from .domain import (
     wanted_words,
 )
 
-# A function expression for page.evaluate; a formatter's trailing semicolon would make it a statement.
-EXTRACT = Path(__file__).with_name('extract.js').read_text().strip().removesuffix(';')
+DEFAULT_CARD_LIMIT = 100
+PAGE_SIZES = {'ebay': 240}
+# Keep page.evaluate's source argument; the same page size controls the request and its extraction.
+EXTRACT_SCRIPT = Path(__file__).with_name('extract.js').read_text().strip().removesuffix(';')
+EXTRACT = f'source => ({EXTRACT_SCRIPT})(source, {json.dumps(PAGE_SIZES)}[source] || {DEFAULT_CARD_LIMIT})'
 
 
 def search_url(source, query, search=None):
@@ -39,10 +42,9 @@ def search_url(source, query, search=None):
     if source == 'ebay':
         # Best Match keeps the searched game on page one; price order fills it with
         # cheap unrelated titles. The app sorts matching offers by price itself.
-        # 240 cards per page (eBay's largest page) instead of 60: one visit sees four times as many offers.
         params = {
             '_nkw': query,
-            '_ipg': '240',
+            '_ipg': str(PAGE_SIZES['ebay']),
             'LH_BIN': '1',
             '_sop': '12',
             'LH_ItemCondition': '2750|3000|4000|5000|6000',
