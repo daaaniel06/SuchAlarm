@@ -19,8 +19,20 @@ class FlatFilters(BaseModel):
     min_area: float = Field(default=0, ge=0, le=10_000)
     min_rooms: float = Field(default=0, ge=0, le=100)
     exclusions: list[Literal[TRAITS]] = Field(default_factory=list, max_length=4)  # type: ignore[valid-type]
+    excluded_districts: list[str] = Field(default_factory=list, max_length=20)
     move_in_from: str | None = Field(default=None, pattern=DAY)
     move_in_by: str | None = Field(default=None, pattern=DAY)
+
+    @field_validator('excluded_districts')
+    @classmethod
+    def district_names(cls, values):
+        names: dict[str, str] = {}
+        for value in values:
+            name = ' '.join(value.split())
+            if not 2 <= len(name) <= 80:
+                raise ValueError('Ortsteile mit 2 bis 80 Zeichen eingeben.')
+            names.setdefault(name.casefold(), name)
+        return list(names.values())
 
 
 class PickedPlace(BaseModel):

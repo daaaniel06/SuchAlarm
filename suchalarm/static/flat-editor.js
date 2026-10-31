@@ -37,6 +37,7 @@ function renderFlatChips() {
   renderFlatDraft();
 }
 function renderFlatDraft() {
+  $('flat-district-summary').textContent = splitWords($('flat-districts').value).join(', ');
   const boxes = flatBoxes(),
     on = boxes.filter(x => x.checked);
   $('flat-sources-count').textContent = on.length === boxes.length ? 'alle' : `${on.length} von ${boxes.length}`;
@@ -146,6 +147,8 @@ export function openFlatEditor(id) {
   placeHint();
   $('flat-place').placeholder = last?.query || 'Darmstadt';
   $('flat-radius').value = String(search?.radius || 0);
+  $('flat-districts').value = (f.excluded_districts || []).join(', ');
+  $('flat-district-options').open = Boolean(f.excluded_districts?.length);
   $('flat-rent').value = search ? Math.round(search.max_price / 100) : '';
   $('flat-area').value = f.min_area || '';
   $('flat-rooms').value = f.min_rooms || '';
@@ -194,6 +197,7 @@ $('flat-form').addEventListener('click', e => {
   }
 });
 $('flat-form').addEventListener('change', renderFlatDraft);
+$('flat-districts').addEventListener('input', renderFlatDraft);
 $('flat-toggle-sources').addEventListener('click', () => {
   const all = flatBoxes().every(x => x.checked);
   flatBoxes().forEach(x => (x.checked = !all));
@@ -231,6 +235,7 @@ $('flat-form').addEventListener('submit', async event => {
       min_area: Number($('flat-area').value || 0),
       min_rooms: Number($('flat-rooms').value || 0),
       exclusions: [...flatTraits],
+      excluded_districts: splitWords($('flat-districts').value),
       move_in_from: $('flat-from').value || null,
       move_in_by: $('flat-by').value || null,
     },

@@ -269,6 +269,7 @@ def profile(search):
         'minRooms': filters.get('min_rooms') or 0,
         'exclusions': [trait for trait in filters.get('exclusions') or [] if trait in TRAITS],
         'excludeWords': [word for word in words if word],
+        'excludedDistricts': filters.get('excluded_districts') or [],
         'moveInFrom': filters.get('move_in_from'),
         'moveInBy': filters.get('move_in_by'),
     }
@@ -377,6 +378,10 @@ def beyond_radius(listing, profile, centre):
     return km if km > profile['radius'] + RADIUS_MARGIN_KM else None
 
 
+def excluded_district(place, districts):
+    return next((name for name in districts if re.search(rf'(?<!\w){re.escape(name)}(?!\w)', place, re.I)), None)
+
+
 def match(listing, profile, centre=None):
     """("matched" | "unclear" | "excluded", reasons) of one listing for one search.
 
@@ -389,6 +394,8 @@ def match(listing, profile, centre=None):
         return 'excluded', [f'Nicht in {home_area(profile)}']
     if (km := beyond_radius(listing, profile, centre)) is not None:
         return 'excluded', [f'{km:.1f} km von der Mitte (bis {profile["radius"]} km)'.replace('.', ',')]
+    if district := excluded_district(listing.place, profile.get('excludedDistricts', [])):
+        return 'excluded', [f'Ortsteil „{district}“ ausgeschlossen']
     excluded = set(profile['exclusions']) & set(listing.traits)
     if excluded:
         return 'excluded', sorted(excluded)
