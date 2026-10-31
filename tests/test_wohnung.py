@@ -198,6 +198,14 @@ class FilterTests(unittest.TestCase):
         postcode = {**town, 'place': {'kind': 'plz', 'label': '64283 Darmstadt', 'query': '64283'}}
         self.assertEqual(match(flat(place='64285 Darmstadt'), postcode), ('excluded', ['Nicht in 64283']))
 
+    def test_a_postcode_search_judges_an_address_without_postcode_by_its_town(self):
+        town = {**PROFILE, 'city': '64283', 'exclusions': [], 'minArea': 0, 'minRooms': 1}
+        postcode = {**town, 'place': {'kind': 'plz', 'label': '64283 Darmstadt', 'query': '64283'}}
+        self.assertEqual(match(flat(place='Darmstadt, Musterweg 3'), postcode)[0], 'matched')  # NHW names no postcode
+        self.assertEqual(match(flat(place='Griesheim, Musterweg 3'), postcode), ('excluded', ['Nicht in 64283']))
+        typed = {**town, 'place': {'kind': 'plz', 'label': '64283', 'query': '64283'}}
+        self.assertEqual(match(flat(place='Griesheim, Musterweg 3'), typed)[0], 'matched')  # town unknown: kept
+
     def test_distance_search_only_drops_flats_clearly_outside(self):
         centre = (49.8728, 8.6512)  # Darmstadt
         near = {**PROFILE, 'city': 'Darmstadt', 'radius': 5, 'exclusions': [], 'minArea': 0, 'minRooms': 1}
@@ -777,6 +785,20 @@ class PlaceTests(TempData):
         self.assertEqual(len(sources.select(stock, around)), 2)  # Mühltal is 6 km from the centre
         postcode = self.stored_search(query='64367', sources=['bauverein'])
         self.assertEqual([x.place for x in sources.select(stock, postcode)], ['Bruchmühlenweg 8, 64367 Mühltal'])
+
+    def test_a_postcode_search_keeps_the_regional_portals_flats_in_the_postcodes_town(self):
+        centre, place = (49.8728, 8.6512), {'kind': 'plz', 'label': '64283 Darmstadt', 'query': '64283'}
+        cadence.save_location('osm', '64283', json.dumps([*centre, 'Hessen']))
+        postcode = self.stored_search(query='64283', sources=['nhw'], filters={**search()['filters'], 'place': place})
+        stock = [
+            flat(
+                source='nhw', url='https://nhw.example/1', place='Darmstadt, Musterweg 3', lat=centre[0], lon=centre[1]
+            ),
+            flat(source='nhw', url='https://nhw.example/2', place='Griesheim, Musterweg 3', lat=49.86, lon=8.56),
+        ]
+        kept = sources.select(stock, postcode)
+        self.assertEqual([x.place for x in kept], ['Darmstadt, Musterweg 3'])
+        self.assertEqual(match(kept[0], profile(postcode), centre)[0], 'matched')
 
     def test_place_lookups_are_kept(self):
         answer = [{'lat': '49.87', 'lon': '8.65', 'address': {'state': 'Hessen'}}]

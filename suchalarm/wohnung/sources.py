@@ -27,7 +27,7 @@ from .domain import (
 log = logging.getLogger('suchalarm')
 
 OSM_UA = 'Suchalarm/1.0 (private single-user apartment search)'
-POSTCODE_MIN_RADIUS = 2  # km around a postcode's centre on ImmoScout24 and NHW
+POSTCODE_MIN_RADIUS = 2  # km around a postcode's centre on ImmoScout24
 BROWSER_HOSTS = {
     'kleinanzeigen-wohnung': {'www.kleinanzeigen.de', 'kleinanzeigen.de'},
     'immowelt': {'www.immowelt.de', 'immowelt.de'},
@@ -448,12 +448,9 @@ def select(listings, search):
     for listing in listings:
         if is_wanted_ad(listing.title) or beyond_radius(listing, p, middle) is not None:
             continue
-        if listing.source in ('bauverein', 'nhw'):
-            radius = p['radius']
-            if listing.source == 'nhw' and (p['place'] or {}).get('kind') == 'plz':
-                radius = max(radius, POSTCODE_MIN_RADIUS)  # its cards name the town, not the postcode
+        if listing.source in ('bauverein', 'nhw') and p['radius']:
             spot = (listing.lat, listing.lon) if listing.lat is not None else None
-            if not portals.near(place_query(p), radius, middle, listing.place, spot):
+            if not portals.near(place_query(p), p['radius'], middle, listing.place, spot):
                 continue
         elif outside_home(listing, p):
             continue
