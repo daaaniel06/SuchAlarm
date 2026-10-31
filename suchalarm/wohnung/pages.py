@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import time
+import uuid
 from dataclasses import asdict
 
 from .. import store
@@ -50,31 +51,43 @@ def save_result(search, source, listings, listed, now):
     return set() if stock else unseen
 
 
-def save_more(search, source, page, listings, listed, now):
-    """Store a further result page. Its unseen flats are starting stock while a search takes in the stock,
-    otherwise they count like any new ones. Returns the URLs of new ones."""
-    sid = search['id']
+def save_more(search, job, listings, listed, now):
+    """Store the further result page that JOB (a more_pages row) asked for. Its unseen flats are starting
+    stock while a search takes in the stock, otherwise they count like any new ones. Returns the URLs of
+    new ones."""
+    sid, source = search['id'], job['source']
     with store.db() as conn:
-        job = _job(conn, sid, source)
-        if job is None or job['page'] != page:
-            return set()  # a regular check decided anew in the meantime
+        if not _current(conn, job):
+            return set()  # a regular check or an edit decided anew while the page loaded
         stock = bool(job['stock'])
         unseen = _save_page(conn, search, source, listings, now, stock)
-        _queue_next(conn, sid, source, page, listings, listed, unseen, stock)
+        _queue_next(conn, sid, source, job['page'], listings, listed, unseen, stock)
     return set() if stock else unseen
 
 
 def read_stock_again(conn, sid, changed):
     """The portal request of the CHANGED sources (other limits): it may list older flats not seen yet. The next
     result reads the stock again from page 1, so they join the starting stock instead of being mailed."""
-    conn.executemany(
-        'INSERT OR REPLACE INTO more_pages(search_id,source,page,tries,stock) VALUES (?,?,1,0,1)',
-        [(sid, source) for source in changed if source in sources.PAGED],
+    for source in changed:
+        if source in sources.PAGED:
+            _queue(conn, sid, source, 1, stock=True)
+
+
+def _queue(conn, sid, source, page, stock):
+    """Ask for PAGE, replacing the source's job. The new job id tells a page still loading for the old one."""
+    conn.execute(
+        'INSERT OR REPLACE INTO more_pages(search_id,source,page,tries,stock,job) VALUES (?,?,?,0,?,?)',
+        (sid, source, page, int(stock), uuid.uuid4().hex),
     )
 
 
 def _job(conn, sid, source):
     return conn.execute('SELECT page, stock FROM more_pages WHERE search_id=? AND source=?', (sid, source)).fetchone()
+
+
+def _current(conn, job):
+    """Whether JOB is still the one its search and source wait for."""
+    return conn.execute('SELECT 1 FROM more_pages WHERE job=?', (job['job'],)).fetchone() is not None
 
 
 def _first_result(conn, sid, source):
@@ -152,10 +165,7 @@ def _queue_next(conn, sid, source, page, listings, listed, unseen, stock):
     else:
         more, last = full and bool(listings) and unseen == {item.url for item in listings}, MAX_PAGE
     if more and page < last:
-        conn.execute(
-            'INSERT OR REPLACE INTO more_pages(search_id,source,page,tries,stock) VALUES (?,?,?,0,?)',
-            (sid, source, page + 1, int(stock)),
-        )
+        _queue(conn, sid, source, page + 1, stock)
         return
     if more and stock:
         log.warning('Reading the stock of %s stopped after %s pages; narrow the search to see the rest', source, last)
@@ -163,17 +173,19 @@ def _queue_next(conn, sid, source, page, listings, listed, unseen, stock):
 
 
 async def more_step(now=None):
-    """At most one further result page, of a search whose site may be visited now. Returns the job or None."""
+    """At most one further result page, of an active search whose site may be visited now. A paused search's
+    jobs wait until it runs again. Returns the job or None."""
     now = time.time() if now is None else now
     with store.db() as conn:
-        rows = conn.execute('SELECT * FROM more_pages').fetchall()
+        rows = conn.execute(
+            'SELECT m.* FROM more_pages m JOIN searches s ON s.id=m.search_id WHERE s.active'
+        ).fetchall()
     job = next((row for row in rows if cadence.ready_at(row['source'], now=now) <= now), None)
     if job is None:
         return None
     search = store.search(job['search_id'])
     if not search:
         return None
-    where = (job['search_id'], job['source'])
     try:
         found, listed = await asyncio.wait_for(sources.more(job['source'], search, job['page']), timeout=FETCH_TIMEOUT)
     except cadence.Deferred:
@@ -186,11 +198,11 @@ async def more_step(now=None):
             cadence.outcome(job['source'], 'page', True)
         with store.db() as conn:
             if refused or job['tries'] + 1 >= MORE_TRIES:
-                conn.execute('DELETE FROM more_pages WHERE search_id=? AND source=?', where)
+                conn.execute('DELETE FROM more_pages WHERE job=?', (job['job'],))
             else:
-                conn.execute('UPDATE more_pages SET tries=tries+1 WHERE search_id=? AND source=?', where)
+                conn.execute('UPDATE more_pages SET tries=tries+1 WHERE job=?', (job['job'],))
         log.warning('Page %s of %s failed (%s)', job['page'], job['source'], type(exc).__name__)
         return job
     cadence.outcome(job['source'], 'page')
-    save_more(search, job['source'], job['page'], found, listed, time.time())
+    save_more(search, job, found, listed, time.time())
     return job

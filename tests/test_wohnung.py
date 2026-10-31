@@ -1069,6 +1069,39 @@ class WorkerTests(TempData):
             asyncio.run(pages.more_step())
         self.assertEqual(self.due(), [])
 
+    def test_a_page_that_loaded_for_a_replaced_job_is_dropped(self):
+        flat_search = self.stored_search()
+        pages.save_result(flat_search, 'immoscout24', [self.card(1)], 1, time.time())  # the starting stock
+        with store.db() as conn:
+            pages.read_stock_again(conn, flat_search['id'], ['immoscout24'])
+
+        async def edited_while_loading(source, search, page):
+            with store.db() as conn:  # another limit while page 1 loads: a new job for page 1
+                pages.read_stock_again(conn, flat_search['id'], ['immoscout24'])
+            return [self.card(2)], pages.FULL_PAGE
+
+        with patch.object(flats.sources, 'more', new=edited_while_loading):
+            asyncio.run(pages.more_step())
+        self.assertEqual(self.due(), [(1, 0)])  # the new job waits
+        self.assertEqual([r['url'][-1] for r in catalog.listings(flat_search)], ['1'])  # the old page is dropped
+
+    def test_a_paused_search_reads_no_further_pages_until_it_runs_again(self):
+        flat_search = self.stored_search()
+        first = [self.card(n) for n in range(pages.FULL_PAGE)]
+        pages.save_result(flat_search, 'immoscout24', first, len(first), time.time())
+        self.assertEqual(self.due(), [(2, 0)])
+        more = AsyncMock(return_value=([], 0))
+        with patch.object(flats.sources, 'more', new=more):
+            with store.db() as conn:
+                conn.execute('UPDATE searches SET active=0 WHERE id=?', (flat_search['id'],))
+            self.assertIsNone(asyncio.run(pages.more_step()))
+            more.assert_not_awaited()
+            self.assertEqual(self.due(), [(2, 0)])  # kept for later
+            with store.db() as conn:
+                conn.execute('UPDATE searches SET active=1 WHERE id=?', (flat_search['id'],))
+            asyncio.run(pages.more_step())
+            more.assert_awaited_once()
+
     def test_a_page_is_full_by_what_the_portal_listed_not_what_fits_the_place(self):
         flat_search = self.stored_search()
         here = [self.card(n) for n in range(5)]  # the other ten offers of the page lie elsewhere

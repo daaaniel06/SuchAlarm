@@ -46,4 +46,12 @@ def _stock_pages(conn):
         conn.execute('ALTER TABLE wohnung.more_pages ADD COLUMN stock INTEGER NOT NULL DEFAULT 0')
 
 
-MIGRATIONS = (_create, _move, _cheaper_at, _stock_pages)
+def _page_jobs(conn):
+    """An id per further-page job (pages.py): a page that loaded for a job replaced meanwhile is dropped.
+    Jobs from before get one each too."""
+    if 'job' not in {r[1] for r in conn.execute('PRAGMA wohnung.table_info(more_pages)')}:
+        conn.execute("ALTER TABLE wohnung.more_pages ADD COLUMN job TEXT NOT NULL DEFAULT ''")
+        conn.execute('UPDATE wohnung.more_pages SET job=lower(hex(randomblob(16)))')
+
+
+MIGRATIONS = (_create, _move, _cheaper_at, _stock_pages, _page_jobs)
