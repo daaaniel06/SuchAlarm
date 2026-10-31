@@ -1,3 +1,4 @@
+import json
 import time
 import unittest
 from pathlib import Path
@@ -111,7 +112,42 @@ class BrowserExtractionTests(unittest.IsolatedAsyncioTestCase):
             data = await page.evaluate(flat_sources.IMMOWELT_EXPOSE, 'immowelt')
             self.assertNotIn('Impressum', data['html'])
             self.assertEqual(portals.immowelt_detail(data['html'])['rent'], 770)
+            await self.immowelt_list(page)
             await browser.close()
+
+    async def immowelt_list(self, page):
+        """Immowelt's list, asked for from its result page: the search, then the offers' contents."""
+        offers = (Path(__file__).parent / 'fixtures' / 'immowelt' / 'list.json').read_text()
+        asked, refuse = [], []
+
+        async def answer(route):
+            request = route.request
+            asked.append((urlparse(request.url).path, request.post_data, request.headers.get('x-language')))
+            if request.url.endswith('/serp-bff/search'):
+                ids = [{'id': '26AAAAAAAAA1'}, {'id': '26AAAAAAAAA2'}]
+                if refuse:
+                    await route.fulfill(status=403, body='')
+                else:
+                    await route.fulfill(json={'totalCount': 2, 'classifieds': ids})
+            elif '/classifiedList/' in request.url:
+                await route.fulfill(content_type='application/json', body=offers)
+            else:
+                await route.fulfill(content_type='text/html', body='<title>Wohnungen zur Miete</title><p>Liste</p>')
+
+        await page.route('https://www.immowelt.de/**', answer)
+        path = '/suche/mieten/wohnung/hessen/darmstadt-64283/ad08de2508'
+        address, request = portals.immowelt_search(path, {'maxRent': 900, 'minArea': 40, 'minRooms': 2})
+        await page.goto(address)
+        data = await page.evaluate(flat_sources._immowelt_list(request), 'immowelt')
+        self.assertEqual(data['total'], 2)
+        self.assertEqual(len(portals.immowelt_cards(data['rows'])), 3)
+        search, contents = asked[1:]
+        self.assertEqual(json.loads(search[1]), request)
+        self.assertEqual(contents, ('/classifiedList/26AAAAAAAAA1,26AAAAAAAAA2', None, 'de'))
+        refuse.append(True)
+        data = await page.evaluate(flat_sources._immowelt_list(request), 'immowelt')
+        self.assertIsNone(data['total'])
+        self.assertRegex(data['text'], flat_sources.browser.BLOCK)
 
 
 class QueueInterfaceTests(unittest.IsolatedAsyncioTestCase):

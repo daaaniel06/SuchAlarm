@@ -1,0 +1,56 @@
+[
+  {
+    "id": "26AAAAAAAAA1",
+    "url": "https://www.immowelt.de/expose/11111111-2222-3333-4444-555555555555",
+    "location": {
+      "address": {"country": "DEU", "city": "Darmstadt", "zipCode": "64285", "district": "Darmstadt"},
+      "isAddressPublished": false
+    },
+    "hardFacts": {
+      "title": "Wohnung zur Miete - Erstbezug",
+      "facts": [
+        {"type": "numberOfRooms", "value": "2 Zimmer"},
+        {"type": "livingSpace", "value": "46 m²"},
+        {"type": "availability", "value": "frei ab 01.06.2028"}
+      ],
+      "prices": [{"label": "Kaltmiete", "value": "335 €"}]
+    },
+    "gallery": {
+      "images": [
+        {"url": "https://mms.immowelt.de/a/a/a/a/logo.jpg", "classification": {"name": "LOGO"}},
+        {"url": "https://mms.immowelt.de/b/b/b/b/front.jpg", "classification": {"name": "BUILDING_FACADE"}}
+      ]
+    },
+    "mainDescription": {"headline": "Neubau mit Gemeinschaftsgarten", "description": "Nur mit WBS. Bezug nach Fertigstellung."},
+    "rawData": {"distributionType": "RENT", "propertyType": "APARTMENT", "price": 335, "surface": {"main": 46}, "nbroom": 2}
+  },
+  {
+    "id": "26AAAAAAAAA2",
+    "url": "https://www.immowelt.de/expose/66666666-7777-8888-9999-000000000000",
+    "location": {
+      "address": {"country": "DEU", "city": "Darmstadt", "zipCode": "64291", "street": "Musterweg 15", "district": "Wixhausen"},
+      "isAddressPublished": true
+    },
+    "hardFacts": {
+      "title": "Wohnung zur Miete",
+      "facts": [{"type": "numberOfFloors", "value": "EG"}],
+      "prices": [{"label": "Kaltmiete", "value": "795 €"}, {"label": "Warmmiete", "value": "1.106 €"}]
+    },
+    "gallery": {"images": [{"url": "https://mms.immowelt.de/c/c/c/c/garden.jpg"}]},
+    "mainDescription": {"headline": "Helle 2-Zimmer-Wohnung im Erdgeschoss", "description": "Bad mit Wanne, Balkon zum Garten."},
+    "rawData": {"distributionType": "RENT", "propertyType": "APARTMENT", "price": 1106, "surface": {"main": 64.45}, "nbroom": 2}
+  },
+  {
+    "id": "26AAAAAAAAA3",
+    "url": "https://www.immowelt.de/expose/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "location": {"address": {"city": "Darmstadt", "zipCode": "64283"}},
+    "hardFacts": {"title": "WG-Zimmer zur Miete", "prices": [{"label": "Warmmiete", "value": "480 €"}]},
+    "mainDescription": {"headline": "Zimmer in der Innenstadt"},
+    "rawData": {"propertyType": "APARTMENT", "propertySubType": "FLATSHARING_ROOM", "surface": {"main": 18}, "nbroom": 1}
+  },
+  {
+    "id": "26AAAAAAAAA4",
+    "url": "https://www.immowelt.de/projekte/expose/abc",
+    "hardFacts": {"title": "Neubauprojekt"}
+  }
+]

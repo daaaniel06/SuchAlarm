@@ -1,8 +1,9 @@
-"""Immowelt, read in the browser."""
+"""Immowelt, read in the browser: the result list as JSON, exposés as HTML."""
 
 import logging
+import math
 import re
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
 from ...core.browser import Unreadable
 from ..domain import (
@@ -10,18 +11,21 @@ from ..domain import (
     available_from,
     clip,
     detect_traits,
+    line,
     money,
     number,
     rooms,
 )
-from .common import attribute, plain, rescue
+from .common import plain
 
 log = logging.getLogger('suchalarm')
 
-# The old address /suche/<place>/wohnungen/mieten redirects to the place's page, read in Immowelt's own
-# order: sorting by date brings up a captcha (sources._immowelt). Price and size are filtered locally.
+# The place's page is found once through its old address /suche/<place>/wohnungen/mieten, which redirects
+# to it; its last path part is Immowelt's place ID. The list itself comes from the search Immowelt's own
+# result page uses (sources._immowelt): newest first and already cut to the search's limits.
 
 IMMOWELT = 'https://www.immowelt.de'
+IMMOWELT_PAGE_SIZE = 30  # the most offers one request for their contents carries
 
 
 def immowelt_place_url(query):
@@ -36,54 +40,78 @@ def immowelt_location(final_url, city):
     return path
 
 
-def immowelt_parse(html):
-    cards = re.split(r'(?=<div[^>]*data-testid="serp-core-classified-card-testid")', html)[1:]
-    if not cards:
-        if re.search(r'keine (?:passenden )?(?:Treffer|Ergebnisse|Angebote)|0 Angebote', html, re.I):
-            return []
-        if listings := rescue('Immowelt', html, r'^(?:https://www\.immowelt\.de)?/expose/[\w-]+$', IMMOWELT):
-            return listings
-        raise Unreadable('Immowelt-Seite enthält keine erkennbaren Angebote (Layout geändert oder gesperrt).')
-    listings = []
-    for card in cards:
-        link = re.search(r'<a\b[^>]*data-testid="card-mfe-covering-link-testid"[^>]*>', card)
-        if not link:
-            continue
-        href = urlsplit(attribute(link.group(0), 'href'))
-        if href.hostname != 'www.immowelt.de' or not re.fullmatch(r'/expose/[\w-]+', href.path):
-            continue
-        # "Wohnung zur Miete - Erstbezug - Darmstadt - 835 € - 1 Zimmer, 46,6 m², 4. Geschoss, frei ab 16.11.2026"
-        summary = ' '.join(attribute(link.group(0), 'title').split())
-        price = re.search(r'data-testid="cardmfe-price-testid"[^>]*>(.*?)</span>', card, re.S)
-        price_text = plain(price.group(1)) if price else ''
-        address = re.search(r'data-testid="cardmfe-description-box-address"[^>]*>(.*?)</div>', card, re.S)
-        teaser = re.search(r'data-testid="cardmfe-description-text-test-id"[^>]*>(.*?)</div></div>', card, re.S)
-        teaser_text = plain(teaser.group(1)) if teaser else ''
-        gallery = card.split('card-mfe-picture-box-gallery-test-id', 1)[-1]
-        picture = re.search(r'<img[^>]+src="(https://mms\.immowelt\.de/[^"?]+)', gallery)
-        kind = summary.split(' - ')[0] or 'Wohnung zur Miete'
-        title = kind + (' · Erstbezug' if ' - Erstbezug - ' in summary else '')
-        size = re.search(r'([\d.,]+)\s*m²', summary)
-        count = re.search(r'([\d.,]+)\s*Zimmer', summary)
-        free = re.search(r'frei ab (.+)$', summary)
-        amount = money(number(price_text))
-        warm = 'warmmiete' in price_text.casefold()
-        listings.append(
-            {
-                'url': IMMOWELT + href.path,
-                'title': title[:300],
-                'place': plain(address.group(1))[:300] if address else '',
-                'rent': amount if warm else None,
-                'coldRent': None if warm else amount,
-                'area': area(number(size.group(1)) if size else None),
-                'rooms': rooms(number(count.group(1)) if count else None),
-                'traits': detect_traits(summary + '\n' + teaser_text),
-                'availableFrom': available_from(free.group(1)) if free else None,
-                'text': clip(summary + ' ' + teaser_text),
-                'imageSource': picture.group(1) + '?w=480&h=360' if picture else None,
-            }
-        )
-    return listings
+def immowelt_search(path, profile):
+    """(result page, search request) for the place's PATH. The page shows the same search on the site,
+    so the request is sent from there. priceMax limits the cold rent, so the warm limit is a safe bound;
+    the limits are widened to whole numbers, the exact check stays local."""
+    place = path.rsplit('/', 1)[-1].upper()  # ".../darmstadt-64283/ad08de2508" -> "AD08DE2508"
+    limits = {
+        'priceMax': math.ceil(profile['maxRent']),
+        'spaceMin': math.floor(profile['minArea']),
+        'numberOfRoomsMin': math.floor(profile['minRooms']),
+    }
+    limits = {name: value for name, value in limits.items() if value}
+    page = f'{IMMOWELT}/classified-search?' + urlencode(
+        {'distributionTypes': 'Rent', 'estateTypes': 'Apartment', 'locations': place, **limits}
+    )
+    request = {
+        'criteria': {
+            'distributionTypes': ['Rent'],
+            'estateTypes': ['Apartment'],
+            'location': {'placeIds': [place]},
+            **limits,
+        },
+        'paging': {'page': 1, 'size': IMMOWELT_PAGE_SIZE, 'order': 'DateDesc'},
+    }
+    return page, request
+
+
+def immowelt_cards(offers):
+    """Cards from Immowelt's offer contents. Only the labelled prices are read: rawData.price is the cold
+    rent of one offer and the warm rent of the next."""
+    if not isinstance(offers, list):
+        raise Unreadable('Immowelt-Angebote nicht lesbar (Antwort geändert).')
+    return [_card(offer) for offer in offers if _EXPOSE.fullmatch(offer.get('url') or '')]
+
+
+_EXPOSE = re.compile(re.escape(IMMOWELT) + r'/expose/[\w-]+')
+
+
+def _card(offer):
+    description = offer.get('mainDescription') or {}
+    facts = offer.get('hardFacts') or {}
+    raw = offer.get('rawData') or {}
+    address = (offer.get('location') or {}).get('address') or {}
+    prices = {price.get('label'): number(price.get('value')) for price in facts.get('prices') or []}
+    free = next((fact.get('value') for fact in facts.get('facts') or [] if fact.get('type') == 'availability'), None)
+    text = f'{description.get("headline") or ""}\n{description.get("description") or ""}'
+    traits = detect_traits(text)
+    if raw.get('propertySubType') == 'FLATSHARING_ROOM' and 'WG-Zimmer' not in traits:
+        traits.append('WG-Zimmer')
+    city, district = address.get('city') or '', address.get('district') or ''
+    place = [address.get('street'), f'{address.get("zipCode") or ""} {city}'.strip()]
+    place += [district] if district != city else []
+    picture = next(
+        (
+            image['url']
+            for image in (offer.get('gallery') or {}).get('images') or []
+            if image.get('url') and (image.get('classification') or {}).get('name') != 'LOGO'
+        ),
+        None,
+    )
+    return {
+        'url': offer['url'],
+        'title': line(description.get('headline') or facts.get('title') or 'Wohnung zur Miete'),
+        'place': line(', '.join(part for part in place if part)),
+        'rent': money(prices.get('Warmmiete')),
+        'coldRent': money(prices.get('Kaltmiete')),
+        'area': area((raw.get('surface') or {}).get('main')),
+        'rooms': rooms(raw.get('nbroom')),
+        'traits': traits,
+        'availableFrom': available_from(free),
+        'text': clip(text),
+        'imageSource': picture + '?w=480&h=360' if picture else None,
+    }
 
 
 # The parts of an exposé that sources reads in the browser, joined by line breaks in page order.
