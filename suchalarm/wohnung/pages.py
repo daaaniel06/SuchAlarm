@@ -14,7 +14,7 @@ from ..core import cadence
 from ..status import source_ok, started
 from . import sources
 from .details import FETCH_TIMEOUT, read_again
-from .domain import WHOLE_STOCK, Listing, cheaper, could_match, profile
+from .domain import WHOLE_STOCK, Listing, cheaper, could_match, other_rent, profile
 
 log = logging.getLogger('suchalarm')
 
@@ -132,8 +132,11 @@ def _store(conn, sid, source, listings, seen, wanted, now, middle=None):
         'ON CONFLICT(search_id,url) DO UPDATE SET body=excluded.body, last_seen=excluded.last_seen',
         [(sid, source, item.url, json.dumps(asdict(item)), seen.get(item.url) or now, now) for item in listings],
     )
-    dropped = [item.url for item in listings if item.url in before and cheaper(before[item.url], item)]
-    _mark_cheaper(conn, sid, source, dropped, now)
+    moved = [item for item in listings if item.url in before and other_rent(before[item.url], item)]
+    _mark_cheaper(conn, sid, [item.url for item in moved if cheaper(before[item.url], item)], now)
+    if source in sources.DETAILS:
+        # The detail page states the rent that counts; one read before the change no longer does.
+        read_again(conn, source, [item.url for item in moved], now)
     conn.executemany(
         "INSERT OR IGNORE INTO listing_details(url,source,state,created_at) VALUES (?,?,'pending',?)",
         [
@@ -144,14 +147,11 @@ def _store(conn, sid, source, listings, seen, wanted, now, middle=None):
     )
 
 
-def _mark_cheaper(conn, sid, source, urls, now):
-    """Listings that now ask less rent: their detail page is read (again; it states the rent that counts), and
-    the starting stock no longer keeps them out of the mail. outbox.py mails them if the rent is below what
-    was last mailed."""
+def _mark_cheaper(conn, sid, urls, now):
+    """Listings that now ask less rent: the starting stock no longer keeps them out of the mail. outbox.py
+    mails them if the rent is below what was last mailed."""
     conn.executemany('UPDATE listings SET cheaper_at=? WHERE search_id=? AND url=?', [(now, sid, url) for url in urls])
     conn.executemany('DELETE FROM start_offers WHERE search_id=? AND url=?', [(sid, url) for url in urls])
-    if source in sources.DETAILS:
-        read_again(conn, source, urls, now)
 
 
 def _queue_next(conn, sid, source, page, listings, listed, unseen, stock):

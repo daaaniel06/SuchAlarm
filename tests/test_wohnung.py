@@ -1186,6 +1186,19 @@ class WorkerTests(TempData):
         row = next(r for r in catalog.listings(flat_search) if r['url'].endswith('/2'))
         self.assertEqual((row['rent'], row['status'], row['reasons']), (1100.0, 'excluded', ['WBS']))
 
+    def test_a_higher_rent_on_the_card_reads_the_detail_page_again(self):
+        flat_search = self.stored_search(max_price=130000)
+        self.run_check([self.card(1)], flat_search)
+        self.run_check([self.card(1), self.card(2, rent=1000)], flat_search)
+        with (
+            patch.object(flats.sources, 'detail', new=AsyncMock(return_value={'rent': 1100.0})),
+            patch.object(flats.cadence, 'ready_at', return_value=0),
+        ):
+            asyncio.run(details.detail_step())
+        self.run_check([self.card(1), self.card(2, rent=1500)], flat_search)
+        row = next(r for r in catalog.listings(flat_search) if r['url'].endswith('/2'))
+        self.assertEqual((row['rent'], row['status'], row['details']), (1500, 'excluded', 'pending'))
+
     def test_the_starting_stock_is_completed_slowly_when_nothing_else_waits(self):
         flat_search = self.stored_search()
         details._backfilled.clear()

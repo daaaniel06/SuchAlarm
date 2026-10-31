@@ -1,12 +1,11 @@
 """Mail queue: new listings go out once their detail page is read (or cannot be)."""
 
-import json
 import time
 
 from .. import store
 from . import sources
 from .catalog import DETAIL_WINDOW, cents, completed, listings, mailable, offer, twins_by_url
-from .domain import Listing, match, profile, warm_rent
+from .domain import match, profile, warm_rent
 
 DETAIL_WAIT = 15 * 60  # a matching listing waits this long for its detail page before it is mailed without
 
@@ -93,7 +92,7 @@ def take_pending(conn):
             and not row['hidden']
             and (search['id'], row['url']) not in copies
         ):
-            item = completed(row) if row['state'] == 'done' else Listing(**json.loads(row['body']))
+            item = completed(row)
             verdict, reasons = match(item, profile(search), sources.centre(search))
             if mailable(item, verdict, row['state']):
                 found = offer(item, verdict, reasons)
