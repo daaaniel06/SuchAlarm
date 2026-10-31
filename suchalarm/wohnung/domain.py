@@ -348,21 +348,34 @@ def _day(value):
     return datetime.fromisoformat(value).strftime('%d.%m.%Y')
 
 
-def home_area(profile):
-    """The town (or postcode) a search without radius is limited to."""
+POSTCODE = re.compile(r'\b\d{5}\b')
+
+
+def home_town(profile):
+    """The town of the searched place; for a postcode the town its label names, '' if it names none."""
     place = profile.get('place') or {}
-    if place.get('kind') == 'plz':
-        return place['query']
     text = place.get('label') or profile.get('city') or ''
     return re.sub(r'^\d{5}\s*', '', re.split(r'[,(]| - ', text)[0]).strip()
 
 
+def home_area(profile):
+    """The town (or postcode) a search without radius is limited to."""
+    query = place_query(profile)
+    return query if POSTCODE.fullmatch(query) else home_town(profile)
+
+
 def outside_home(listing, profile):
-    """Portals mix in neighbouring towns; a search without radius keeps what lies in the town itself."""
-    area, where = home_area(profile), listing.place
-    if profile.get('radius') or not area or not where:
+    """Portals mix in neighbouring towns; a search without radius keeps what lies in the town itself.
+
+    An address without postcode (NHW names only the town) is judged by the postcode's town: the
+    postcode cannot be told, and a flat must not get lost over it."""
+    where = listing.place
+    if profile.get('radius') or not where:
         return False
-    return re.search(rf'(?<![\w-]){re.escape(area)}(?![\w])', where, re.I) is None
+    area = home_area(profile)
+    if POSTCODE.fullmatch(area) and not POSTCODE.search(where):
+        area = home_town(profile)
+    return bool(area) and re.search(rf'(?<![\w-]){re.escape(area)}(?![\w])', where, re.I) is None
 
 
 # A search by distance must never lose a flat in the searched area: only a known

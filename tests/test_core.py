@@ -155,6 +155,21 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         await self.found(self.offer, replace(self.offer, url='https://www.ebay.de/itm/2'))
         self.assertEqual(self.count('outbox'), 1)
 
+    async def test_a_queued_offer_pushed_off_the_first_page_still_goes_out(self):
+        self.setting('frequency', 'Täglich')
+        await self.found(self.offer)
+        newer = [replace(self.offer, url=f'https://www.ebay.de/itm/{n}', price=4000) for n in range(3)]
+        await self.found(*newer)  # newer offers above the limit push it off the page
+        with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
+            await worker.send_digest(time.time() + 86401)
+        deliver.assert_called_once()
+        self.assertIn(self.offer.url, deliver.call_args.args[0].get_body(('plain',)).get_content())
+        await self.found(*newer)  # mailed: no longer kept beside the page
+        with store.db() as conn:
+            self.assertEqual(
+                conn.execute('SELECT count(*) FROM offers WHERE url=?', (self.offer.url,)).fetchone()[0], 0
+            )
+
     async def test_dedup_and_further_drop(self):
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
             await self.found(self.offer)

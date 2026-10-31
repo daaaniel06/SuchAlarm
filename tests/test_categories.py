@@ -12,7 +12,7 @@ from suchalarm import store, worker
 from suchalarm.app import app
 from suchalarm.core import cadence
 from suchalarm.preis import sources
-from suchalarm.preis.domain import Offer, in_range, select_offers, title_fits, too_cheap, vehicle, wanted_words
+from suchalarm.preis.domain import Offer, eligible, select_offers, title_fits, too_cheap, vehicle, wanted_words
 from suchalarm.preis.sources import parse_rows, place_of, search_url
 
 
@@ -171,9 +171,14 @@ class CategoryTests(unittest.TestCase):
         self.assertEqual(parse_rows('kleinanzeigen', [row], search), [])
         offer = parse_rows('kleinanzeigen', [row], dict(search, free=True))[0]
         self.assertEqual(offer.price, 0)
-        self.assertTrue(in_range(0, dict(search, free=True)))  # the minimum price does not apply
-        self.assertFalse(in_range(0, search))
+        self.assertTrue(eligible(offer, dict(search, free=True)))  # the minimum price does not apply
+        self.assertFalse(eligible(offer, search))
         self.assertFalse(too_cheap(offer, dict(search, free=True)))
+        shipped = Offer('kleinanzeigen', offer.url, offer.title, 0, 450)
+        with_shipping = dict(search, free=True, include_shipping=True)
+        self.assertTrue(eligible(shipped, with_shipping))  # given away, only the parcel costs: still wanted
+        self.assertFalse(eligible(shipped, dict(with_shipping, max_price=400)))  # the maximum still counts
+        self.assertFalse(eligible(Offer('kleinanzeigen', offer.url, offer.title, 0, None), with_shipping))
         cadence.save_location('kleinanzeigen', '10115', '9668')
         # A lower bound at the provider would hide given-away offers.
         self.assertIn('/s-preis::300/', search_url('kleinanzeigen', 'Ecksofa', dict(search, free=True)))

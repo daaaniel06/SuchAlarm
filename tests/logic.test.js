@@ -58,6 +58,10 @@ test('given-away offers pass the minimum only when the search wants them', () =>
   const search = { include_shipping: 0, min_price: 2000, max_price: 4500 };
   assert.equal(logic.match({ price: 0, shipping: null }, search), false);
   assert.equal(logic.match({ price: 0, shipping: null }, { ...search, free: true }), true);
+  const shipped = { ...search, include_shipping: 1, free: true };
+  assert.equal(logic.match({ price: 0, shipping: 450 }, shipped), true); // only the parcel costs
+  assert.equal(logic.match({ price: 0, shipping: 450 }, { ...shipped, max_price: 400 }), false);
+  assert.equal(logic.match({ price: 0, shipping: null }, shipped), false); // unknown shipping is never 0
 });
 
 test('priceRange and priceInput', () => {

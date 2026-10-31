@@ -44,11 +44,11 @@ export function comparison(offer, search) {
   if (!withShipping(offer, search)) return item;
   return offer.shipping === null ? null : item + offer.shipping;
 }
-// Given away (price 0) counts for a search that wants it, whatever its minimum price.
+// Given away (item price 0) counts for a search that wants it, whatever its minimum price; shipping may apply.
 export const given = (price, search) => price === 0 && Boolean(search.free);
 export function match(offer, search) {
   const value = comparison(offer, search);
-  return value !== null && (value >= (search.min_price || 0) || given(value, search)) && value < search.max_price;
+  return value !== null && (given(offer.price, search) || value >= (search.min_price || 0)) && value < search.max_price;
 }
 export const priceRange = s =>
   s.min_price ? `${euro(s.min_price)} – ${euro(s.max_price)}` : `Unter ${euro(s.max_price)}`;

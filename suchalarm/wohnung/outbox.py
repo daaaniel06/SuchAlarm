@@ -39,7 +39,7 @@ def queue_mails(now=None):
             if search is None or (row['state'] == 'pending' and row['seen'] > now - DETAIL_WAIT):
                 continue  # the detail page decides; a paused portal must not hold a clear match for hours
             if (row['search_id'], row['url']) in followers:
-                # Another portal's copy of a flat that is mailed through its first listing: only known.
+                # Another portal's copy of a flat that is mailed through its fitting listing: only known.
                 conn.execute(
                     'INSERT OR REPLACE INTO notifications VALUES (?,?,?,?)', (row['search_id'], row['url'], 0, now)
                 )
@@ -65,7 +65,7 @@ def queue_mails(now=None):
 def take_pending(conn):
     """Outbox rows of flat searches still worth a mail, as (search, offer, price), oldest first.
     Rows that are not (search gone or paused, listing gone, hidden, no longer fitting, another portal's copy of
-    a flat mailed through its first listing) are deleted."""
+    a flat mailed through its fitting listing) are deleted."""
     searches = {s['id']: s for s in store.searches('wohnung')}
     # A flat queued before its twin on another portal was recognised (its photo came later): only one mail.
     copies, twins = set(), {}

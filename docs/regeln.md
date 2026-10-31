@@ -42,7 +42,7 @@ Wie Suchalarm Preise vergleicht, Anbieter abfragt und Mails verschickt. Der Übe
 - Videospiele haben eine Plattform, die wie ein Suchwort im Titel stehen muss. Ausnahme Vinted und eBay: Dort filtert der Anbieter selbst nach Plattform (Vinted `video_game_platform_ids[]`, eBay das Artikelmerkmal `Plattform`, Stand 29.10.2026 live geprüft), der Titel muss sie nicht nennen. Für Switch 2 hat eBay noch kein Merkmal, dort zählt weiter der Titel. Ein Titel, der nur andere Plattformen nennt, fliegt überall raus, weil die Anbieter ihre Listen sonst mit anderen Plattformen auffüllen bzw. Verkäufer das Merkmal falsch setzen.
 - Autos haben „Erstzulassung ab“ und „Kilometerstand bis“. Beides geht als Filter an Kleinanzeigen, und auf der Karte genannte Werte außerhalb der Grenzen werden zusätzlich lokal verworfen. Fehlende Angaben bleiben drin. Bei eBay gelten diese Filter nicht, das Formular sagt das.
 - „Verhandlungsbasis zulassen“ nimmt VB-Angebote mit Preis auf, der genannte Betrag zählt. Ohne diese Option werden VB-Angebote ausgeschlossen, ebenso Auktionen.
-- „Zu verschenken“ nimmt Gratis-Angebote von Kleinanzeigen auf. Für sie gilt der Mindestpreis nicht, und Kleinanzeigen bekommt dann keine untere Preisgrenze (sonst blendet es sie selbst aus).
+- „Zu verschenken“ nimmt Gratis-Angebote von Kleinanzeigen auf. Für sie gilt der Mindestpreis nicht, auch wenn Versand dazukommt (der Höchstpreis zählt weiter), und Kleinanzeigen bekommt dann keine untere Preisgrenze (sonst blendet es sie selbst aus).
 - Bestehende Suchen aus der Zeit vor den Kategorien gelten als „Sonstiges“ mit Versand und behalten ihre bisherigen Abfragen. Die Suchliste ist nach Kategorien gruppiert.
 
 ### Lieferart
@@ -99,6 +99,7 @@ Zentrale Taktung (`cadence.py`, `cadence.db`):
 
 - Unter Mails bis zu fünf Empfänger eintragen, Rhythmus wählen (sofort, alle 30 Minuten, täglich; bei „Sofort“ optional Pakete von 2–3 Angeboten, spätestens nach 2 Stunden), Testmail senden und Benachrichtigungen einschalten. Es werden keine Empfänger oder aktiven Suchaufträge vorab angelegt.
 - Neue Treffer aller Suchen landen in einem Postausgang und kommen gesammelt in einer Mail (Text und HTML).
+- Ein für die Mail vorgemerktes Angebot bleibt bis zum Versand, auch wenn es beim nächsten Abruf nicht mehr auf der ersten Seite steht: Neuere Angebote können es nur nach hinten geschoben haben.
 - Der erste lesbare Abruf einer Quelle ist der Startstand und löst keine Mail aus. Gleiche Angebote melden sich erst bei einem weiteren Preisrückgang erneut. Bei Wohnungen gilt das für die Warmmiete: Sinkt sie bei einem bekannten Inserat, auch aus dem Startstand oder einem vorher zu teuren, liest Suchalarm die Detailseite neu und meldet es, wenn es jetzt passt und günstiger ist als zuletzt gemeldet.
 - Was bei ausgeschalteten Mails oder pausierten Suchen gefunden wird, gilt als bekannt und wird später nicht nachgeschickt.
 - Lehnt der Mailserver eine Mail sicher ab, bleiben die Angebote im Postausgang und werden nach 10 Minuten erneut versucht.
