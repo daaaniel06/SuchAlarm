@@ -44,9 +44,6 @@ function renderFlatDraft() {
   const notes = on.map(x => REGIONAL[x.value]).filter(Boolean);
   $('flat-source-note').textContent = notes.length ? `${notes.join(' · ')}.` : '';
   $('flat-source-note').hidden = !notes.length;
-  $('flat-radius-hint').textContent = Number($('flat-radius').value)
-    ? 'Entfernung von der Ortsmitte'
-    : 'Nur Inserate im Ort selbst';
   const parts = [];
   if (flatWords.length)
     parts.push(flatWords.length === 1 ? '1 Wort ausgeblendet' : `${flatWords.length} Wörter ausgeblendet`);
