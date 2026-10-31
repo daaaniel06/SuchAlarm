@@ -35,6 +35,15 @@ from .common import (  # noqa: F401
     plain,
     rescue,
 )
+from .immobiliende import (  # noqa: F401
+    IMMOBILIEN_DE,
+    id_city,
+    id_detail,
+    id_parse,
+    id_places_url,
+    id_town,
+    id_url,
+)
 from .immoscout import (  # noqa: F401
     IMMOSCOUT_BODY,
     IMMOSCOUT_LIST,
@@ -65,6 +74,15 @@ from .kleinanzeigen import (  # noqa: F401
     kleinanzeigen_url,
 )
 from .nhw import NHW, NHW_LIST, nhw_detail, nhw_parse, nhw_url  # noqa: F401
+from .ohnemakler import (  # noqa: F401
+    OHNE_MAKLER,
+    om_detail,
+    om_parse,
+    om_path,
+    om_places_url,
+    om_town,
+    om_url,
+)
 from .wg import (  # noqa: F401
     WG_CARD,
     wg_cities_url,

@@ -1,4 +1,5 @@
-"""Flat searches: ImmoScout24, Kleinanzeigen, WG-Gesucht, Immowelt, bauverein AG and NHW."""
+"""Flat searches: ImmoScout24, Kleinanzeigen, WG-Gesucht, Immowelt, ohne-makler.net, immobilien.de, bauverein AG
+and NHW."""
 
 from .. import store
 from ..core import cadence, images
@@ -11,6 +12,8 @@ RHYTHMS = {
     'kleinanzeigen-wohnung': cadence.PORTAL,
     'wg-gesucht': cadence.PORTAL,
     'immowelt': cadence.PORTAL,
+    'ohne-makler': cadence.PORTAL,
+    'immobilien-de': cadence.PORTAL,
     'bauverein': cadence.LANDLORD,
     'nhw': cadence.LANDLORD,
 }
@@ -20,6 +23,8 @@ IMAGE_HOSTS = {
     'kleinanzeigen-wohnung': r'img\.kleinanzeigen\.de',
     'wg-gesucht': r'img\.wg-gesucht\.de',
     'immowelt': r'mms\.immowelt\.de',
+    'ohne-makler': r'media\.ohne-makler\.net',
+    'immobilien-de': r'immobilien-api\.fly\.dev',
     'bauverein': r'maps\.polyestate\.de',
     'nhw': r'www\.nhw\.de',
 }

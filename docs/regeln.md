@@ -60,7 +60,7 @@ Die App läuft mit einem Uvicorn-Worker. Eine dauerhafte Warteschlange (`schedul
 Zentrale Taktung (`cadence.py`, `cadence.db`):
 
 - Jede Quelle gehört zu einer Taktgruppe (`core/cadence.py`), jeweils plus bis zu 4 Minuten Zufallsversatz:
-  - **Portale** (eBay, Kleinanzeigen, Vinted, später ImmoScout24, WG-Gesucht, Immowelt): alle 15 Minuten, nachts (01–06 Uhr) mindestens stündlich.
+  - **Portale** (eBay, Kleinanzeigen, Vinted, später ImmoScout24, WG-Gesucht, Immowelt, ohne-makler.net, immobilien.de): alle 15 Minuten, nachts (01–06 Uhr) mindestens stündlich.
   - **Vermieter** (später bauverein, NHW): stündlich, nachts mindestens alle 2 Stunden.
   - **Vergleich** (idealo): alle 12 Stunden, plus bis zu 10 Minuten Versatz.
 - Pro Anbieter 40–70 Sekunden zwischen Seitenaufrufen, höchstens 60 pro Stunde, mit 5–10 Sekunden Abstand auch zwischen verschiedenen Anbietern.

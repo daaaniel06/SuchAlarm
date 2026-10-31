@@ -487,6 +487,118 @@ class ParserTests(unittest.TestCase):
         with self.assertRaises(Unreadable):
             portals.immowelt_detail('<div data-testid="cdp-hardfacts-keyfacts">1 Zimmer</div>')
 
+    def test_ohne_makler_list_and_detail(self):
+        # Layout of 31.10.2026 with made-up offers.
+        listed, eberstadt = portals.om_parse(fixture('ohne-makler', 'list.html'))  # not the similar ones after it
+        self.assertEqual(listed['url'], 'https://www.ohne-makler.net/immobilie/100001/')
+        self.assertEqual(
+            (listed['title'], listed['place'], listed['coldRent'], listed.get('rent'), listed['area'], listed['rooms']),
+            ('Helle 2-Zimmer-Wohnung mit Einbauküche', '64283 Darmstadt', 755, None, 50, 2),
+        )
+        self.assertEqual(
+            listed['imageSource'], 'https://media.ohne-makler.net/rs:fill:488:288/q:90/abc?sig=x&exp=1793321795'
+        )
+        self.assertEqual(
+            (eberstadt['place'], eberstadt['area'], eberstadt['traits']),
+            ('64297 Darmstadt (Eberstadt)', 100.5, ['WBS']),
+        )
+        nothing = fixture('ohne-makler', 'list.html').replace(
+            'Hier listen wir 2 Angebote für Wohnungen zur Miete in Darmstadt auf.', ''
+        )
+        self.assertEqual(portals.om_parse(nothing), [])  # then the page shows only similar offers
+        with self.assertRaises(Unreadable):
+            portals.om_parse('<html>Wartung</html>')
+        detail = portals.om_detail(fixture('ohne-makler', 'detail.html'))
+        self.assertEqual(
+            (detail['coldRent'], detail['rent'], detail['area'], detail['rooms'], detail['availableFrom']),
+            (755, 755 + 205, 50, 2, '2026-12-01'),
+        )
+        self.assertEqual(detail['place'], 'Musterstraße 21, 64283 Darmstadt')
+        self.assertEqual(detail['traits'], ['Befristet'])
+        self.assertIn('Bus vor der Tür', detail['text'])
+        without_costs = fixture('ohne-makler', 'detail.html').replace('Summe Nebenkosten/Heizkosten', 'Mietsicherheit')
+        self.assertIsNone(portals.om_detail(without_costs)['rent'])  # never guessed from the cold rent
+
+    def test_ohne_makler_place_and_address(self):
+        frankfurt = [
+            {'model': 'CITY', 'id': 2, 'name': 'Frankfurt (Oder)'},
+            {'model': 'CITY', 'id': 1, 'name': 'Frankfurt (Main)'},
+            {'model': 'REGION', 'id': 3, 'name': 'Frankfurt am Main (Kreis)'},
+        ]
+        self.assertEqual(portals.om_town(frankfurt, 'Frankfurt am Main'), 'Frankfurt (Main)')
+        self.assertEqual(portals.om_town(frankfurt, 'Frankfurt'), 'Frankfurt (Oder)')  # the site's first town
+        self.assertIsNone(portals.om_town([], 'Xyz'))
+        self.assertEqual(
+            portals.om_path('Hessen', 'Bad Homburg (Höhe)'), '/immobilien/wohnung-mieten/hessen/bad-homburg-hohe/'
+        )
+        self.assertEqual(portals.om_path('Bayern', 'München'), '/immobilien/wohnung-mieten/bayern/munchen/')
+        limits = {'maxRent': 899.5, 'minArea': 40.5, 'minRooms': 2, 'radius': 0}
+        self.assertEqual(
+            portals.om_url('/immobilien/wohnung-mieten/hessen/darmstadt/', limits),
+            'https://www.ohne-makler.net/immobilien/wohnung-mieten/hessen/darmstadt/?sort=date_desc&price_max=900&area_min=40&radius=0',
+        )
+        self.assertEqual(
+            portals.om_url('/immobilien/wohnung-mieten/hessen/darmstadt/', {**limits, 'radius': 15, 'minArea': 0}, 2),
+            'https://www.ohne-makler.net/immobilien/wohnung-mieten/hessen/darmstadt/?sort=date_desc&price_max=900&radius=25&page=2',
+        )
+        self.assertEqual(
+            portals.om_url('64283', limits),
+            'https://www.ohne-makler.net/immobilien/wohnung-mieten/?zip=64283&sort=date_desc&price_max=900&area_min=40',
+        )
+
+    def test_immobilien_de_list_and_detail(self):
+        # Layout of 31.10.2026 with made-up offers: the schema.org data of the list and of an offer.
+        flat, room = portals.id_parse(fixture('immobilien-de', 'list.html'))
+        self.assertEqual(flat['url'], 'https://www.immobilien.de/expose/10000001')
+        self.assertEqual(
+            (flat['title'], flat['place'], flat['coldRent'], flat.get('rent'), flat['area'], flat['rooms']),
+            ('Helle 2-Zimmer-Wohnung mit Einbauküche', '64283 Darmstadt', 755, None, 50, 2),
+        )
+        self.assertEqual(
+            flat['imageSource'], 'https://immobilien-api.fly.dev/api/images/openimmo/feed/100001/0-Wohnzimmer.jpg'
+        )
+        self.assertEqual((room['area'], room['rooms'], room['traits']), (None, None, ['WG-Zimmer']))
+        none = '<script type="application/ld+json">{"@graph":[{"@type":"BreadcrumbList"}]}</script>'
+        self.assertEqual(portals.id_parse(none + '<p>Keine Ergebnisse für Deine Suche.</p>'), [])
+        with self.assertRaises(Unreadable):
+            portals.id_parse(none)
+        page = fixture('immobilien-de', 'detail.html')
+        detail = portals.id_detail(page)
+        self.assertEqual(
+            (detail['coldRent'], detail['rent'], detail['area'], detail['rooms'], detail['availableFrom']),
+            (1750, 2020, 90, 4, '2026-12-01'),
+        )
+        self.assertEqual(detail['place'], 'Musterweg 10, 60325 Frankfurt am Main')
+        self.assertEqual(
+            (detail['traits'], detail['text']), (['WBS'], 'Vier Zimmer im ersten Stock. Keine WG, nur mit WBS.')
+        )
+        unstated = page.replace('>Warmmiete<', '>Gesamt<')
+        self.assertEqual(portals.id_detail(unstated)['rent'], 1750 + 270)  # heating included in the running costs
+        unknown_heating = unstated.replace('in Warmmiete enthalten', 'keine Angabe')
+        self.assertIsNone(portals.id_detail(unknown_heating)['rent'])
+        net = page.replace('>Kaltmiete<', '>Nettokaltmiete<')
+        self.assertEqual(portals.id_detail(net)['coldRent'], 1750)
+        with self.assertRaises(Unreadable):
+            portals.id_detail('<html>Exposé nicht gefunden</html>')
+
+    def test_immobilien_de_place_and_address(self):
+        frankfurt = {
+            'cities': [
+                {'name': 'Frankfurt', 'nameAddition': '(Oder)', 'slugToken': 'frankfurt', 'listingCount': 11},
+                {'name': 'Frankfurt', 'nameAddition': 'am Main', 'slugToken': 'frankfurt2', 'listingCount': 205},
+            ],
+            'zips': [],
+        }
+        self.assertEqual(portals.id_city(frankfurt, 'Frankfurt am Main'), 'frankfurt2')
+        self.assertEqual(portals.id_city(frankfurt, 'Frankfurt'), 'frankfurt2')  # the one with most offers
+        self.assertEqual(portals.id_city(frankfurt, 'Frankfurt (Oder)'), 'frankfurt')
+        self.assertIsNone(portals.id_city({'cities': []}, 'Xyz'))
+        self.assertEqual(portals.id_town({'zips': [{'zip': '64283', 'city': 'Darmstadt'}]}), 'Darmstadt')
+        self.assertEqual(
+            portals.id_url('darmstadt', {'maxRent': 899.5, 'minArea': 40.5, 'minRooms': 1.5}, 2),
+            'https://www.immobilien.de/mieten/wohnung/darmstadt/?sort=newest&preis_bis=900&flaeche_von=40&zimmer_von=1&page=2',
+        )
+
     def test_wg_gesucht_list_and_detail(self):
         p = {'maxRent': 700.5, 'minArea': 30.5, 'minRooms': 1.5}
         self.assertEqual(
@@ -572,6 +684,10 @@ class ParserTests(unittest.TestCase):
         )
 
 
+def fixture(portal, name):
+    return (Path(__file__).parent / 'fixtures' / portal / name).read_text()
+
+
 def without_markup(html):
     """The page after a redesign: every class, id and test hook renamed away."""
     hooks = r'class|id|data-testid|data-adid|data-itemuid|data-filtertype|data-filtervalue'
@@ -630,6 +746,8 @@ class PageTests(TempData):
         cadence.save_location('kleinanzeigen', 'darmstadt', '4868')
         cadence.save_location('immoscout24', 'darmstadt', '/de/hessen/darmstadt')
         cadence.save_location('wg-gesucht', 'darmstadt', '["Darmstadt", 23]')
+        cadence.save_location('ohne-makler', 'darmstadt', '/immobilien/wohnung-mieten/hessen/darmstadt/')
+        cadence.save_location('immobilien-de', 'darmstadt', 'darmstadt')
 
         @asynccontextmanager
         async def browser_page(hosts):
@@ -655,12 +773,15 @@ class PageTests(TempData):
             patch.object(sources.http, 'get_html', get_html),
             patch.object(sources.http, 'get_json', get_json),
             patch.object(sources.portals, 'immoscout_parse', return_value=[]),
+            patch.object(sources.portals, 'om_parse', return_value=[]),
+            patch.object(sources.portals, 'id_parse', return_value=[]),
         ):
             for source in sources.PAGED:
                 asyncio.run(sources.more(source, search, 2))
         self.assertIn('pagenumber=2&pagesize=100', visited[0])
         self.assertIn('/seite:2/', visited[1])
         self.assertIn('.1+2.1.1.html', visited[2])  # WG-Gesucht counts from 0
+        self.assertTrue(all(url.endswith('&page=2') for url in visited[3:]), visited[3:])
 
 
 class AreaTests(TempData):
@@ -673,7 +794,7 @@ class AreaTests(TempData):
             sources.out_of_area(postcode, 'wg-gesucht'), 'Sucht nur nach Ortsnamen, nicht nach Postleitzahl'
         )
         self.assertIsNone(sources.out_of_area(potsdam, 'wg-gesucht'))  # not looked up yet: asked
-        cadence.save_location('wg-gesucht', 'potsdam', sources.WG_UNKNOWN)
+        cadence.save_location('wg-gesucht', 'potsdam', sources.UNKNOWN_PLACE)
         self.assertEqual(sources.out_of_area(potsdam, 'wg-gesucht'), 'Kennt diesen Ort nicht')
         self.assertIsNone(sources.out_of_area(potsdam, 'nhw'))  # place unknown yet: asked as before
         cadence.save_location('osm', 'potsdam', json.dumps([52.39, 13.06, 'Brandenburg']))
@@ -702,7 +823,7 @@ class AreaTests(TempData):
 
     def test_a_resting_portal_is_not_disturbed(self):
         potsdam = self.stored_search(query='Potsdam', sources=['wg-gesucht'])
-        cadence.save_location('wg-gesucht', 'potsdam', sources.WG_UNKNOWN)
+        cadence.save_location('wg-gesucht', 'potsdam', sources.UNKNOWN_PLACE)
         fetch = AsyncMock()
         with patch.object(flats.sources, 'fetch', new=fetch):
             done = asyncio.run(worker.check(potsdam))
@@ -748,6 +869,65 @@ class WgLookupTests(TempData):
         self.assertEqual(get_json.await_count, 1)
         self.assertEqual(self.visited, ['WG-Gesucht kennt den Ort „Xyzqwv“ nicht.'] * 2)
         self.assertEqual(sources.out_of_area(unknown, 'wg-gesucht'), 'Kennt diesen Ort nicht')
+
+
+class ListedPlaceTests(TempData):
+    """ohne-makler.net and immobilien.de find a town once through their place search."""
+
+    def setUp(self):
+        super().setUp()
+        self.visited = []
+
+    async def get_html(self, source, url, follow=False):
+        self.visited.append((url, follow))
+        if 'page=2' in url:
+            raise sources.http.NotFound('Anbieter antwortet mit HTTP 404.')
+        return '<script type="application/ld+json">{}</script>Keine Ergebnisse für Deine Suche'
+
+    def cards(self, source, search, answers, page=1):
+        with (
+            patch.object(sources.http, 'get_json', new=AsyncMock(side_effect=answers)) as get_json,
+            patch.object(sources.http, 'get_html', self.get_html),
+            patch.object(sources, 'locate', new=AsyncMock(return_value=(49.87, 8.65, 'Hessen'))),
+        ):
+            try:
+                return asyncio.run(sources.cards(source, search, page)), get_json
+            except RuntimeError as exc:
+                return str(exc), get_json
+
+    def test_ohne_makler_builds_the_towns_path_once(self):
+        darmstadt = self.stored_search(query='Darmstadt', sources=['ohne-makler'])
+        answer = [{'model': 'CITY', 'id': 18150, 'name': 'Darmstadt'}]
+        with patch.object(portals, 'om_parse', return_value=[]):
+            _, get_json = self.cards('ohne-makler', darmstadt, [answer])
+            self.cards('ohne-makler', darmstadt, [])
+        self.assertEqual(get_json.await_count, 1)
+        page = 'https://www.ohne-makler.net/immobilien/wohnung-mieten/hessen/darmstadt/?sort=date_desc&price_max=1500&radius=0'
+        self.assertEqual(self.visited, [(page, True), (page, False)])
+
+    def test_an_unknown_town_rests(self):
+        unknown = self.stored_search(query='Xyzqwv', sources=['ohne-makler', 'immobilien-de'])
+        self.assertEqual(self.cards('ohne-makler', unknown, [[]])[0], 'ohne-makler.net kennt den Ort „Xyzqwv“ nicht.')
+        self.assertEqual(
+            self.cards('immobilien-de', unknown, [{'cities': []}])[0], 'immobilien.de kennt den Ort „Xyzqwv“ nicht.'
+        )
+        self.assertEqual(sources.out_of_area(unknown, 'ohne-makler'), 'Kennt diesen Ort nicht')
+        self.assertEqual(sources.out_of_area(unknown, 'immobilien-de'), 'Kennt diesen Ort nicht')
+
+    def test_immobilien_de_finds_a_postcodes_town(self):
+        place = {'query': '64283', 'label': '64283 Darmstadt', 'kind': 'plz'}
+        filters = {'min_area': 0, 'min_rooms': 1, 'exclusions': [], 'place': place}
+        postcode = self.stored_search(query='64283', filters=filters, sources=['immobilien-de'])
+        town = {'cities': [{'name': 'Darmstadt', 'slugToken': 'darmstadt'}]}
+        cards, get_json = self.cards(
+            'immobilien-de', postcode, [{'zips': [{'zip': '64283', 'city': 'Darmstadt'}]}, town]
+        )
+        self.assertEqual((cards, get_json.await_count), ([], 2))
+        self.assertEqual(
+            self.visited,
+            [('https://www.immobilien.de/mieten/wohnung/darmstadt/?sort=newest&preis_bis=1500&zimmer_von=1', True)],
+        )
+        self.assertEqual(self.cards('immobilien-de', postcode, [], page=2)[0], [])  # past the last page
 
 
 class BauvereinTests(TempData):
@@ -1225,6 +1405,14 @@ class DuplicateTests(unittest.TestCase):
         a = self.flat('a', 'immoscout24', 100)
         b = self.flat('b', 'immowelt', 200, place='Heinrichstr. 12, 64283 Darmstadt', area=62.5, cold_rent=810.0)
         self.assertEqual(duplicates.groups([b, a]), {'a': 'a', 'b': 'a'})
+
+    def test_an_immobilien_de_copy_of_an_ohne_makler_offer_is_one_flat(self):
+        from suchalarm.wohnung import duplicates
+
+        # Many immobilien.de offers come from ohne-makler.net; both detail pages name the street.
+        a = self.flat('a', 'ohne-makler', 100, place='Musterstraße 21, 64283 Darmstadt', rent=960.0, cold_rent=755.0)
+        b = self.flat('b', 'immobilien-de', 200, place='Musterstraße 21, 64283 Darmstadt', rent=960.0, cold_rent=755.0)
+        self.assertEqual(duplicates.groups([a, b]), {'a': 'a', 'b': 'a'})
 
     def test_an_identical_photo_counts_as_the_same_place(self):
         from suchalarm.wohnung import duplicates
