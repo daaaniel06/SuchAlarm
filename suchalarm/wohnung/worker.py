@@ -103,12 +103,7 @@ def reset(conn, search_id, old, payload):
         conn.executemany(f'DELETE FROM {table} WHERE search_id=? AND source=?', [(search_id, s) for s in removed])
     conn.executemany('DELETE FROM listings WHERE search_id=? AND source=?', [(search_id, s) for s in dropped])
     if moved:
-        # Flats waiting for the mail stay until it goes out; take_pending judges them by the new place.
-        conn.execute(
-            'DELETE FROM listings WHERE search_id=? AND url NOT IN '
-            '(SELECT url FROM outbox WHERE search_id=? AND batch IS NULL)',
-            (search_id, search_id),
-        )
+        store.keep_waiting_only(conn, 'listings', search_id)
         conn.execute('DELETE FROM start_offers WHERE search_id=?', (search_id,))
         return
     new = store.read_search(conn, search_id)

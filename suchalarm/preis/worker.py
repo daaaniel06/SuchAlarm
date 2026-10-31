@@ -187,9 +187,8 @@ def take_pending(conn):
             search
             and search['active']
             and not row['hidden']
-            and row['url']
-            and title_fits(row['source'], row['title'], search)
             and in_range(price, search, free(row['price'], search))
+            and title_fits(row['source'], row['title'], search)
             and not (row['reported'] is not None and price >= row['reported'])
         ):
             offer = dict(row)
@@ -303,12 +302,7 @@ def reset(conn, search_id, old, payload):
         conn.execute('DELETE FROM outbox WHERE search_id=?', (search_id,))
     conn.executemany('DELETE FROM offers WHERE search_id=? AND source=?', [(search_id, source) for source in dropped])
     if changed:
-        # Offers waiting for the mail stay until it goes out; take_pending judges them by the new filters.
-        conn.execute(
-            'DELETE FROM offers WHERE search_id=? AND url NOT IN '
-            '(SELECT url FROM outbox WHERE search_id=? AND batch IS NULL)',
-            (search_id, search_id),
-        )
+        store.keep_waiting_only(conn, 'offers', search_id)
     removed = old['sources'] if changed else dropped
     conn.executemany('DELETE FROM source_status WHERE search_id=? AND source=?', [(search_id, s) for s in removed])
     if 'idealo' in removed:

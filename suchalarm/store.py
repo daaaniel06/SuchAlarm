@@ -408,6 +408,16 @@ def mail_log(conn, limit):
     return [dict(r) for r in rows]
 
 
+def keep_waiting_only(conn, table, search_id):
+    """Delete a search's rows of a kind's TABLE (offers, listings) except those waiting in the outbox: an edit
+    starts over, but what is due for the mail stays until it goes out (take_pending judges it anew)."""
+    conn.execute(
+        f'DELETE FROM {table} WHERE search_id=?1 AND url NOT IN '
+        '(SELECT url FROM outbox WHERE search_id=?1 AND batch IS NULL)',
+        (search_id,),
+    )
+
+
 def pending(conn, kind):
     """Hits of KIND waiting in the outbox for their mail."""
     return conn.execute(
