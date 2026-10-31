@@ -13,7 +13,27 @@ def clock(stamp):
     return time.strftime('%H:%M', time.localtime(stamp))
 
 
-STATUS_COLUMNS = 'INSERT OR REPLACE INTO source_status(search_id,source,checked_at,error,count,failures) '
+def _show(conn, sid, source, now, error=None, count=0, failures=0, note=None):
+    """Write what the source shows now. Whether it ever delivered a result (started) stays as it is."""
+    conn.execute(
+        'INSERT INTO source_status(search_id,source,checked_at,error,count,failures,note) VALUES (?,?,?,?,?,?,?) '
+        'ON CONFLICT(search_id,source) DO UPDATE SET checked_at=excluded.checked_at, error=excluded.error, '
+        'count=excluded.count, failures=excluded.failures, note=excluded.note',
+        (sid, source, now, error, count, failures, note),
+    )
+
+
+def source_ok(conn, sid, source, now, count):
+    """A readable result with COUNT offers. From now on the source has started for the search (started())."""
+    _show(conn, sid, source, now, count=count)
+    conn.execute('UPDATE source_status SET started=1 WHERE search_id=? AND source=?', (sid, source))
+
+
+def started(conn, sid, source):
+    """Whether the source ever delivered a result for the search. Its first one is the starting stock; a
+    failure since does not change that, only an edit that drops the status (the kinds' reset())."""
+    row = conn.execute('SELECT started FROM source_status WHERE search_id=? AND source=?', (sid, source)).fetchone()
+    return bool(row and row['started'])
 
 
 def source_error(search, source, now, reason, failures=None):
@@ -23,7 +43,7 @@ def source_error(search, source, now, reason, failures=None):
     with store.db() as conn:
         if failures is None:
             failures = _failures(conn, search, source) + 1
-        conn.execute(STATUS_COLUMNS + 'VALUES (?,?,?,?,0,?)', (search['id'], source, now, reason[:300], failures))
+        _show(conn, search['id'], source, now, error=reason[:300], failures=failures)
 
 
 def _failures(conn, search, source):
@@ -82,5 +102,4 @@ def rest(search, source, note, now):
     """A source with nothing for this search (a regional portal outside its area): shown as resting with the
     reason, never as disturbed."""
     with store.db() as conn:
-        conn.execute(STATUS_COLUMNS + 'VALUES (?,?,?,NULL,0,0)', (search['id'], source, now))
-        conn.execute('UPDATE source_status SET note=? WHERE search_id=? AND source=?', (note, search['id'], source))
+        _show(conn, search['id'], source, now, note=note)

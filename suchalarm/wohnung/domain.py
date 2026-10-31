@@ -331,6 +331,12 @@ def warm_rent(listing):
     return listing.rent if listing.rent is not None else estimated_rent(listing)
 
 
+def other_rent(old, new):
+    """Whether NEW, a later card of the same listing, asks another rent than OLD."""
+    before, now = warm_rent(old), warm_rent(new)
+    return before is not None and now is not None and now != before
+
+
 def cheaper(old, new):
     """Whether NEW, a later card of the same listing, asks less rent than OLD."""
     before, now = warm_rent(old), warm_rent(new)

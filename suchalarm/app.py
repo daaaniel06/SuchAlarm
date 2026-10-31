@@ -406,9 +406,11 @@ async def mail_test():
         raise HTTPException(422, 'Zuerst eine Empfängeradresse speichern.')
     message = mailer.test_message(recipients, _sample_entries(), uuid.uuid4().hex)
     try:
-        await asyncio.to_thread(mailer.deliver, message)
+        refused = await asyncio.to_thread(mailer.deliver, message)
     except mailer.DeliveryError as exc:
         raise HTTPException(502, str(exc)) from None
+    if refused:
+        raise HTTPException(502, mailer.refusal(refused))
     return {'ok': True}
 
 

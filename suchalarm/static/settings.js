@@ -33,7 +33,9 @@ export function renderMailStatus() {
     `${pending} ${pending === 1 ? 'Treffer wartet' : 'Treffer warten'} auf die nächste Mail.`;
   const outcome = log =>
     log.status === 'sent'
-      ? ago(log.sent_at)
+      ? log.error
+        ? `${ago(log.sent_at)} · <span class="down">${escapeHtml(log.error)}</span>`
+        : ago(log.sent_at)
       : log.status === 'failed'
         ? `<span class="down">Fehlgeschlagen · ${escapeHtml(log.error || '')}</span>`
         : log.status === 'unknown'

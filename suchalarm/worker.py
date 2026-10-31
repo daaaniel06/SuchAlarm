@@ -168,8 +168,10 @@ def _record_delivery(batch, entries, outcome, error):
             [(search['id'], offer['url'], price, now) for search, offer, price in entries],
         )
         conn.execute('DELETE FROM outbox WHERE batch=?', (batch,))
-        if outcome == 'sent':
+        if outcome == 'sent' and error is None:
             store.delete_setting(conn, 'mail_error')
+        elif outcome == 'sent':
+            store.put_setting(conn, 'mail_error', error)
         else:
             store.put_setting(
                 conn, 'mail_error', f'{error} Die Mail kam vielleicht trotzdem an und wird nicht erneut gesendet.'
@@ -201,8 +203,9 @@ async def _send_kind(kind, now):
         return
     batch, message, entries = claimed
     try:
-        await asyncio.to_thread(mailer.deliver, message)
-        outcome, error = 'sent', None
+        refused = await asyncio.to_thread(mailer.deliver, message)
+        # The others got it: never sent again, the refused addresses are shown instead.
+        outcome, error = 'sent', (mailer.refusal(refused) if refused else None)
     except mailer.DeliveryError as exc:
         outcome, error = ('unknown' if exc.maybe_sent else 'failed'), str(exc)
         log.warning('Mail %s', outcome)

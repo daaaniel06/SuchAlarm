@@ -146,5 +146,7 @@ def _detail_state(row, source, now):
 
 
 def completed(row):
+    """The listing of ROW, completed by its detail page once that is read. A page queued to be read again
+    (another rent) no longer counts: until then the card does."""
     item = Listing(**json.loads(row['body']))
-    return item.with_detail(json.loads(row['detail'])) if row['detail'] else item
+    return item.with_detail(json.loads(row['detail'])) if row['state'] == 'done' else item

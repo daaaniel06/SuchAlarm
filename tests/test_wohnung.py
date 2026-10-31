@@ -11,7 +11,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from suchalarm import store, worker
+from suchalarm import status, store, worker
 from suchalarm.core import browser, cadence
 from suchalarm.core.browser import Unreadable
 from suchalarm.wohnung import catalog, details, domain, outbox, pages, portals, sources
@@ -1069,6 +1069,39 @@ class WorkerTests(TempData):
             asyncio.run(pages.more_step())
         self.assertEqual(self.due(), [])
 
+    def test_a_page_that_loaded_for_a_replaced_job_is_dropped(self):
+        flat_search = self.stored_search()
+        pages.save_result(flat_search, 'immoscout24', [self.card(1)], 1, time.time())  # the starting stock
+        with store.db() as conn:
+            pages.read_stock_again(conn, flat_search['id'], ['immoscout24'])
+
+        async def edited_while_loading(source, search, page):
+            with store.db() as conn:  # another limit while page 1 loads: a new job for page 1
+                pages.read_stock_again(conn, flat_search['id'], ['immoscout24'])
+            return [self.card(2)], pages.FULL_PAGE
+
+        with patch.object(flats.sources, 'more', new=edited_while_loading):
+            asyncio.run(pages.more_step())
+        self.assertEqual(self.due(), [(1, 0)])  # the new job waits
+        self.assertEqual([r['url'][-1] for r in catalog.listings(flat_search)], ['1'])  # the old page is dropped
+
+    def test_a_paused_search_reads_no_further_pages_until_it_runs_again(self):
+        flat_search = self.stored_search()
+        first = [self.card(n) for n in range(pages.FULL_PAGE)]
+        pages.save_result(flat_search, 'immoscout24', first, len(first), time.time())
+        self.assertEqual(self.due(), [(2, 0)])
+        more = AsyncMock(return_value=([], 0))
+        with patch.object(flats.sources, 'more', new=more):
+            with store.db() as conn:
+                conn.execute('UPDATE searches SET active=0 WHERE id=?', (flat_search['id'],))
+            self.assertIsNone(asyncio.run(pages.more_step()))
+            more.assert_not_awaited()
+            self.assertEqual(self.due(), [(2, 0)])  # kept for later
+            with store.db() as conn:
+                conn.execute('UPDATE searches SET active=1 WHERE id=?', (flat_search['id'],))
+            asyncio.run(pages.more_step())
+            more.assert_awaited_once()
+
     def test_a_page_is_full_by_what_the_portal_listed_not_what_fits_the_place(self):
         flat_search = self.stored_search()
         here = [self.card(n) for n in range(5)]  # the other ten offers of the page lie elsewhere
@@ -1099,6 +1132,13 @@ class WorkerTests(TempData):
         new = pages.save_result(flat_search, 'immoscout24', [self.card(99), *older], 16, time.time())
         self.assertEqual(new, {'https://www.immobilienscout24.de/expose/99'})
         self.assertEqual(self.due(), [(2, 0)])  # the reading of the stock goes on
+
+    def test_a_failure_after_an_empty_start_does_not_make_the_first_flat_stock(self):
+        flat_search = self.stored_search()
+        self.assertEqual(pages.save_result(flat_search, 'immoscout24', [], 0, time.time()), set())  # the stock: none
+        status.source_error(flat_search, 'immoscout24', time.time(), 'kaputt')
+        new = pages.save_result(flat_search, 'immoscout24', [self.card(1)], 1, time.time())
+        self.assertEqual(new, {'https://www.immobilienscout24.de/expose/1'})
 
     def test_first_result_is_the_stock_and_only_new_listings_get_a_detail_page(self):
         flat_search = self.stored_search()
@@ -1145,6 +1185,19 @@ class WorkerTests(TempData):
             self.assertIsNone(asyncio.run(details.detail_step()))  # nothing left
         row = next(r for r in catalog.listings(flat_search) if r['url'].endswith('/2'))
         self.assertEqual((row['rent'], row['status'], row['reasons']), (1100.0, 'excluded', ['WBS']))
+
+    def test_a_higher_rent_on_the_card_reads_the_detail_page_again(self):
+        flat_search = self.stored_search(max_price=130000)
+        self.run_check([self.card(1)], flat_search)
+        self.run_check([self.card(1), self.card(2, rent=1000)], flat_search)
+        with (
+            patch.object(flats.sources, 'detail', new=AsyncMock(return_value={'rent': 1100.0})),
+            patch.object(flats.cadence, 'ready_at', return_value=0),
+        ):
+            asyncio.run(details.detail_step())
+        self.run_check([self.card(1), self.card(2, rent=1500)], flat_search)
+        row = next(r for r in catalog.listings(flat_search) if r['url'].endswith('/2'))
+        self.assertEqual((row['rent'], row['status'], row['details']), (1500, 'excluded', 'pending'))
 
     def test_the_starting_stock_is_completed_slowly_when_nothing_else_waits(self):
         flat_search = self.stored_search()
@@ -1447,7 +1500,7 @@ class ApiAndMailTests(TempData):
             self.assertEqual([r[0][-1] for r in conn.execute('SELECT url FROM outbox')], ['2'])  # 3 is too small
         with (
             patch.dict(os.environ, {'SMTP_HOST': 'mail', 'SMTP_FROM': 'bot@example.com'}),
-            patch.object(mailer, 'deliver') as deliver,
+            patch.object(mailer, 'deliver', return_value=[]) as deliver,
         ):
             asyncio.run(worker.send_digest())
         message = deliver.call_args[0][0]
