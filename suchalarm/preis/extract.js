@@ -46,6 +46,15 @@ source => {
     }
     return '';
   };
+  const textWithout = (node, selector) => {
+    const copy = node.cloneNode(true);
+    copy.querySelectorAll(selector).forEach(el => el.remove());
+    return copy.textContent.trim();
+  };
+  const shipping = card => {
+    const container = card.querySelector(c.shipping);
+    return source === 'kleinanzeigen' && container ? textWithout(container, c.price) : text(card, c.shipping);
+  };
   const title = card => {
     if (source !== 'ebay') return text(card, c.title);
     for (const selector of c.title.split(',')) {
@@ -123,13 +132,10 @@ source => {
     const a = card.querySelector(c.link);
     let shippingText = '';
     if (source === 'ebay') {
-      const copy = card.cloneNode(true);
-      copy
-        .querySelectorAll(
-          `${c.title}, ${c.price}, ${c.seller}, .s-card__subtitle, .clipped, .sr-only, .visually-hidden, [hidden], script, style`,
-        )
-        .forEach(el => el.remove());
-      shippingText = copy.textContent.slice(0, 2500);
+      shippingText = textWithout(
+        card,
+        `${c.title}, ${c.price}, ${c.seller}, .s-card__subtitle, .clipped, .sr-only, .visually-hidden, [hidden], script, style`,
+      ).slice(0, 2500);
     }
     return {
       shippingText,
@@ -139,7 +145,7 @@ source => {
       seller: source === 'ebay' ? ebaySeller(card) : text(card, c.seller),
       owner: owner(card),
       condition: source === 'ebay' ? ebayCondition(card) : text(card, c.condition),
-      shipping: text(card, c.shipping),
+      shipping: shipping(card),
       location:
         source === 'ebay'
           ? text(card, '.s-item__location, .s-item__itemLocation, .s-card__location, .s-card__itemLocation')

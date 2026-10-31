@@ -195,6 +195,11 @@ class SourceLoadingTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ShippingTests(unittest.TestCase):
+    def test_kleinanzeigen_shipping_never_infers_a_cost_from_availability(self):
+        for label, expected in (('Versand möglich', None), ('+ 4,50 € Versand', 450), ('Nur Abholung', None)):
+            with self.subTest(label=label):
+                self.assertEqual(row_shipping({'shipping': label}, 10000, 'kleinanzeigen'), expected)
+
     def test_marketplace_shipping_labels_and_real_cached_ebay_cards(self):
         for label, expected in [
             ('+EUR 8,18 Lieferung', 818),
