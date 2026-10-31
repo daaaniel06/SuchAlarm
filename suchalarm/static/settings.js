@@ -103,7 +103,7 @@ $('template-edit').addEventListener('click', () => {
 });
 $('template-form').addEventListener('submit', async e => {
   e.preventDefault();
-  $('template-save').disabled = true;
+  $('template-edit').disabled = $('template-save').disabled = $('template-text').disabled = true;
   $('template-error').hidden = true;
   try {
     const text = $('template-text').value;
@@ -115,7 +115,7 @@ $('template-form').addEventListener('submit', async e => {
     $('template-error').textContent = err.message;
     $('template-error').hidden = false;
   } finally {
-    $('template-save').disabled = false;
+    $('template-edit').disabled = $('template-save').disabled = $('template-text').disabled = false;
   }
 });
 function sourceField(x) {

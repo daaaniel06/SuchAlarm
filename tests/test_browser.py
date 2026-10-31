@@ -1,3 +1,4 @@
+import asyncio
 import json
 import time
 import unittest
@@ -355,11 +356,18 @@ class AreaInterfaceTests(unittest.IsolatedAsyncioTestCase):
         )  # fmt: skip
         static = Path(__file__).resolve().parents[1] / 'suchalarm' / 'static'
         errors = []
+        template_started, template_release = asyncio.Event(), asyncio.Event()
 
         async def serve(route):
             path = urlparse(route.request.url).path
             if path == '/api/state':
                 await route.fulfill(json=state)
+                return
+            if path == '/api/template':
+                template_started.set()
+                await template_release.wait()
+                state['template'] = route.request.post_data_json['text']
+                await route.fulfill(json={'ok': True})
                 return
             file = static / (path.removeprefix('/static/') if path.startswith('/static/') else 'index.html')
             types = {'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2'}
@@ -389,6 +397,25 @@ class AreaInterfaceTests(unittest.IsolatedAsyncioTestCase):
             await page.keyboard.press('2')  # a key in an open dialog never switches the area
             self.assertEqual(await page.locator('[data-area="wohnung"]').get_attribute('aria-pressed'), 'true')
             self.assertEqual(await page.evaluate("localStorage.getItem('suchalarm.area')"), 'wohnung')
+            await page.keyboard.press('Escape')
+            await page.locator('[data-view="settings"]').first.click()
+            await page.locator('[data-settings-tab="data"]').click()
+            await page.locator('#template-edit').click()
+            await page.locator('#template-text').fill('Meine Bewerbung')
+            await page.locator('#template-save').click()
+            await asyncio.wait_for(template_started.wait(), timeout=5)
+            self.assertTrue(await page.locator('#template-text').is_disabled())
+            await page.keyboard.press('Escape')
+            try:
+                self.assertTrue(await page.locator('#template-edit').is_disabled())
+            finally:
+                template_release.set()
+            await page.wait_for_function(
+                '!document.getElementById("template-edit").disabled && document.getElementById("template-edit").textContent === "Bearbeiten"'
+            )
+            await page.locator('#template-edit').click()
+            self.assertEqual(await page.locator('#template-text').input_value(), 'Meine Bewerbung')
+            self.assertTrue(await page.locator('#template-text').is_enabled())
             await browser.close()
         self.assertEqual(errors, [])
 
