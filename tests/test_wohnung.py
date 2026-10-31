@@ -1392,6 +1392,37 @@ class ApiAndMailTests(TempData):
             {found[0].url: 'excluded', found[1].url: 'matched', found[2].url: 'excluded'},
         )
 
+    def test_removed_district_queues_missing_details_on_the_next_result(self):
+        flat_search = self.create(filters={'excluded_districts': ['Eberstadt'], 'exclusions': ['WBS']})
+        stock = self.card(1, place='Darmstadt, Bessungen')
+        new = self.card(2, place='Darmstadt-Eberstadt')
+        pages.save_result(flat_search, 'immoscout24', [stock], 1, time.time())
+        pages.save_result(flat_search, 'immoscout24', [stock, new], 2, time.time())
+        with store.db() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM listing_details').fetchone()[0], 0)
+            store.put_setting(conn, 'recipients', '["test@example.com"]')
+            store.put_setting(conn, 'mail_enabled:wohnung', '1')
+        response = self.client.put(
+            f'/api/searches/{flat_search["id"]}',
+            json={
+                'kind': 'wohnung',
+                'query': 'Darmstadt',
+                'max_price': 130000,
+                'sources': flat_search['sources'],
+                'filters': {'excluded_districts': [], 'exclusions': ['WBS']},
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        pages.save_result(store.search(flat_search['id']), 'immoscout24', [stock, new], 2, time.time())
+        with store.db() as conn:
+            self.assertEqual(
+                [tuple(row) for row in conn.execute('SELECT url,state FROM listing_details')], [(new.url, 'pending')]
+            )
+            conn.execute("UPDATE listing_details SET state='done', body='{}'")
+        outbox.queue_mails()
+        with store.db() as conn:
+            self.assertEqual([row[0] for row in conn.execute('SELECT url FROM outbox')], [new.url])
+
     def test_excluded_districts_reject_empty_overlong_and_too_many_names(self):
         for names in ([' '], ['x' * 81], [f'Ortsteil {n}' for n in range(21)]):
             with self.subTest(names=names):
