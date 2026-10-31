@@ -233,6 +233,25 @@ class AvailabilityTests(unittest.TestCase):
             with self.subTest(status=status):
                 self.assertEqual(parse_rows('ebay', [self.card(title, status)], dict(query=title)), [])
 
+    def test_sales_counters_and_the_sellers_description_are_no_status(self):
+        title = 'Spiel PS5'
+        for status in ('Mehr als 10 verkauft', '23 verkauft', 'Fast ausverkauft'):
+            with self.subTest(status=status):
+                self.assertEqual(len(parse_rows('ebay', [self.card(title, status)], dict(query=title))), 1)
+        card = dict(
+            title=title,
+            url='https://www.kleinanzeigen.de/s-anzeige/spiel/1234567890-279-1234',
+            price='25 €',
+            text=f'{title} Verkauft wird mein Spiel, wird nicht reserviert. Festpreis, kein VB. 25 €',
+            status='64283 Darmstadt 25 € Versand möglich',
+        )
+        self.assertEqual(len(parse_rows('kleinanzeigen', [card], dict(query=title))), 1)
+        for status in ('Reserviert', 'Gesuch'):
+            with self.subTest(status=status):
+                reserved = dict(card, status=f'{status} 25 €')
+                self.assertEqual(parse_rows('kleinanzeigen', [reserved], dict(query=title)), [])
+        self.assertEqual(parse_rows('kleinanzeigen', [dict(card, price='25 € VB')], dict(query=title)), [])
+
 
 class ShippingTests(unittest.TestCase):
     def test_kleinanzeigen_shipping_never_infers_a_cost_from_availability(self):
