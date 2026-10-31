@@ -1901,6 +1901,30 @@ class DuplicateMailTests(ApiAndMailTests):
         with store.db() as conn:
             self.assertEqual([r[0] for r in conn.execute('SELECT url FROM outbox')], [leader['url']])
 
+    def test_the_twin_that_fits_leads_and_is_mailed_when_the_first_one_is_too_dear(self):
+        flat_search = self.create(
+            sources=['immoscout24', 'immowelt'], filters={'min_area': 40, 'min_rooms': 2, 'exclusions': []}
+        )
+        with store.db() as conn:
+            store.put_setting(conn, 'recipients', json.dumps(['a@example.com']))
+            store.put_setting(conn, 'mail_enabled:wohnung', '1')
+        place = {'place': 'Heinrichstraße 12, 64283 Darmstadt'}
+        pages.save_result(flat_search, 'immoscout24', [], 0, time.time())
+        pages.save_result(flat_search, 'immowelt', [], 0, time.time())
+        dear = self.card(1, rent=1305, **place)  # above the search's 1.300 €
+        pages.save_result(flat_search, 'immoscout24', [dear], len([dear]), time.time())
+        fitting = Listing.from_card('immowelt', {'url': 'https://www.immowelt.de/expose/x', 'title': 'Wohnung zur Miete',
+                                                 'rent': 1290, 'area': 60, 'rooms': 2, **place})  # fmt: skip
+        pages.save_result(flat_search, 'immowelt', [fitting], len([fitting]), time.time() + 60)
+        rows = {r['url']: r for r in catalog.listings(flat_search)}
+        self.assertEqual((rows[fitting.url]['same_as'], rows[fitting.url]['copy']), (None, False))
+        self.assertEqual((rows[dear.url]['same_as'], rows[dear.url]['copy']), (fitting.url, True))
+        with store.db() as conn:
+            conn.execute("UPDATE listing_details SET state='done', body='{}'")
+        outbox.queue_mails()
+        with store.db() as conn:
+            self.assertEqual([r[0] for r in conn.execute('SELECT url FROM outbox')], [fitting.url])
+
     def test_a_copy_queued_before_its_twin_was_recognised_is_not_mailed(self):
         flat_search = self.create(
             sources=['immoscout24', 'immowelt'], filters={'min_area': 40, 'min_rooms': 2, 'exclusions': []}

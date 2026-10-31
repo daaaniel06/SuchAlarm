@@ -51,7 +51,7 @@ export const isNew = o => isFresh(o, visit.since, visit.opened); // a new search
 export const isFlat = s => kindOf(s) === 'wohnung';
 // A hit fits its search: flats as the server judged them, offers by the price rules.
 export const fits = (o, s) => (isFlat(s) ? flatPasses(o) : match(o, s));
-// A flat on several portals shows once, through its first listing ("auch bei …").
+// A flat on several portals shows once, through its leading listing ("auch bei …").
 export const pool = kind => state[HITS[kind]].filter(o => !o.same_as);
 // The area of a source; a source the server does not list any more counts as a product source.
 export const kindOfSource = source => state.source_kinds[source] || DEFAULT_KIND;

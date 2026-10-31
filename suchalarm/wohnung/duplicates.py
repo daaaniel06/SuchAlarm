@@ -22,7 +22,7 @@ flat twice. So listings are linked only on clear evidence:
   of them is linked.
 - "Nicht dieselbe Wohnung" in the app keeps two listings apart for good (APART pairs).
 
-Nothing is deleted. groups() names each member's first listing; which one the hit list shows is the worker's.
+Nothing is deleted. groups() names each member's first listing; which one the hit list shows and mails is catalog.py's.
 """
 
 import re

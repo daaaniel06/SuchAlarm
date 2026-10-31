@@ -69,7 +69,7 @@ def listings(search):
                 details=_detail_state(row, item.source, now),
             )
         )
-    # The same flat on several portals: the first one leads and names the others.
+    # The same flat on several portals: the first one that fits leads and names the others.
     photos = images.fingerprints([row['url'] for row in result])
     for row in result:
         row['photo_hash'] = photos.get(row['url'])
@@ -79,13 +79,13 @@ def listings(search):
         if row['url'] in firsts:
             members.setdefault(firsts[row['url']], []).append(row)
     for group in members.values():
-        # The hit list shows a listing the portals still show; the mail went out with the first one.
+        # The hit list shows a listing the portals still show; the mail goes out with the first that fits.
         recent = [x for x in group if x['last_seen'] >= now - STALE] or group
-        leader = min(recent, key=lambda x: (x['first_seen'], x['url']))
+        leader, mailed = min(recent, key=_fitting_first), min(group, key=_fitting_first)
         for row in group:
             twins = sorted((x for x in group if x is not row), key=lambda x: x['source'])
             row['same_as'] = None if row is leader else leader['url']
-            row['copy'] = row['url'] != firsts[row['url']]  # mailed through the group's first listing
+            row['copy'] = row is not mailed
             row['also'] = [x['source'] for x in twins] if row is leader else []
             row['twins'] = [_twin(x) for x in twins] if row is leader else []
     for row in result:
@@ -94,6 +94,12 @@ def listings(search):
         row.setdefault('also', [])
         row.setdefault('twins', [])
     return result
+
+
+def _fitting_first(row):
+    """Order within a group of the same flat: a listing the search may want before one it rules out (one
+    portal may ask a few euros more), then the first found."""
+    return (row['status'] == 'excluded', row['first_seen'], row['url'])
 
 
 def _twin(row):
