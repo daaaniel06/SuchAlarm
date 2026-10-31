@@ -105,13 +105,16 @@ def _more_after(conn, sid, source, page, listings, unseen, stock=False):
     flats not seen yet; otherwise only after a page of nothing but new flats, which may have pushed more down."""
     more = bool(unseen) if stock else len(unseen) == len(listings)
     last = STOCK_PAGES if stock else MAX_PAGE
-    if source in sources.PAGED and page < last and len(listings) >= FULL_PAGE and more:
+    goes_on = source in sources.PAGED and len(listings) >= FULL_PAGE and more
+    if goes_on and page < last:
         conn.execute(
             'INSERT OR REPLACE INTO more_pages(search_id,source,page,tries,stock) VALUES (?,?,?,0,?)',
             (sid, source, page + 1, int(stock)),
         )
-    else:
-        conn.execute('DELETE FROM more_pages WHERE search_id=? AND source=?', (sid, source))
+        return
+    if goes_on and stock:
+        log.warning('Stock of %s stopped after %s pages; narrow the search to see the rest', source, last)
+    conn.execute('DELETE FROM more_pages WHERE search_id=? AND source=?', (sid, source))
 
 
 def save_more(search, source, page, listings, now):
