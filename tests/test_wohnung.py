@@ -204,6 +204,9 @@ class FilterTests(unittest.TestCase):
         self.assertNotEqual(domain.query_text('wg-gesucht', cheap), domain.query_text('wg-gesucht', dear))
         self.assertNotEqual(domain.query_text('immowelt', cheap), domain.query_text('immowelt', dear))
         self.assertEqual(domain.query_text('nhw', cheap), domain.query_text('nhw', search(query='Wiesbaden')))
+        no_wbs = search(filters={'min_area': 0, 'min_rooms': 1, 'exclusions': ['WBS']})
+        self.assertNotEqual(domain.query_text('immoscout24', no_wbs), domain.query_text('immoscout24', search()))
+        self.assertEqual(domain.query_text('wg-gesucht', no_wbs), domain.query_text('wg-gesucht', search()))
 
     def test_detail_page_completes_a_card(self):
         card = flat(rent=None, traits=['Tauschwohnung'], exclusions_known=False)
@@ -356,12 +359,12 @@ class ParserTests(unittest.TestCase):
         )
 
     def test_kleinanzeigen_search_url(self):
-        url = portals.kleinanzeigen_url({**PROFILE, 'radius': 10, 'minArea': 50, 'minRooms': 2.5}, '3331')
+        swaps = {**PROFILE, 'radius': 10, 'minArea': 50, 'minRooms': 2.5, 'exclusions': ['Tauschwohnung']}
         self.assertEqual(
-            url,
+            portals.kleinanzeigen_url(swaps, '3331'),
             'https://www.kleinanzeigen.de/s-wohnung-mieten/anzeige:angebote/sortierung:neuste/preis::1300/'
-            'c203l3331r10+wohnung_mieten.qm_d:50%2C+wohnung_mieten.zimmer_d:2.5%2C',
-        )
+            'c203l3331r10+wohnung_mieten.qm_d:50%2C+wohnung_mieten.zimmer_d:2.5%2C?pageSize=100',
+        )  # no swap_s filter: it would drop every ad that leaves the field empty
 
     def test_immoscout_search_and_detail(self):
         data = {
@@ -384,8 +387,11 @@ class ParserTests(unittest.TestCase):
         card = portals.immoscout_parse(data)[0]
         self.assertEqual((card['coldRent'], card['area'], card['rooms']), (748, 55.36, 2))
         self.assertEqual(card['imageSource'], 'https://pictures.immobilienscout24.de/x.jpg/480x360/q')
-        url = portals.immoscout_url({**PROFILE, 'radius': 10, 'exclusions': ['Tauschwohnung']}, '/de/x', (52.5, 13.4))
-        self.assertIn('exclusioncriteria=swapflat', url)
+        excluded = {**PROFILE, 'radius': 10, 'exclusions': ['WBS', 'Tauschwohnung']}
+        url = portals.immoscout_url(excluded, '/de/x', (52.5, 13.4))
+        self.assertIn('haspromotion=false', url)
+        self.assertNotIn('exclusioncriteria', url)  # ignored by the portal
+        self.assertNotIn('haspromotion', portals.immoscout_url({**PROFILE, 'exclusions': []}, '/de/x', None))
         self.assertIn('geocoordinates=52.50000%3B13.40000%3B10.0', url)
         detail = portals.immoscout_detail(
             {
@@ -460,6 +466,16 @@ class ParserTests(unittest.TestCase):
         )
         self.assertNotIn('spaceMin', page)
         self.assertNotIn('numberOfRoomsMin', request['criteria'])
+        self.assertNotIn('projectTypes', request['criteria'])
+        page, request = portals.immowelt_search(
+            path, profile(search(filters={'exclusions': ['WBS', 'Tauschwohnung', 'Befristet', 'WG-Zimmer']}))
+        )
+        self.assertEqual(request['criteria']['certificateOfEligibilityNeeded'], 'No')
+        self.assertEqual(
+            request['criteria']['projectTypes'],
+            ['Investment', 'Life_Annuity', 'New_Build', 'Projected', 'Resale', 'Stock'],
+        )
+        self.assertIn('&certificateOfEligibilityNeeded=No&projectTypes=Investment%2CLife_Annuity%2C', page)
         page, request = portals.immowelt_search(path, profile(search()), page=3)
         self.assertTrue(page.endswith('&page=3'))  # its own address, so the page cache keeps the pages apart
         self.assertEqual(request['paging']['page'], 3)
@@ -606,11 +622,17 @@ class ParserTests(unittest.TestCase):
         p = {'maxRent': 700.5, 'minArea': 30.5, 'minRooms': 1.5}
         self.assertEqual(
             portals.wg_url(('Darmstadt', 23), p, page=2),
-            'https://www.wg-gesucht.de/wohnungen-in-Darmstadt.23.1+2.1.1.html?rMax=701&sMin=30&rmMin=1',
+            'https://www.wg-gesucht.de/wohnungen-in-Darmstadt.23.1+2.1.1.html?rMax=701&sMin=30&rmMin=1&limit=100',
         )
         self.assertEqual(
             portals.wg_url(('Darmstadt', 23), {'maxRent': 700, 'minArea': 0, 'minRooms': 0}),
-            'https://www.wg-gesucht.de/wohnungen-in-Darmstadt.23.1+2.1.0.html?rMax=700',
+            'https://www.wg-gesucht.de/wohnungen-in-Darmstadt.23.1+2.1.0.html?rMax=700&limit=100',
+        )
+        excluded = {'maxRent': 700, 'minArea': 0, 'minRooms': 0, 'exclusions': ['Tauschwohnung', 'Befristet']}
+        self.assertEqual(
+            portals.wg_url(('Darmstadt', 23), excluded),
+            'https://www.wg-gesucht.de/wohnungen-in-Darmstadt.23.1+2.1.0.html?rMax=700&limit=100&exc=2'
+            '&offer_filter=1&city_id=23&categories%5B%5D=1&categories%5B%5D=2&rent_types%5B%5D=2',
         )
         cards = portals.wg_parse(WG_LIST)
         self.assertEqual(
@@ -864,7 +886,7 @@ class WgLookupTests(TempData):
         get_json = self.fetch(frankfurt, [WG_FRANKFURT])
         self.assertEqual(get_json.await_count, 1)
         self.assertEqual(cadence.location('wg-gesucht', 'frankfurt am main'), '["Frankfurt-am-Main", 41]')
-        page = 'https://www.wg-gesucht.de/wohnungen-in-Frankfurt-am-Main.41.1+2.1.0.html?rMax=1500&rmMin=1'
+        page = 'https://www.wg-gesucht.de/wohnungen-in-Frankfurt-am-Main.41.1+2.1.0.html?rMax=1500&rmMin=1&limit=100'
         self.assertEqual(self.visited, [(page, True), (page, False)])
 
     def test_an_unknown_town_is_asked_once_and_then_rests(self):

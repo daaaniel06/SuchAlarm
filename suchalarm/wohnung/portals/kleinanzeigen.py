@@ -22,6 +22,7 @@ log = logging.getLogger('suchalarm')
 
 
 KLEINANZEIGEN = 'https://www.kleinanzeigen.de'
+PAGE_SIZE = 100  # the most one page holds (25 without it; checked live on 31.10.2026)
 
 
 def kleinanzeigen_locations_url(query):
@@ -42,8 +43,7 @@ def kleinanzeigen_url(profile, location_id, page=1):
         filters += f'+wohnung_mieten.qm_d:{profile["minArea"]:g},'
     if profile.get('minRooms'):
         filters += f'+wohnung_mieten.zimmer_d:{profile["minRooms"]:g},'
-    if 'Tauschwohnung' in profile.get('exclusions', []):
-        filters += '+wohnung_mieten.swap_s:nein'
+    # No swap filter: swap_s:nein also drops every ad that leaves the field empty, most of them.
     # The price filter is the cold rent; a warm-rent limit is a safe upper bound for it.
     # "anzeige:angebote" leaves out requests from flat seekers.
     paging = f'seite:{page}/' if page > 1 else ''
@@ -51,7 +51,7 @@ def kleinanzeigen_url(profile, location_id, page=1):
         f'/s-wohnung-mieten/anzeige:angebote/sortierung:neuste/{paging}preis::{int(profile["maxRent"])}'
         f'/c203l{location_id}{radius}{filters}'
     )
-    return KLEINANZEIGEN + quote(path, safe='/:+')
+    return KLEINANZEIGEN + quote(path, safe='/:+') + f'?pageSize={PAGE_SIZE}'
 
 
 def kleinanzeigen_parse(html):

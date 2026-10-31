@@ -69,18 +69,29 @@ def wg_slug(name):
 FLATS = '1+2'
 
 
+PAGE_SIZE = 100  # the most one page holds (20 without it, 200 breaks the list; checked live on 31.10.2026)
+
+
 def wg_url(city, profile, page=1):
-    """The town's list of flats and one-room flats, already cut to the search's rent, size and rooms.
-    rMax is the total rent the cards show; the limits are widened to whole numbers, the exact check stays local."""
+    """The town's list of flats and one-room flats, already cut to the search's rent, size, rooms and
+    excluded traits. rMax is the total rent the cards show; the limits are widened to whole numbers, the
+    exact check stays local."""
     slug, identifier = city
     limits = {
         'rMax': math.ceil(profile['maxRent']),
         'sMin': math.floor(profile['minArea']),
         'rmMin': math.floor(profile['minRooms']),
     }
-    query = urlencode({name: value for name, value in limits.items() if value})
+    query = [(name, value) for name, value in limits.items() if value] + [('limit', PAGE_SIZE)]
+    exclusions = profile.get('exclusions', [])
+    if 'Tauschwohnung' in exclusions:
+        query.append(('exc', 2))  # "Tauschangebot: Nein"
+    if 'Befristet' in exclusions:
+        # Only unlimited lets; the site reads this only within its full filter form.
+        query += [('offer_filter', 1), ('city_id', identifier), ('categories[]', 1), ('categories[]', 2)]
+        query.append(('rent_types[]', 2))
     address = f'https://www.wg-gesucht.de/wohnungen-in-{slug}.{identifier}.{FLATS}.1.{page - 1}.html'
-    return f'{address}?{query}' if query else address
+    return f'{address}?{urlencode(query)}'
 
 
 def wg_place(street, district, postcode=''):
