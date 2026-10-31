@@ -1,5 +1,5 @@
-# Runs only for a release: a pushed tag (v1.0.0 etc.) or a manual run with the version. Builds the Docker image, pushes it to
-# ghcr.io/daaaniel06/suchalarm and creates the GitHub release from CHANGELOG.md. No test CI.
+# Runs only for a release: a pushed tag (v1.0.0 etc.) or a manual run with the version. Runs the checks, then builds the
+# Docker image, pushes it to ghcr.io/daaaniel06/suchalarm and creates the GitHub release from CHANGELOG.md. No CI on pushes.
 name: Release
 
 on:
@@ -16,7 +16,19 @@ permissions:
   packages: write
 
 jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The image's test stage: ruff, mypy and every Python test that needs no browser, offline.
+      - run: docker build --target test -t suchalarm-test . && docker run --rm --network none suchalarm-test
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci && npm run -s format:check && npm run -s lint && npm test --silent
+
   release:
+    needs: checks
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ inputs.version || github.ref_name }}
