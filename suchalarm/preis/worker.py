@@ -96,12 +96,13 @@ def save_result(search, source, offers, reference, now):
     sid = search['id']
     with store.db() as conn:
         seen = dict(conn.execute('SELECT url, first_seen FROM offers WHERE search_id=? AND source=?', (sid, source)))
-        baseline = {offer.url for offer in offers} if not seen and not started(conn, sid, source) else set()
+        waiting = {r[0] for r in conn.execute('SELECT url FROM outbox WHERE search_id=? AND batch IS NULL', (sid,))}
+        current = {offer.url for offer in offers}
+        # An offer already waiting for the mail is news, also in a starting point after an edit.
+        baseline = current - waiting if not (seen.keys() - waiting) and not started(conn, sid, source) else set()
         # The app shows no "new" dot for this starting point either.
         conn.executemany('INSERT OR IGNORE INTO start_offers VALUES (?,?)', [(sid, url) for url in baseline])
         sent = dict(conn.execute('SELECT url, sent_at FROM notifications WHERE search_id=?', (sid,)))
-        current = {offer.url for offer in offers}
-        waiting = {r[0] for r in conn.execute('SELECT url FROM outbox WHERE search_id=? AND batch IS NULL', (sid,))}
         conn.executemany(
             'DELETE FROM offers WHERE search_id=? AND source=? AND url=?',
             [(sid, source, url) for url in seen if url in current or url not in waiting],
@@ -186,6 +187,8 @@ def take_pending(conn):
             search
             and search['active']
             and not row['hidden']
+            and row['url']
+            and title_fits(row['source'], row['title'], search)
             and in_range(price, search, free(row['price'], search))
             and not (row['reported'] is not None and price >= row['reported'])
         ):
@@ -289,14 +292,7 @@ def reset(conn, search_id, old, payload):
     """Drop what an edit makes invalid. Pausing a search or dropping a source keeps the remaining hits:
     a paused search is not checked again on its own, so wiping them would empty its list."""
     changed = any(old[name] != payload.comparable(name) for name in SEARCH_FILTERS)
-    removed = old['sources'] if changed else [source for source in old['sources'] if source not in payload.sources]
-    for table in ('offers', 'source_status'):
-        if changed:
-            conn.execute(f'DELETE FROM {table} WHERE search_id=?', (search_id,))
-        else:
-            conn.executemany(f'DELETE FROM {table} WHERE search_id=? AND source=?', [(search_id, s) for s in removed])
-    if 'idealo' in removed:
-        conn.execute('DELETE FROM idealo_references WHERE search_id=?', (search_id,))
+    dropped = [source for source in old['sources'] if source not in payload.sources]
     # A different query or price basis makes earlier reports incomparable.
     if (
         old['include_shipping'] != payload.include_shipping
@@ -305,6 +301,18 @@ def reset(conn, search_id, old, payload):
     ):
         conn.execute('DELETE FROM notifications WHERE search_id=?', (search_id,))
         conn.execute('DELETE FROM outbox WHERE search_id=?', (search_id,))
+    conn.executemany('DELETE FROM offers WHERE search_id=? AND source=?', [(search_id, source) for source in dropped])
+    if changed:
+        # Offers waiting for the mail stay until it goes out; take_pending judges them by the new filters.
+        conn.execute(
+            'DELETE FROM offers WHERE search_id=? AND url NOT IN '
+            '(SELECT url FROM outbox WHERE search_id=? AND batch IS NULL)',
+            (search_id, search_id),
+        )
+    removed = old['sources'] if changed else dropped
+    conn.executemany('DELETE FROM source_status WHERE search_id=? AND source=?', [(search_id, s) for s in removed])
+    if 'idealo' in removed:
+        conn.execute('DELETE FROM idealo_references WHERE search_id=?', (search_id,))
 
 
 def search_url(source, search):

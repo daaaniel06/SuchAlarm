@@ -97,10 +97,18 @@ def reset(conn, search_id, old, payload):
     """Another place or radius makes the stored flats wrong; other filters are judged per listing. A portal
     that applies a changed limit itself may now list older flats: its stock is read again."""
     moved = old['query'] != payload.query or old['radius'] != payload.radius
-    removed = old['sources'] if moved else [source for source in old['sources'] if source not in payload.sources]
-    for table in ('listings', 'source_status', 'more_pages'):
+    dropped = [source for source in old['sources'] if source not in payload.sources]
+    removed = old['sources'] if moved else dropped
+    for table in ('source_status', 'more_pages'):
         conn.executemany(f'DELETE FROM {table} WHERE search_id=? AND source=?', [(search_id, s) for s in removed])
+    conn.executemany('DELETE FROM listings WHERE search_id=? AND source=?', [(search_id, s) for s in dropped])
     if moved:
+        # Flats waiting for the mail stay until it goes out; take_pending judges them by the new place.
+        conn.execute(
+            'DELETE FROM listings WHERE search_id=? AND url NOT IN '
+            '(SELECT url FROM outbox WHERE search_id=? AND batch IS NULL)',
+            (search_id, search_id),
+        )
         conn.execute('DELETE FROM start_offers WHERE search_id=?', (search_id,))
         return
     new = store.read_search(conn, search_id)

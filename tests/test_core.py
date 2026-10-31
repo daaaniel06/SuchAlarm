@@ -170,6 +170,25 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
                 conn.execute('SELECT count(*) FROM offers WHERE url=?', (self.offer.url,)).fetchone()[0], 0
             )
 
+    async def test_a_queued_offer_survives_an_edit_of_the_search(self):
+        self.setting('frequency', 'Täglich')
+        await self.found(self.offer)
+        await update(1, ProductSearch(query='Spiel', max_price=3500, min_price=100, sources=['ebay']))
+        self.search = store.search(1)
+        await worker.send_digest()  # a pass before the daily mail is due
+        await self.found(self.offer)  # the first result after the edit is a new starting point
+        with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
+            await worker.send_digest(time.time() + 86401)
+        deliver.assert_called_once()
+        self.assertIn(self.offer.url, deliver.call_args.args[0].get_body(('plain',)).get_content())
+
+    async def test_a_queued_offer_with_a_newly_excluded_word_is_not_mailed(self):
+        await self.found(replace(self.offer, title='Spiel defekt'))
+        await update(1, ProductSearch(query='Spiel', max_price=3500, excluded='defekt', sources=['ebay']))
+        with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
+            await worker.send_digest()
+        deliver.assert_not_called()
+
     async def test_dedup_and_further_drop(self):
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
             await self.found(self.offer)

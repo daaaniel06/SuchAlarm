@@ -1709,6 +1709,31 @@ class ApiAndMailTests(TempData):
         outbox.queue_mails()
         self.assertEqual(self.queued(), ['1', '2'])  # 1 now fits, 2 is cheaper than mailed
 
+    def test_a_queued_flat_survives_a_wider_radius(self):
+        flat_search = self.create(sources=['immoscout24'], filters={'min_area': 40, 'min_rooms': 2, 'exclusions': []})
+        with store.db() as conn:
+            store.put_setting(conn, 'recipients', json.dumps(['a@example.com']))
+            store.put_setting(conn, 'mail_enabled:wohnung', '1')
+        pages.save_result(flat_search, 'immoscout24', [], 0, time.time())
+        pages.save_result(flat_search, 'immoscout24', [self.card(1)], 1, time.time())
+        with store.db() as conn:
+            conn.execute("UPDATE listing_details SET state='done', body='{}'")
+        outbox.queue_mails()
+        self.assertEqual(self.queued(), ['1'])
+        response = self.client.put(
+            f'/api/searches/{flat_search["id"]}',
+            json={'kind': 'wohnung', 'query': 'Darmstadt', 'max_price': 130000, 'radius': 10,
+                  'sources': ['immoscout24'], 'filters': {'min_area': 40, 'min_rooms': 2, 'exclusions': []}},
+        )  # fmt: skip
+        self.assertEqual(response.status_code, 200, response.text)
+        with store.db() as conn:  # the mail goes out before the portal is read again
+            entries = outbox.take_pending(conn)
+        self.assertEqual([offer['url'][-1] for _, offer, _ in entries], ['1'])
+        wider = store.search(flat_search['id'])
+        pages.save_result(wider, 'immoscout24', [self.card(1), self.card(2)], 2, time.time())
+        rows = {row['url'][-1]: row for row in catalog.listings(wider)}
+        self.assertEqual((rows['1']['start'], rows['2']['start']), (False, True))  # the rest is the new stock
+
 
 def duplicates_close(first, second):
     from suchalarm.wohnung import duplicates
