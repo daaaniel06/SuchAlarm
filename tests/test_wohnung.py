@@ -1960,6 +1960,33 @@ class DuplicateMailTests(ApiAndMailTests):
         with store.db() as conn:
             self.assertEqual([r[0] for r in conn.execute('SELECT url FROM outbox')], [fitting.url])
 
+    def test_the_fitting_twin_is_mailed_while_the_first_one_is_still_unclear(self):
+        flat_search = self.create(
+            sources=['immoscout24', 'immowelt'], filters={'min_area': 40, 'min_rooms': 2, 'exclusions': ['WBS']}
+        )
+        with store.db() as conn:
+            store.put_setting(conn, 'recipients', json.dumps(['a@example.com']))
+            store.put_setting(conn, 'mail_enabled:wohnung', '1')
+        place = {'place': 'Heinrichstraße 12, 64283 Darmstadt'}
+        pages.save_result(flat_search, 'immoscout24', [], 0, time.time())
+        pages.save_result(flat_search, 'immowelt', [], 0, time.time())
+        first = self.card(1, **place)
+        pages.save_result(flat_search, 'immoscout24', [first], 1, time.time())
+        twin = Listing.from_card('immowelt', {'url': 'https://www.immowelt.de/expose/x', 'title': 'Wohnung zur Miete',
+                                              'rent': 1100, 'area': 60, 'rooms': 2, **place})  # fmt: skip
+        pages.save_result(flat_search, 'immowelt', [twin], 1, time.time() + 60)
+        with store.db() as conn:  # the twin's detail page is read first
+            conn.execute("UPDATE listing_details SET state='done', body='{}' WHERE url=?", (twin.url,))
+        outbox.queue_mails()
+        with store.db() as conn:  # then the first one's: it needs a WBS
+            conn.execute(
+                "UPDATE listing_details SET state='done', body=? WHERE url=?",
+                (json.dumps({'traits': ['WBS']}), first.url),
+            )
+        outbox.queue_mails()
+        with store.db() as conn:
+            self.assertEqual([r[0] for r in conn.execute('SELECT url FROM outbox')], [twin.url])
+
     def test_a_copy_queued_before_its_twin_was_recognised_is_not_mailed(self):
         flat_search = self.create(
             sources=['immoscout24', 'immowelt'], filters={'min_area': 40, 'min_rooms': 2, 'exclusions': []}
