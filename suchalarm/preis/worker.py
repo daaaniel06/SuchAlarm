@@ -21,6 +21,7 @@ from .domain import (
     all_terms,
     compared_price,
     eligible,
+    free,
     in_range,
     search_fee,
     title_fits,
@@ -177,7 +178,7 @@ def take_pending(conn):
             search
             and search['active']
             and not row['hidden']
-            and in_range(price, search)
+            and in_range(price, search, free(row['price'], search))
             and not (row['reported'] is not None and price >= row['reported'])
         ):
             offer = dict(row)
@@ -350,7 +351,7 @@ def samples(searches, limit):
     found = []
     for offer in rows:
         search = by_id.get(offer['search_id'])
-        if search and in_range(compared(offer, search), search):
+        if search and in_range(compared(offer, search), search, free(offer['price'], search)):
             found.append((search, offer))
             if len(found) == limit:
                 break

@@ -528,13 +528,10 @@ def free(price, search):
     return price == 0 and bool(search.get('free'))
 
 
-def in_range(price, search):
-    """The price range of a search: from min_price (junk such as 3 € listings stays out) up to below max_price."""
-    return (
-        price is not None
-        and (search.get('min_price', 0) <= price or free(price, search))
-        and price < search['max_price']
-    )
+def in_range(price, search, given_away=False):
+    """The price range of a search: from min_price (junk such as 3 € listings stays out) up to below max_price.
+    GIVEN_AWAY (see free) skips the minimum: shipping alone does not make an offer junk."""
+    return price is not None and (given_away or search.get('min_price', 0) <= price) and price < search['max_price']
 
 
 def too_cheap(offer, search):
@@ -546,7 +543,7 @@ def too_cheap(offer, search):
 
 
 def eligible(offer, search):
-    return in_range(offer.compared_price(search), search)
+    return in_range(offer.compared_price(search), search, free(offer.price, search))
 
 
 def query_text(source, search):
