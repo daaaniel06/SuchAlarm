@@ -219,7 +219,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_refused_recipient_is_shown_and_the_others_get_nothing_twice(self):
         await self.found(self.offer)
-        with patch('suchalarm.mailer.deliver', return_value=['b@example.com']):
+        with patch('suchalarm.mailer.deliver', return_value={'b@example.com': 550}):
             await worker.send_digest()
         self.assertEqual((self.count('outbox'), self.count('batches', "WHERE status='sent'")), (0, 1))
         self.assertIn('b@example.com nicht angenommen', store.settings()['mail_error'])
@@ -867,7 +867,13 @@ class DeliveryOutcomeTests(unittest.TestCase):
 
     def test_recipients_refused_while_others_got_it(self):
         refused = {'c@example.com': (550, b'no'), 'b@example.com': (450, b'later')}
-        self.assertEqual(self.outcome(refused=refused), ('sent', ['b@example.com', 'c@example.com']))
+        self.assertEqual(self.outcome(refused=refused), ('sent', {'b@example.com': 450, 'c@example.com': 550}))
+
+    def test_a_temporary_refusal_does_not_blame_the_address(self):
+        text = mailer.refusal({'b@example.com': 450, 'c@example.com': 550})
+        self.assertIn('c@example.com nicht angenommen – Adresse prüfen', text)
+        self.assertIn('b@example.com vorübergehend abgelehnt', text)
+        self.assertNotIn('b@example.com nicht angenommen', text)
 
     def test_refusals_before_sending_are_retried(self):
         self.assertEqual(self.outcome(connect=ConnectionRefusedError())[1], False)
