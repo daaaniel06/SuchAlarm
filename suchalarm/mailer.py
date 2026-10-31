@@ -116,7 +116,8 @@ def _explain(error, sending):
 
 
 def deliver(message):
-    """Send over SMTP. Raises DeliveryError with a short German reason, never secrets."""
+    """Send over SMTP. Returns the recipients the server refused while it took the others (sorted; usually
+    a mistyped address). Raises DeliveryError with a short German reason, never secrets."""
     current = _usable_server()
     del message['From']  # the mailbox that sends it, whatever the server is set to now
     message['From'] = current.sender
@@ -134,9 +135,15 @@ def deliver(message):
             if current.user:
                 client.login(current.user, current.password)
             sending = True
-            client.send_message(message)
+            refused = client.send_message(message)
     except Exception as error:
         raise _explain(error, sending) from None
+    return sorted(refused)
+
+
+def refusal(refused):
+    """What to show when the server took a mail but refused some of its recipients."""
+    return f'Der Mailserver hat {", ".join(refused)} nicht angenommen – Adresse prüfen.'
 
 
 def _mail(search):

@@ -1500,7 +1500,7 @@ class ApiAndMailTests(TempData):
             self.assertEqual([r[0][-1] for r in conn.execute('SELECT url FROM outbox')], ['2'])  # 3 is too small
         with (
             patch.dict(os.environ, {'SMTP_HOST': 'mail', 'SMTP_FROM': 'bot@example.com'}),
-            patch.object(mailer, 'deliver') as deliver,
+            patch.object(mailer, 'deliver', return_value=[]) as deliver,
         ):
             asyncio.run(worker.send_digest())
         message = deliver.call_args[0][0]
