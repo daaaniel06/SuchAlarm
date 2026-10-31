@@ -10,7 +10,7 @@ from dataclasses import asdict
 
 from .. import store
 from ..core import cadence
-from ..status import STATUS_COLUMNS
+from ..status import source_ok, started
 from . import sources
 from .details import FETCH_TIMEOUT, read_again
 from .domain import WHOLE_STOCK, Listing, cheaper, could_match, profile
@@ -44,7 +44,7 @@ def save_result(search, source, listings, listed, now):
         unseen = _save_page(conn, search, source, listings, now, stock)
         if source in WHOLE_STOCK:
             _drop_let(conn, sid, source, listings)
-        conn.execute(STATUS_COLUMNS + 'VALUES (?,?,?,NULL,?,0)', (sid, source, now, len(listings)))
+        source_ok(conn, sid, source, now, len(listings))
         if stock or not reading_stock:  # the reading of the stock goes on behind a regular check
             _queue_next(conn, sid, source, 1, listings, listed, unseen, stock)
     return set() if stock else unseen
@@ -79,10 +79,7 @@ def _job(conn, sid, source):
 
 def _first_result(conn, sid, source):
     known = conn.execute('SELECT 1 FROM listings WHERE search_id=? AND source=?', (sid, source)).fetchone()
-    succeeded = conn.execute(
-        'SELECT 1 FROM source_status WHERE search_id=? AND source=? AND error IS NULL', (sid, source)
-    ).fetchone()
-    return not known and not succeeded
+    return not known and not started(conn, sid, source)
 
 
 def _save_page(conn, search, source, listings, now, stock):

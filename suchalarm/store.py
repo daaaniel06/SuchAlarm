@@ -238,6 +238,14 @@ def _add_alternatives(conn):
         conn.execute("ALTER TABLE searches ADD COLUMN alternatives TEXT NOT NULL DEFAULT ''")
 
 
+def _add_status_started(conn):
+    """Whether a source ever delivered a result for a search (status.started): a failure since must not make
+    its next result starting stock again. Until now only a clean last result told that."""
+    if 'started' not in {r[1] for r in conn.execute('PRAGMA table_info(source_status)')}:
+        conn.execute('ALTER TABLE source_status ADD COLUMN started INTEGER NOT NULL DEFAULT 0')
+        conn.execute('UPDATE source_status SET started=1 WHERE error IS NULL AND note IS NULL')
+
+
 # Each entry runs once; PRAGMA user_version counts the applied ones. Only ever append.
 MIGRATIONS = (
     _migrate_legacy,
@@ -253,6 +261,7 @@ MIGRATIONS = (
     _moved,  # separated
     _add_fee,
     _add_alternatives,
+    _add_status_started,
 )
 
 

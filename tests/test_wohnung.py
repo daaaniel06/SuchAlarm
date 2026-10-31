@@ -11,7 +11,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from suchalarm import store, worker
+from suchalarm import status, store, worker
 from suchalarm.core import browser, cadence
 from suchalarm.core.browser import Unreadable
 from suchalarm.wohnung import catalog, details, domain, outbox, pages, portals, sources
@@ -1099,6 +1099,13 @@ class WorkerTests(TempData):
         new = pages.save_result(flat_search, 'immoscout24', [self.card(99), *older], 16, time.time())
         self.assertEqual(new, {'https://www.immobilienscout24.de/expose/99'})
         self.assertEqual(self.due(), [(2, 0)])  # the reading of the stock goes on
+
+    def test_a_failure_after_an_empty_start_does_not_make_the_first_flat_stock(self):
+        flat_search = self.stored_search()
+        self.assertEqual(pages.save_result(flat_search, 'immoscout24', [], 0, time.time()), set())  # the stock: none
+        status.source_error(flat_search, 'immoscout24', time.time(), 'kaputt')
+        new = pages.save_result(flat_search, 'immoscout24', [self.card(1)], 1, time.time())
+        self.assertEqual(new, {'https://www.immobilienscout24.de/expose/1'})
 
     def test_first_result_is_the_stock_and_only_new_listings_get_a_detail_page(self):
         flat_search = self.stored_search()

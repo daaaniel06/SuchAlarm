@@ -9,7 +9,7 @@ import time
 
 from .. import store
 from ..core import images
-from ..status import STATUS_COLUMNS
+from ..status import source_ok, started
 from . import delivery, learning, sources
 from . import mail as mail  # the kind's mail presentation (kinds.py)
 from .domain import (
@@ -92,10 +92,7 @@ def save_result(search, source, offers, reference, now):
     sid = search['id']
     with store.db() as conn:
         seen = dict(conn.execute('SELECT url, first_seen FROM offers WHERE search_id=? AND source=?', (sid, source)))
-        succeeded = conn.execute(
-            'SELECT 1 FROM source_status WHERE search_id=? AND source=? AND error IS NULL', (sid, source)
-        ).fetchone()
-        baseline = {offer.url for offer in offers} if not seen and not succeeded else set()
+        baseline = {offer.url for offer in offers} if not seen and not started(conn, sid, source) else set()
         # The app shows no "new" dot for this starting point either.
         conn.executemany('INSERT OR IGNORE INTO start_offers VALUES (?,?)', [(sid, url) for url in baseline])
         sent = dict(conn.execute('SELECT url, sent_at FROM notifications WHERE search_id=?', (sid,)))
@@ -116,7 +113,7 @@ def save_result(search, source, offers, reference, now):
             'INSERT OR IGNORE INTO shipping_baselines VALUES (?,?)',
             [(sid, o.url) for o in offers if o.source == 'vinted' and o.shipping is None and o.url in baseline],
         )
-        conn.execute(STATUS_COLUMNS + 'VALUES (?,?,?,NULL,?,0)', (sid, source, now, len(offers)))
+        source_ok(conn, sid, source, now, len(offers))
         if source == 'idealo' and reference:
             value = json.dumps(dict(reference, checked_at=now))
             conn.execute('INSERT OR REPLACE INTO idealo_references VALUES (?,?)', (sid, value))

@@ -124,7 +124,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
             conn.execute("INSERT INTO settings VALUES ('mail_enabled','1')")
             # The source was read before: new offers are news, not the starting point.
             conn.execute(
-                "INSERT INTO source_status(search_id,source,checked_at,error,count) VALUES (1,'ebay',1,NULL,0)"
+                "INSERT INTO source_status(search_id,source,checked_at,error,count,started) VALUES (1,'ebay',1,NULL,0,1)"
             )
         self.search = store.searches()[0]
         self.offer = Offer('ebay', 'https://www.ebay.de/itm/12345', 'Spiel', 3000, 0)
@@ -321,7 +321,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
                 ('["ebay","idealo"]', int(include_shipping)),
             )
             conn.execute(
-                "INSERT INTO source_status(search_id,source,checked_at,error,count) VALUES (1,'idealo',1,NULL,0)"
+                "INSERT INTO source_status(search_id,source,checked_at,error,count,started) VALUES (1,'idealo',1,NULL,0,1)"
             )
         self.search = store.searches()[0]
         used = Offer('ebay', 'https://www.ebay.de/itm/7', 'Spiel', used_price, shipping)
@@ -384,6 +384,15 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         await self.found(self.offer, later)
         with store.db() as conn:
             self.assertEqual([r[0] for r in conn.execute('SELECT url FROM start_offers')], [self.offer.url])
+
+    async def test_a_failure_after_an_empty_start_does_not_swallow_the_first_offer(self):
+        with store.db() as conn:
+            conn.execute('DELETE FROM source_status')  # a brand-new search
+        await self.found()  # read fine, nothing there yet
+        with patch('suchalarm.preis.sources.fetch', new=AsyncMock(side_effect=RuntimeError('kaputt'))):
+            await worker.check(self.search)
+        await self.found(self.offer)
+        self.assertEqual((self.count('outbox'), self.count('start_offers')), (1, 0))
 
     async def test_first_seen_survives_rechecks(self):
         with patch('time.time', return_value=1000.0):
