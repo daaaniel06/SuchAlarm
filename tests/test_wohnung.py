@@ -255,7 +255,7 @@ KLEINANZEIGEN_PAGE = """<main id="srchrslt-content"><ul>
 <article class="aditem" data-adid="3515855658" data-href="/s-anzeige/helle-2-zimmer/3515855658-203-7965"><div><script type="application/ld+json">{"title":"x 999 €"}</script><img src="https://img.kleinanzeigen.de/api/v1/prod-ads/images/2a/abc?rule=$_2.AUTO" alt="">
 <div><span>14480 Potsdam</span><span>(6 km)</span></div><h3><a href="/s-anzeige/helle-2-zimmer/3515855658-203-7965">Helle 2-Zimmer &amp; Balkon</a></h3>
 <p>Schön</p><p class="price">1.050 €</p><span>62,5 m²</span><span>2 Zi.</span></div></article>
-<article class="aditem" data-adid="3520717913" data-href="/s-anzeige/tauschwohnung/3520717913-203-7963"><h3><a>TAUSCHWOHNUNG Mitte</a></h3><p>700 € VB</p></article>
+<article class="aditem" data-adid="3520717913" data-href="/s-anzeige/tauschwohnung/3520717913-203-7963"><h3><a>TAUSCHWOHNUNG Mitte</a></h3><p class="price">700 € VB</p></article>
 <article class="aditem" data-adid="3520000001" data-href="/s-anzeige/paar-sucht/3520000001-203-7963"><h3><a>Junges Paar sucht 2-Zimmer-Wohnung</a></h3><p>900 €</p></article>
 </ul></main>"""
 
@@ -383,6 +383,12 @@ class ParserTests(unittest.TestCase):
             ('Helle 2-Zimmer & Balkon', '14480 Potsdam', 1050, 62.5, 2),
         )
         self.assertEqual(cards[1]['traits'], ['Tauschwohnung'])
+        # Amounts in the title or the teaser are no rent: deposit, parking, kitchen.
+        noisy = KLEINANZEIGEN_PAGE.replace('Helle 2-Zimmer &amp; Balkon', 'Helle 2 Zi., 40 m² Garten, Stellplatz 60 €')
+        noisy = noisy.replace('<p>Schön</p>', '<p>Kaution 3.150 € (3 Kaltmieten), 3 Zi. möglich</p>')
+        card = portals.kleinanzeigen_parse(noisy)[0]
+        self.assertEqual((card['coldRent'], card['area'], card['rooms']), (1050, 62.5, 2))
+        self.assertIn('Kaution', card['text'])
         self.assertTrue(first['imageSource'].endswith('rule=$_72.AUTO'))
         with self.assertRaises(Unreadable):
             portals.kleinanzeigen_parse('<html>Bitte bestätigen Sie, dass Sie kein Roboter sind</html>')
