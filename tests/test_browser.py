@@ -2,18 +2,62 @@ import json
 import time
 import unittest
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from playwright.async_api import async_playwright
 
 from suchalarm.app import CHOICES
 from suchalarm.preis.domain import SOURCES
-from suchalarm.preis.sources import EXTRACT, parse_rows
+from suchalarm.preis.sources import EXTRACT, parse_rows, search_url
 from suchalarm.wohnung import portals
 from suchalarm.wohnung import sources as flat_sources
 
 
 class BrowserExtractionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_ebay_extracts_the_whole_requested_page_including_its_cheapest_offer(self):
+        page_size = int(parse_qs(urlparse(search_url('ebay', 'Spiel')).query)['_ipg'][0])
+        self.assertEqual(page_size, 240)
+        cards = ''.join(
+            '<li class="s-card"><a class="s-card__link" '
+            f'href="https://www.ebay.de/itm/{100000 + position}"><h3 class="s-card__title">Spiel</h3></a>'
+            f'<span class="s-card__price">{20 if position == page_size - 1 else 35} €</span></li>'
+            for position in range(page_size)
+        )
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            page = await browser.new_page()
+            await page.set_content(cards)
+            data = await page.evaluate(EXTRACT, 'ebay')
+            self.assertEqual(len(data['rows']), page_size)
+            offers = parse_rows('ebay', data['rows'], dict(query='Spiel'))
+            self.assertEqual(min(offer.price for offer in offers), 2000)
+            self.assertEqual(offers[-1].url, f'https://www.ebay.de/itm/{100000 + page_size - 1}')
+            await browser.close()
+
+    async def test_kleinanzeigen_shipping_container_excludes_the_item_price(self):
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            page = await browser.new_page()
+            for label, expected in (
+                ('Versand möglich', None),
+                ('+ 4,50 € Versand', 450),
+                ('Nur Abholung', None),
+                ('', None),
+            ):
+                with self.subTest(label=label):
+                    await page.set_content(
+                        '<article class="aditem"><h3><a class="ellipsis" '
+                        'href="https://www.kleinanzeigen.de/s-anzeige/ecksofa/12345-88-3331">Ecksofa</a></h3>'
+                        '<div class="aditem-main--middle--price-shipping">'
+                        '<p class="aditem-main--middle--price-shipping--price">100 €</p>'
+                        f'<span>{label}</span></div></article>'
+                    )
+                    data = await page.evaluate(EXTRACT, 'kleinanzeigen')
+                    self.assertEqual(data['rows'][0]['shipping'], label)
+                    offer = parse_rows('kleinanzeigen', data['rows'], dict(query='Ecksofa'))[0]
+                    self.assertEqual((offer.price, offer.shipping), (10000, expected))
+            await browser.close()
+
     async def test_rendered_provider_cards(self):
         async with async_playwright() as p:
             browser = await p.chromium.launch()

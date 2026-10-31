@@ -1,4 +1,4 @@
-source => {
+(source, limit) => {
   const configs = {
     ebay: {
       cards: '.s-item, .s-card',
@@ -45,6 +45,15 @@ source => {
       if (value) return value;
     }
     return '';
+  };
+  const textWithout = (node, selector) => {
+    const copy = node.cloneNode(true);
+    copy.querySelectorAll(selector).forEach(el => el.remove());
+    return copy.textContent.trim();
+  };
+  const shipping = card => {
+    const container = card.querySelector(c.shipping);
+    return source === 'kleinanzeigen' && container ? textWithout(container, c.price) : text(card, c.shipping);
   };
   const title = card => {
     if (source !== 'ebay') return text(card, c.title);
@@ -119,17 +128,14 @@ source => {
   }
   const owner = card =>
     vintedOwners.get(card.querySelector('[data-testid^="product-item-id-"]')?.dataset.testid.match(/\d+/)?.[0]) || '';
-  const rows = [...document.querySelectorAll(c.cards)].slice(0, 100).map(card => {
+  const rows = [...document.querySelectorAll(c.cards)].slice(0, limit).map(card => {
     const a = card.querySelector(c.link);
     let shippingText = '';
     if (source === 'ebay') {
-      const copy = card.cloneNode(true);
-      copy
-        .querySelectorAll(
-          `${c.title}, ${c.price}, ${c.seller}, .s-card__subtitle, .clipped, .sr-only, .visually-hidden, [hidden], script, style`,
-        )
-        .forEach(el => el.remove());
-      shippingText = copy.textContent.slice(0, 2500);
+      shippingText = textWithout(
+        card,
+        `${c.title}, ${c.price}, ${c.seller}, .s-card__subtitle, .clipped, .sr-only, .visually-hidden, [hidden], script, style`,
+      ).slice(0, 2500);
     }
     return {
       shippingText,
@@ -139,7 +145,7 @@ source => {
       seller: source === 'ebay' ? ebaySeller(card) : text(card, c.seller),
       owner: owner(card),
       condition: source === 'ebay' ? ebayCondition(card) : text(card, c.condition),
-      shipping: text(card, c.shipping),
+      shipping: shipping(card),
       location:
         source === 'ebay'
           ? text(card, '.s-item__location, .s-item__itemLocation, .s-card__location, .s-card__itemLocation')

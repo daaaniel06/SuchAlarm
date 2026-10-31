@@ -194,7 +194,51 @@ class SourceLoadingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['vintedShipping'], '')
 
 
+class AvailabilityTests(unittest.TestCase):
+    def card(self, title, status=''):
+        return dict(
+            title=title,
+            url='https://www.ebay.de/itm/12345',
+            price='35 €',
+            text=f'{title} 35 € {status}',
+        )
+
+    def test_product_words_are_not_availability_statuses(self):
+        for title, status in (
+            ('Soldier of Fortune PC', ''),
+            ('Soldat Actionfigur', ''),
+            ('Spiel PS5', 'Top Angebote'),
+            ('Auktionskatalog', ''),
+        ):
+            with self.subTest(title=title, status=status):
+                offers = parse_rows('ebay', [self.card(title, status)], dict(query=title))
+                self.assertEqual(len(offers), 1)
+
+    def test_unavailable_and_auction_statuses_still_exclude_offers(self):
+        title = 'Spiel PS5'
+        for status in (
+            'Verkauft',
+            'Reserviert',
+            'Sold',
+            '3 Gebote',
+            '1 Gebot',
+            'Auktion',
+            'Ausverkauft',
+            'Gesuch',
+            'Beendet',
+            'Nicht lieferbar',
+            'Nicht verfügbar',
+        ):
+            with self.subTest(status=status):
+                self.assertEqual(parse_rows('ebay', [self.card(title, status)], dict(query=title)), [])
+
+
 class ShippingTests(unittest.TestCase):
+    def test_kleinanzeigen_shipping_never_infers_a_cost_from_availability(self):
+        for label, expected in (('Versand möglich', None), ('+ 4,50 € Versand', 450), ('Nur Abholung', None)):
+            with self.subTest(label=label):
+                self.assertEqual(row_shipping({'shipping': label}, 10000, 'kleinanzeigen'), expected)
+
     def test_marketplace_shipping_labels_and_real_cached_ebay_cards(self):
         for label, expected in [
             ('+EUR 8,18 Lieferung', 818),
@@ -389,6 +433,23 @@ class MarkupChangeTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(sources.markup_changed('ebay', [self.card(n, price='') for n in range(60)]))
         self.assertTrue(sources.markup_changed('ebay', [dict(self.card(n), url='') for n in range(60)]))
         self.assertFalse(sources.markup_changed('ebay', [self.card(n, price='') for n in range(4)]))
+
+    def test_given_away_cards_have_a_readable_price_without_digits(self):
+        rows = [
+            dict(
+                self.card(n, price='Zu verschenken'),
+                url=f'https://www.kleinanzeigen.de/s-anzeige/spiel/{1000 + n}-279-1234',
+            )
+            for n in range(6)
+        ]
+        self.assertFalse(sources.markup_changed('kleinanzeigen', rows))
+        self.assertEqual(sources.listing_rows('kleinanzeigen', dict(rows=rows, text='')), rows)
+        self.assertTrue(sources.markup_changed('kleinanzeigen', [dict(row, price='') for row in rows]))
+        for free, expected in ((True, len(rows)), (False, 0)):
+            with self.subTest(free=free):
+                offers = parse_rows('kleinanzeigen', rows, dict(query='Spiel', free=free))
+                self.assertEqual(len(offers), expected)
+                self.assertTrue(all(offer.price == 0 for offer in offers))
 
     async def test_changed_markup_is_a_retried_failure_not_zero_hits(self):
         search = dict(query='Spiel PS5', min_price=0, max_price=5000, include_shipping=False)

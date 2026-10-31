@@ -24,8 +24,11 @@ from .domain import (
     wanted_words,
 )
 
-# A function expression for page.evaluate; a formatter's trailing semicolon would make it a statement.
-EXTRACT = Path(__file__).with_name('extract.js').read_text().strip().removesuffix(';')
+DEFAULT_CARD_LIMIT = 100
+PAGE_SIZES = {'ebay': 240}
+# Keep page.evaluate's source argument; the same page size controls the request and its extraction.
+EXTRACT_SCRIPT = Path(__file__).with_name('extract.js').read_text().strip().removesuffix(';')
+EXTRACT = f'source => ({EXTRACT_SCRIPT})(source, {json.dumps(PAGE_SIZES)}[source] || {DEFAULT_CARD_LIMIT})'
 
 
 def search_url(source, query, search=None):
@@ -39,10 +42,9 @@ def search_url(source, query, search=None):
     if source == 'ebay':
         # Best Match keeps the searched game on page one; price order fills it with
         # cheap unrelated titles. The app sorts matching offers by price itself.
-        # 240 cards per page (eBay's largest page) instead of 60: one visit sees four times as many offers.
         params = {
             '_nkw': query,
-            '_ipg': '240',
+            '_ipg': str(PAGE_SIZES['ebay']),
             'LH_BIN': '1',
             '_sop': '12',
             'LH_ItemCondition': '2750|3000|4000|5000|6000',
@@ -161,6 +163,12 @@ def ebay_in_germany(row):
 
 
 MARKUP_SAMPLE, MARKUP_USABLE_SHARE = 5, 0.2  # at least 5 cards, under 20 % usable
+GIVEN_AWAY = re.compile(r'zu verschenken', re.I)
+
+
+def has_price_text(value):
+    text = str(value)
+    return bool(re.search(r'\d', text) or GIVEN_AWAY.search(text))
 
 
 def markup_changed(source, rows):
@@ -170,7 +178,7 @@ def markup_changed(source, rows):
         for r in rows
         if clean_title(source, r.get('title', ''))
         and canonical(source, r.get('url', ''))
-        and re.search(r'\d', str(r.get('price', '')))
+        and has_price_text(r.get('price', ''))
     )
     return len(rows) >= MARKUP_SAMPLE and usable < len(rows) * MARKUP_USABLE_SHARE
 
@@ -179,18 +187,18 @@ MAX_TITLE, MAX_SELLER, MAX_CONDITION = 400, 200, 100
 CARS = '216'  # Kleinanzeigen's car section; its cards carry mileage and first registration
 PRICE_RANGE = re.compile(r'\b(?:bis|to)\b|\s[-–]\s', re.I)  # "20 bis 30 €": no single price
 # Reserved, sold or auction listings never count as a buyable offer; negotiable ("VB") ones only if the search allows them.
-UNAVAILABLE = re.compile(
-    r'reserviert|verkauft|beendet|sold|nicht lieferbar|nicht verfügbar|ausverkauft|auktion|gebote|\bgesuch\b', re.I
+UNAVAILABLE_PATTERNS = (
+    r'\b(?:reserviert|verkauft|beendet|sold|ausverkauft|gesuch)\b',
+    r'\bnicht\s+(?:lieferbar|verfügbar)\b',
+    r'\b(?:auktion|gebote?)\b',
 )
+UNAVAILABLE = re.compile('|'.join(UNAVAILABLE_PATTERNS), re.I)
 NEGOTIABLE = re.compile(r'\bVB\b')
 # A DOM shop row without a structured EUR price only counts with a visible delivery promise.
 DELIVERABLE = re.compile(
     r'lieferbar|auf lager|lieferzeit|werktage|lieferung\s*:\s*bis\b|lieferung\s+(?:heute|morgen)', re.I
 )
 EURO_AMOUNT = re.compile(r'(\d(?:[\d.,\s\xa0]*\d)?)')
-
-
-GIVEN_AWAY = re.compile(r'zu verschenken', re.I)
 
 
 def row_price(row, search=None):
