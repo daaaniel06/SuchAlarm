@@ -155,6 +155,11 @@ class FilterTests(unittest.TestCase):
         ):
             self.assertEqual(match(flat(**changes), PROFILE)[0], expected, changes)
 
+    def test_a_missing_area_or_room_count_only_matters_with_a_minimum(self):
+        free = {**PROFILE, 'minArea': 0, 'minRooms': 0}
+        self.assertEqual(match(flat(area=None, rooms=None), free)[0], 'matched')
+        self.assertEqual(match(flat(rooms=None), {**free, 'minRooms': 2}), ('unclear', ['Zimmer fehlt']))
+
     def test_known_violation_beats_missing_data(self):
         self.assertEqual(match(flat(rent=None, area=None, traits=['WBS']), PROFILE)[0], 'excluded')
 

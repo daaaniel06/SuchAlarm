@@ -432,7 +432,8 @@ def match(listing, profile, centre=None):
         (listing.rooms, profile['minRooms'], 'Zimmer', 'Zu wenige Zimmer'),
     ):
         if value is None:
-            missing.append(label + ' fehlt')
+            if minimum:  # without a minimum a missing value rules nothing out
+                missing.append(label + ' fehlt')
         elif value < minimum:
             return 'excluded', [reason]
     if (profile['exclusions'] or profile.get('excludeWords')) and not listing.exclusions_known:
