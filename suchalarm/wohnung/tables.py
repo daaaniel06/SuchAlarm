@@ -54,4 +54,10 @@ def _page_jobs(conn):
         conn.execute('UPDATE wohnung.more_pages SET job=lower(hex(randomblob(16)))')
 
 
-MIGRATIONS = (_create, _move, _cheaper_at, _stock_pages, _page_jobs)
+def _detail_requests(conn):
+    """Whether the user asked for a detail page (details.request_detail): it is read even for a paused search."""
+    if 'requested' not in {r[1] for r in conn.execute('PRAGMA wohnung.table_info(listing_details)')}:
+        conn.execute('ALTER TABLE wohnung.listing_details ADD COLUMN requested INTEGER NOT NULL DEFAULT 0')
+
+
+MIGRATIONS = (_create, _move, _cheaper_at, _stock_pages, _page_jobs, _detail_requests)

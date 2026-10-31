@@ -25,11 +25,16 @@ BACKFILL_GAP = 15 * 60  # at most one detail page of the starting stock per port
 
 
 async def detail_step(now=None):
-    """At most one detail page: the listing waiting longest whose site may be visited now. Returns its URL."""
+    """At most one detail page: the listing waiting longest whose site may be visited now. Returns its URL.
+
+    One the user asked for is always read; one queued on its own only while an active search lists it, so a
+    paused search's listings wait until it runs again."""
     now = time.time() if now is None else now
     with store.db() as conn:
         rows = conn.execute(
-            "SELECT * FROM listing_details WHERE state='pending' AND next_at<=? AND created_at>=? ORDER BY created_at",
+            "SELECT * FROM listing_details d WHERE state='pending' AND next_at<=? AND created_at>=? AND (requested "
+            'OR EXISTS (SELECT 1 FROM listings l JOIN searches s ON s.id=l.search_id WHERE l.url=d.url AND s.active)) '
+            'ORDER BY created_at',
             (now, now - DETAIL_WINDOW),
         ).fetchall()
     job = next((row for row in rows if cadence.ready_at(row['source'], now=now) <= now), None)
@@ -112,7 +117,7 @@ def read_again(conn, source, urls, now):
     """Queue the detail pages of URLS (of SOURCE) like new ones, also those read before."""
     conn.executemany(
         "INSERT INTO listing_details(url,source,state,created_at) VALUES (?,?,'pending',?) ON CONFLICT(url) DO "
-        "UPDATE SET state='pending', attempts=0, next_at=0, error=NULL, created_at=excluded.created_at "
+        "UPDATE SET state='pending', attempts=0, next_at=0, error=NULL, created_at=excluded.created_at, requested=0 "
         "WHERE state!='pending'",
         [(url, source, now) for url in urls],
     )
@@ -126,9 +131,9 @@ def request_detail(conn, url, now=None):
     if row is None or row['source'] not in sources.DETAILS:
         return False
     conn.execute(
-        "INSERT INTO listing_details(url,source,state,created_at) VALUES (?,?,'pending',?) ON CONFLICT(url) DO "
-        "UPDATE SET state='pending', attempts=0, next_at=0, error=NULL, created_at=excluded.created_at "
-        "WHERE state!='done'",
+        "INSERT INTO listing_details(url,source,state,created_at,requested) VALUES (?,?,'pending',?,1) "
+        "ON CONFLICT(url) DO UPDATE SET state='pending', attempts=0, next_at=0, error=NULL, "
+        "created_at=excluded.created_at, requested=1 WHERE state!='done'",
         (url, row['source'], now),
     )
     return True
