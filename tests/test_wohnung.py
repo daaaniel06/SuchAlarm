@@ -833,6 +833,8 @@ class WorkerTests(TempData):
         rows = catalog.listings(flat_search)
         self.assertEqual(len(rows), 34)
         self.assertEqual(sorted(r['url'].rsplit('/', 1)[1] for r in rows if not r['start']), ['500'])
+        order = [int(r['url'].rsplit('/', 1)[1]) for r in rows]  # newest first, also across the stock's pages
+        self.assertEqual(order, [500, *range(15), *range(100, 115), 200, 201, 202])
         with store.db() as conn:
             pending = [r[0] for r in conn.execute('SELECT url FROM listing_details')]
         self.assertEqual(pending, ['https://www.immobilienscout24.de/expose/500'])  # the stock gets none

@@ -43,7 +43,7 @@ def save_result(search, source, listings, now):
         baseline = {listing.url for listing in listings} if not seen and not succeeded else set()
         conn.executemany('INSERT OR IGNORE INTO start_offers VALUES (?,?)', [(sid, url) for url in baseline])
         new = _store(
-            conn, sid, source, listings, seen | dict.fromkeys(baseline, now), wanted, now, sources.centre(search)
+            conn, sid, source, listings, seen | _in_order(listings, baseline, now), wanted, now, sources.centre(search)
         )
         if source in WHOLE_STOCK:
             _drop_let(conn, sid, source, listings)
@@ -53,6 +53,13 @@ def save_result(search, source, listings, now):
         elif not _reading_stock(conn, sid, source):
             _more_after(conn, sid, source, 1, listings, new)
     return new
+
+
+def _in_order(listings, urls, newest):
+    """first_seen of the stock URLS, counting down from NEWEST in the portal's order (newest first), so the
+    stock read page by page lists the freshest flats first."""
+    ranked = [item.url for item in listings if item.url in urls]
+    return {url: newest - position for position, url in enumerate(ranked)}
 
 
 def _reading_stock(conn, sid, source):
@@ -130,9 +137,8 @@ def save_more(search, source, page, listings, now):
         seen = dict(conn.execute('SELECT url, first_seen FROM listings WHERE search_id=? AND source=?', (sid, source)))
         stock = {item.url for item in listings if item.url not in seen} if due['stock'] else set()
         conn.executemany('INSERT OR IGNORE INTO start_offers VALUES (?,?)', [(sid, url) for url in stock])
-        new = _store(
-            conn, sid, source, listings, seen | dict.fromkeys(stock, now), profile(search), now, sources.centre(search)
-        )
+        known = seen | _in_order(listings, stock, min(seen.values(), default=now) - 1)
+        new = _store(conn, sid, source, listings, known, profile(search), now, sources.centre(search))
         _more_after(conn, sid, source, page, listings, stock if due['stock'] else new, bool(due['stock']))
     return new
 
