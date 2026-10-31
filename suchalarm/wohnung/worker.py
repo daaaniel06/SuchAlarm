@@ -15,7 +15,7 @@ from . import details, maps, pages, sources
 from . import mail as mail  # the kind's mail presentation (kinds.py)
 from .catalog import listings
 from .domain import SOURCES as SOURCES  # the kind's source labels (kinds.py)
-from .domain import TRAITS, place_query, profile
+from .domain import TRAITS, place_query, profile, query_text
 from .models import FLAT_RADII, FlatSearch
 from .outbox import queue_mails as queue_mails  # the kind's mail queue (kinds.py)
 from .outbox import take_pending as take_pending
@@ -50,8 +50,8 @@ async def fetch(source, search):
     return await sources.fetch(source, search)
 
 
-def save(search, source, listings, _, observed):
-    return pages.save_result(search, source, listings, observed)
+def save(search, source, listings, listed, observed):
+    return pages.save_result(search, source, listings, listed, observed)
 
 
 def finish(search, saved):
@@ -94,13 +94,20 @@ def cleanup(now=None):
 
 
 def reset(conn, search_id, old, payload):
-    """Another place or radius makes the stored flats wrong; other filters are judged per listing."""
+    """Another place or radius makes the stored flats wrong; other filters are judged per listing. A portal
+    that applies a changed limit itself may now list older flats: its stock is read again."""
     moved = old['query'] != payload.query or old['radius'] != payload.radius
     removed = old['sources'] if moved else [source for source in old['sources'] if source not in payload.sources]
     for table in ('listings', 'source_status', 'more_pages'):
         conn.executemany(f'DELETE FROM {table} WHERE search_id=? AND source=?', [(search_id, s) for s in removed])
     if moved:
         conn.execute('DELETE FROM start_offers WHERE search_id=?', (search_id,))
+        return
+    new = store.read_search(conn, search_id)
+    kept = [source for source in old['sources'] if source in payload.sources]
+    pages.read_stock_again(
+        conn, search_id, [source for source in kept if query_text(source, old) != query_text(source, new)]
+    )
 
 
 def search_url(source, search):

@@ -979,7 +979,7 @@ class WorkerTests(TempData):
         )  # fmt: skip
 
     def run_check(self, found, flat_search):
-        with patch.object(flats.sources, 'fetch', new=AsyncMock(return_value=(found, None))):
+        with patch.object(flats.sources, 'fetch', new=AsyncMock(return_value=(found, len(found)))):
             return asyncio.run(worker.check(flat_search))
 
     def due(self):
@@ -988,11 +988,13 @@ class WorkerTests(TempData):
 
     def test_a_full_page_of_new_flats_is_followed_by_the_next_pages(self):
         flat_search = self.stored_search()
-        pages.save_result(flat_search, 'immoscout24', [self.card(0)], time.time())  # the starting stock
+        pages.save_result(
+            flat_search, 'immoscout24', [self.card(0)], len([self.card(0)]), time.time()
+        )  # the starting stock
         page = lambda start: [self.card(n) for n in range(start, start + pages.FULL_PAGE)]  # noqa: E731
-        self.assertEqual(len(pages.save_result(flat_search, 'immoscout24', page(1), time.time())), 15)
+        self.assertEqual(len(pages.save_result(flat_search, 'immoscout24', page(1), len(page(1)), time.time())), 15)
         self.assertEqual(self.due(), [(2, 0)])
-        with patch.object(flats.sources, 'more', new=AsyncMock(return_value=page(100))) as more:
+        with patch.object(flats.sources, 'more', new=AsyncMock(return_value=(page(100), len(page(100))))) as more:
             asyncio.run(pages.more_step())
             self.assertEqual(more.await_args.args[2], 2)
             self.assertEqual(self.due(), [(3, 0)])
@@ -1001,27 +1003,29 @@ class WorkerTests(TempData):
         self.assertEqual(len(catalog.listings(flat_search)), 31)
         with store.db() as conn:
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM listing_details').fetchone()[0], 30)
-        pages.save_result(flat_search, 'immoscout24', page(200), time.time())
+        pages.save_result(flat_search, 'immoscout24', page(200), len(page(200)), time.time())
         with patch.object(flats.sources, 'more', new=AsyncMock(side_effect=RuntimeError('weg'))):
             asyncio.run(pages.more_step())
             self.assertEqual(self.due(), [(2, 1)])  # one more try
             asyncio.run(pages.more_step())
         self.assertEqual(self.due(), [])
-        pages.save_result(flat_search, 'immoscout24', page(300)[:5], time.time())
+        pages.save_result(flat_search, 'immoscout24', page(300)[:5], len(page(300)[:5]), time.time())
         self.assertEqual(self.due(), [])  # not a full page
 
     def test_a_new_search_reads_the_whole_stock_page_by_page(self):
         flat_search = self.stored_search()
         page = lambda start, size=pages.FULL_PAGE: [self.card(n) for n in range(start, start + size)]  # noqa: E731
-        self.assertEqual(pages.save_result(flat_search, 'immoscout24', page(0), time.time()), set())
+        self.assertEqual(pages.save_result(flat_search, 'immoscout24', page(0), len(page(0)), time.time()), set())
         self.assertEqual(self.due(), [(2, 0)])
-        with patch.object(flats.sources, 'more', new=AsyncMock(return_value=page(100))):
+        with patch.object(flats.sources, 'more', new=AsyncMock(return_value=(page(100), len(page(100))))):
             asyncio.run(pages.more_step())
         self.assertEqual(self.due(), [(3, 0)])
-        new = pages.save_result(flat_search, 'immoscout24', [self.card(500), *page(0)], time.time())
+        new = pages.save_result(
+            flat_search, 'immoscout24', [self.card(500), *page(0)], len([self.card(500), *page(0)]), time.time()
+        )
         self.assertEqual(new, {'https://www.immobilienscout24.de/expose/500'})
         self.assertEqual(self.due(), [(3, 0)])  # a regular check does not end the reading of the stock
-        with patch.object(flats.sources, 'more', new=AsyncMock(return_value=page(200, 3))):
+        with patch.object(flats.sources, 'more', new=AsyncMock(return_value=(page(200, 3), len(page(200, 3))))):
             asyncio.run(pages.more_step())
         self.assertEqual(self.due(), [])  # the last page was not full
         rows = catalog.listings(flat_search)
@@ -1036,10 +1040,43 @@ class WorkerTests(TempData):
     def test_reading_the_stock_stops_at_a_page_without_unseen_flats(self):
         flat_search = self.stored_search()
         first = [self.card(n) for n in range(pages.FULL_PAGE)]
-        pages.save_result(flat_search, 'immoscout24', first, time.time())
-        with patch.object(flats.sources, 'more', new=AsyncMock(return_value=first)):  # the portal ignores the page
+        pages.save_result(flat_search, 'immoscout24', first, len(first), time.time())
+        with patch.object(
+            flats.sources, 'more', new=AsyncMock(return_value=(first, len(first)))
+        ):  # the portal ignores the page
             asyncio.run(pages.more_step())
         self.assertEqual(self.due(), [])
+
+    def test_a_page_is_full_by_what_the_portal_listed_not_what_fits_the_place(self):
+        flat_search = self.stored_search()
+        here = [self.card(n) for n in range(5)]  # the other ten offers of the page lie elsewhere
+        pages.save_result(flat_search, 'immoscout24', here, pages.FULL_PAGE, time.time())
+        self.assertEqual(self.due(), [(2, 0)])
+        with patch.object(flats.sources, 'more', new=AsyncMock(return_value=([], pages.FULL_PAGE))):
+            asyncio.run(pages.more_step())
+        self.assertEqual(self.due(), [(3, 0)])  # a page of only other places says nothing about the end
+        pages.save_result(flat_search, 'immoscout24', here[:1], 1, time.time())
+        self.assertEqual(self.due(), [(3, 0)])
+
+    def test_a_burst_page_listing_one_flat_twice_still_counts_as_all_new(self):
+        flat_search = self.stored_search()
+        pages.save_result(flat_search, 'immoscout24', [self.card(0)], 1, time.time())  # the starting stock
+        burst = [self.card(n) for n in range(1, pages.FULL_PAGE)] + [self.card(1)]
+        pages.save_result(flat_search, 'immoscout24', burst, len(burst), time.time())
+        self.assertEqual(self.due(), [(2, 0)])
+
+    def test_a_changed_portal_limit_reads_the_stock_again_instead_of_mailing_old_flats(self):
+        flat_search = self.stored_search()
+        pages.save_result(flat_search, 'immoscout24', [self.card(1)], 1, time.time())  # the starting stock
+        with store.db() as conn:
+            pages.read_stock_again(conn, flat_search['id'], ['immoscout24', 'nhw'])
+        self.assertEqual(self.due(), [(1, 0)])  # only paged portals
+        older = [self.card(n) for n in range(2, 2 + pages.FULL_PAGE)]  # now within the wider limit
+        self.assertEqual(pages.save_result(flat_search, 'immoscout24', older, len(older), time.time()), set())
+        self.assertEqual(self.due(), [(2, 0)])
+        new = pages.save_result(flat_search, 'immoscout24', [self.card(99), *older], 16, time.time())
+        self.assertEqual(new, {'https://www.immobilienscout24.de/expose/99'})
+        self.assertEqual(self.due(), [(2, 0)])  # the reading of the stock goes on
 
     def test_first_result_is_the_stock_and_only_new_listings_get_a_detail_page(self):
         flat_search = self.stored_search()
@@ -1058,12 +1095,16 @@ class WorkerTests(TempData):
         flat_search = self.stored_search(sources=['immoscout24', 'nhw'])
         landlord = [Listing.from_card('nhw', {'url': f'https://www.nhw.de/zuhause-finden/immobilie/{n}', 'title': 'W',
                                               'place': 'Darmstadt'}) for n in (1, 2)]  # fmt: skip
-        pages.save_result(flat_search, 'nhw', landlord, time.time())
-        pages.save_result(flat_search, 'nhw', landlord[:1], time.time())
+        pages.save_result(flat_search, 'nhw', landlord, len(landlord), time.time())
+        pages.save_result(flat_search, 'nhw', landlord[:1], len(landlord[:1]), time.time())
         pages.save_result(
-            flat_search, 'immoscout24', [self.card(1), self.card(2)], time.time() - flats.KEEP_LISTINGS - 5
+            flat_search,
+            'immoscout24',
+            [self.card(1), self.card(2)],
+            len([self.card(1), self.card(2)]),
+            time.time() - flats.KEEP_LISTINGS - 5,
         )
-        pages.save_result(flat_search, 'immoscout24', [self.card(1)], time.time())
+        pages.save_result(flat_search, 'immoscout24', [self.card(1)], len([self.card(1)]), time.time())
         urls = sorted(r['url'][-1] for r in catalog.listings(flat_search))
         self.assertEqual(urls, ['1', '1', '2'])  # nhw/2 was let, expose/2 is kept for now
         flats.cleanup()
@@ -1087,8 +1128,8 @@ class WorkerTests(TempData):
         flat_search = self.stored_search()
         details._backfilled.clear()
         stock = [self.card(1), self.card(2, coldRent=5000), self.card(3)]
-        pages.save_result(flat_search, 'immoscout24', stock, time.time() - 60)
-        pages.save_result(flat_search, 'immoscout24', [*stock, self.card(4)], time.time())
+        pages.save_result(flat_search, 'immoscout24', stock, len(stock), time.time() - 60)
+        pages.save_result(flat_search, 'immoscout24', [*stock, self.card(4)], len([*stock, self.card(4)]), time.time())
         with patch.object(flats.cadence, 'ready_at', return_value=0):
             self.assertIsNone(details.backfill_step())  # the new listing 4 comes first
             with patch.object(flats.sources, 'detail', new=AsyncMock(return_value={'rent': 1000.0})):
@@ -1167,7 +1208,7 @@ class WorkerTests(TempData):
         from suchalarm import scheduler, worker
 
         flat_search = self.stored_search()
-        with patch.object(flats.sources, 'fetch', new=AsyncMock(return_value=([self.card(1)], None))):
+        with patch.object(flats.sources, 'fetch', new=AsyncMock(return_value=([self.card(1)], 1))):
             asyncio.run(worker.check(flat_search))
         self.assertEqual(len(catalog.listings(flat_search)), 1)
         self.assertEqual(store.searches('wohnung')[0]['id'], flat_search['id'])
@@ -1228,12 +1269,19 @@ class ApiAndMailTests(TempData):
         edit = {'kind': 'wohnung', 'query': 'Darmstadt', 'max_price': 140000, 'sources': ['nhw']}
         self.assertEqual(self.client.put(f'/api/searches/{created["id"]}', json=edit).status_code, 200)
         self.assertEqual(store.search(created['id'])['max_price'], 140000)
+        with store.db() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM more_pages').fetchone()[0], 0)  # NHW has no pages
+        paged = self.create(sources=['immoscout24', 'nhw'])
+        self.client.put(f'/api/searches/{paged["id"]}', json={**edit, 'sources': ['immoscout24', 'nhw']})
+        with store.db() as conn:
+            due = [tuple(r) for r in conn.execute('SELECT source, page, stock FROM more_pages')]
+        self.assertEqual(due, [('immoscout24', 1, 1)])  # a higher rent limit: ImmoScout24 lists older flats
         wrong = self.client.put(f'/api/searches/{product.json()["id"]}', json=edit)
         self.assertEqual(wrong.status_code, 422)
 
     def test_state_lists_flats_and_the_watch_list_keeps_a_snapshot(self):
         flat_search = self.create()
-        pages.save_result(flat_search, 'immoscout24', [self.card(1)], time.time())
+        pages.save_result(flat_search, 'immoscout24', [self.card(1)], len([self.card(1)]), time.time())
         state = self.client.get('/api/state').json()
         row = state['listings'][0]
         self.assertEqual(
@@ -1253,7 +1301,7 @@ class ApiAndMailTests(TempData):
 
     def test_applying_keeps_the_flat_saved_and_the_template_is_stored(self):
         flat_search = self.create()
-        pages.save_result(flat_search, 'immoscout24', [self.card(1)], time.time())
+        pages.save_result(flat_search, 'immoscout24', [self.card(1)], len([self.card(1)]), time.time())
         url = self.card(1).url
         body = {'search_id': flat_search['id'], 'url': url, 'applied': True}
         self.assertEqual(self.client.post('/api/applied', json=body).status_code, 200)
@@ -1268,7 +1316,9 @@ class ApiAndMailTests(TempData):
 
     def test_the_starting_stock_gets_its_detail_page_on_request(self):
         flat_search = self.create()
-        pages.save_result(flat_search, 'immoscout24', [self.card(1)], time.time())  # the starting stock
+        pages.save_result(
+            flat_search, 'immoscout24', [self.card(1)], len([self.card(1)]), time.time()
+        )  # the starting stock
         row = self.client.get('/api/state').json()['listings'][0]
         self.assertEqual(row['details'], 'available')
         self.assertEqual(self.client.post('/api/details', json={'url': row['url']}).status_code, 200)
@@ -1339,11 +1389,13 @@ class ApiAndMailTests(TempData):
 
     def test_clearing_starts_flat_searches_over_silently(self):
         flat_search = self.create()
-        pages.save_result(flat_search, 'immoscout24', [self.card(1)], time.time())
+        pages.save_result(flat_search, 'immoscout24', [self.card(1)], len([self.card(1)]), time.time())
         self.assertEqual(self.client.delete('/api/offers').status_code, 200)
         with store.db() as conn:
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM source_status').fetchone()[0], 0)
-        pages.save_result(flat_search, 'immoscout24', [self.card(1), self.card(2)], time.time())
+        pages.save_result(
+            flat_search, 'immoscout24', [self.card(1), self.card(2)], len([self.card(1), self.card(2)]), time.time()
+        )
         with store.db() as conn:
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM listing_details').fetchone()[0], 0)  # the stock again
 
@@ -1354,8 +1406,16 @@ class ApiAndMailTests(TempData):
         with store.db() as conn:
             store.put_setting(conn, 'recipients', json.dumps(['a@example.com']))
             store.put_setting(conn, 'mail_enabled:wohnung', '1')
-        pages.save_result(flat_search, 'immoscout24', [self.card(1)], time.time())  # the starting stock
-        pages.save_result(flat_search, 'immoscout24', [self.card(1), self.card(2), self.card(3, area=20)], time.time())
+        pages.save_result(
+            flat_search, 'immoscout24', [self.card(1)], len([self.card(1)]), time.time()
+        )  # the starting stock
+        pages.save_result(
+            flat_search,
+            'immoscout24',
+            [self.card(1), self.card(2), self.card(3, area=20)],
+            len([self.card(1), self.card(2), self.card(3, area=20)]),
+            time.time(),
+        )
         outbox.queue_mails()
         with store.db() as conn:
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM outbox').fetchone()[0], 0)  # detail pages pending
@@ -1382,8 +1442,12 @@ class ApiAndMailTests(TempData):
         with store.db() as conn:
             store.put_setting(conn, 'recipients', json.dumps(['a@example.com']))
             store.put_setting(conn, 'mail_enabled:wohnung', '1')
-        pages.save_result(flat_search, 'immoscout24', [self.card(1)], time.time())  # the starting stock
-        pages.save_result(flat_search, 'immoscout24', [self.card(1), self.card(2)], time.time())
+        pages.save_result(
+            flat_search, 'immoscout24', [self.card(1)], len([self.card(1)]), time.time()
+        )  # the starting stock
+        pages.save_result(
+            flat_search, 'immoscout24', [self.card(1), self.card(2)], len([self.card(1), self.card(2)]), time.time()
+        )
         outbox.queue_mails()
         with store.db() as conn:
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM outbox').fetchone()[0], 0)  # detail page pending
@@ -1401,8 +1465,10 @@ class ApiAndMailTests(TempData):
             store.put_setting(conn, 'recipients', json.dumps(['a@example.com']))
             store.put_setting(conn, 'mail_enabled:wohnung', '1')
         dear = [self.card(1, rent=1400), self.card(2)]
-        pages.save_result(flat_search, 'immoscout24', dear[:1], time.time() - 60)  # the starting stock, too dear
-        pages.save_result(flat_search, 'immoscout24', dear, time.time() - 60)
+        pages.save_result(
+            flat_search, 'immoscout24', dear[:1], len(dear[:1]), time.time() - 60
+        )  # the starting stock, too dear
+        pages.save_result(flat_search, 'immoscout24', dear, len(dear), time.time() - 60)
         with store.db() as conn:
             conn.execute("UPDATE listing_details SET state='done', body='{}'")
         outbox.queue_mails()
@@ -1410,10 +1476,16 @@ class ApiAndMailTests(TempData):
         with store.db() as conn:  # the mail went out
             conn.execute('INSERT INTO notifications SELECT search_id, url, price, ? FROM outbox', (time.time() - 30,))
             conn.execute('DELETE FROM outbox')
-        pages.save_result(flat_search, 'immoscout24', dear, time.time())
+        pages.save_result(flat_search, 'immoscout24', dear, len(dear), time.time())
         outbox.queue_mails()
         self.assertEqual(self.queued(), [])  # the same rent: nothing new
-        pages.save_result(flat_search, 'immoscout24', [self.card(1, rent=1200), self.card(2, rent=1000)], time.time())
+        pages.save_result(
+            flat_search,
+            'immoscout24',
+            [self.card(1, rent=1200), self.card(2, rent=1000)],
+            len([self.card(1, rent=1200), self.card(2, rent=1000)]),
+            time.time(),
+        )
         outbox.queue_mails()
         self.assertEqual(self.queued(), [])  # their detail pages are read first
         with store.db() as conn:
@@ -1604,12 +1676,14 @@ class DuplicateMailTests(ApiAndMailTests):
             store.put_setting(conn, 'recipients', json.dumps(['a@example.com']))
             store.put_setting(conn, 'mail_enabled:wohnung', '1')
         place = {'place': 'Heinrichstraße 12, 64283 Darmstadt'}
-        pages.save_result(flat_search, 'immoscout24', [], time.time())
-        pages.save_result(flat_search, 'immowelt', [], time.time())
-        pages.save_result(flat_search, 'immoscout24', [self.card(1, **place)], time.time())
+        pages.save_result(flat_search, 'immoscout24', [], 0, time.time())
+        pages.save_result(flat_search, 'immowelt', [], 0, time.time())
+        pages.save_result(
+            flat_search, 'immoscout24', [self.card(1, **place)], len([self.card(1, **place)]), time.time()
+        )
         copy = Listing.from_card('immowelt', {'url': 'https://www.immowelt.de/expose/x', 'title': 'Wohnung zur Miete',
                                               'rent': 1100, 'area': 60, 'rooms': 2, **place})  # fmt: skip
-        pages.save_result(flat_search, 'immowelt', [copy], time.time() + 60)
+        pages.save_result(flat_search, 'immowelt', [copy], len([copy]), time.time() + 60)
         rows = catalog.listings(flat_search)
         leader = next(r for r in rows if r['source'] == 'immoscout24')
         self.assertEqual((leader['also'], leader['same_as']), (['immowelt'], None))
@@ -1629,12 +1703,14 @@ class DuplicateMailTests(ApiAndMailTests):
             store.put_setting(conn, 'recipients', json.dumps(['a@example.com']))
             store.put_setting(conn, 'mail_enabled:wohnung', '1')
         place = {'place': 'Heinrichstraße 12, 64283 Darmstadt'}
-        pages.save_result(flat_search, 'immoscout24', [], time.time())
-        pages.save_result(flat_search, 'immowelt', [], time.time())
-        pages.save_result(flat_search, 'immoscout24', [self.card(1, **place)], time.time())
+        pages.save_result(flat_search, 'immoscout24', [], 0, time.time())
+        pages.save_result(flat_search, 'immowelt', [], 0, time.time())
+        pages.save_result(
+            flat_search, 'immoscout24', [self.card(1, **place)], len([self.card(1, **place)]), time.time()
+        )
         copy = Listing.from_card('immowelt', {'url': 'https://www.immowelt.de/expose/x', 'title': 'Wohnung zur Miete',
                                               'rent': 1100, 'area': 60, 'rooms': 2, **place})  # fmt: skip
-        pages.save_result(flat_search, 'immowelt', [copy], time.time() + 60)
+        pages.save_result(flat_search, 'immowelt', [copy], len([copy]), time.time() + 60)
         with store.db() as conn:
             conn.execute("UPDATE listing_details SET state='done', body='{}'")
             for url in (copy.url, self.card(1).url):  # both queued while the twin was not known yet
@@ -1649,10 +1725,12 @@ class DuplicateMailTests(ApiAndMailTests):
             sources=['immoscout24', 'immowelt'], filters={'min_area': 40, 'min_rooms': 2, 'exclusions': []}
         )
         place = {'place': 'Heinrichstraße 12, 64283 Darmstadt'}
-        pages.save_result(flat_search, 'immoscout24', [self.card(1, **place)], time.time())
+        pages.save_result(
+            flat_search, 'immoscout24', [self.card(1, **place)], len([self.card(1, **place)]), time.time()
+        )
         copy = Listing.from_card('immowelt', {'url': 'https://www.immowelt.de/expose/x', 'title': 'Wohnung zur Miete',
                                               'rent': 1100, 'area': 60, 'rooms': 2, **place})  # fmt: skip
-        pages.save_result(flat_search, 'immowelt', [copy], time.time() + 60)
+        pages.save_result(flat_search, 'immowelt', [copy], len([copy]), time.time() + 60)
         leader = self.card(1).url
         self.assertEqual(next(r for r in catalog.listings(flat_search) if r['url'] == copy.url)['same_as'], leader)
         response = self.client.post('/api/separate', json={'search_id': flat_search['id'], 'url': leader})
@@ -1669,10 +1747,10 @@ class DuplicateMailTests(ApiAndMailTests):
         )
         place = {'place': 'Heinrichstraße 12, 64283 Darmstadt'}
         old = time.time() - 3 * 86400
-        pages.save_result(flat_search, 'immoscout24', [self.card(1, **place)], old)
+        pages.save_result(flat_search, 'immoscout24', [self.card(1, **place)], len([self.card(1, **place)]), old)
         copy = Listing.from_card('immowelt', {'url': 'https://www.immowelt.de/expose/x', 'title': 'Wohnung zur Miete',
                                               'rent': 1100, 'area': 60, 'rooms': 2, **place})  # fmt: skip
-        pages.save_result(flat_search, 'immowelt', [copy], time.time())
+        pages.save_result(flat_search, 'immowelt', [copy], len([copy]), time.time())
         rows = {r['url']: r for r in catalog.listings(flat_search)}
         first, shown = rows[self.card(1).url], rows[copy.url]
         self.assertEqual((first['same_as'], first['copy']), (copy.url, False))  # gone from the portal

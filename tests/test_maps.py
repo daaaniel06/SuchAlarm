@@ -81,7 +81,7 @@ class MapTests(TempData):
             'wg-gesucht',
             {'url': 'https://www.wg-gesucht.de/1.html', 'title': 'W', 'place': 'Karlstraße 22, 64283 Darmstadt'},
         )
-        pages.save_result(self.search, 'wg-gesucht', [flat], time.time())
+        pages.save_result(self.search, 'wg-gesucht', [flat], len([flat]), time.time())
         answer = [{'lat': '49.866', 'lon': '8.654'}]
         params = {'search_id': self.search['id'], 'url': flat.url}
         with patch.object(maps.http, 'get_json', new=AsyncMock(return_value=answer)) as get:

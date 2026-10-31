@@ -37,7 +37,7 @@ Die Tabellen einer Suchart liegen in ihrer eigenen Datei (`preis/tables.py` → 
 
 ## Wohnungssuche
 
-- `wohnung/pages.py` speichert Ergebnisseiten und liest Folgeseiten. Ist die erste Seite eines Portals voll und ganz neu, liest der Worker bis zu zwei weitere Seiten (`more_pages`). Bei einer neuen Suche liest er nach der ersten Seite alle weiteren Seiten als Startbestand ein, eine pro freiem Takt, bis eine Seite nicht mehr voll ist oder nichts Unbekanntes mehr bringt (`more_pages.stock`, höchstens 50 Seiten).
+- `wohnung/pages.py` speichert Ergebnisseiten und liest Folgeseiten. Ist die erste Seite eines Portals voll und ganz neu, liest der Worker bis zu zwei weitere Seiten (`more_pages`). Bei einer neuen Suche liest er nach der ersten Seite alle weiteren Seiten als Startbestand ein, eine pro freiem Takt, bis eine Seite nicht mehr voll ist oder nichts Unbekanntes mehr bringt (`more_pages.stock`, höchstens 50 Seiten). Ob eine Seite voll war, zählt nach dem, was das Portal geliefert hat, nicht nach dem, was zum Ort der Suche passt. Ändert eine Bearbeitung eine Grenze, die das Portal selbst anwendet (etwa die Höchstmiete), liest der Worker den Bestand dieses Portals ab Seite 1 neu ein: ältere Wohnungen, die erst jetzt in die Grenzen fallen, kommen so in den Startbestand statt in die Mail.
 - `wohnung/details.py` liest Detailseiten, `wohnung/outbox.py` füllt die Mail-Warteschlange, `wohnung/catalog.py` liest die gespeicherten Inserate samt Urteil und Duplikaten.
 - `wohnung/portals/` hat ein Modul je Portal.
 - `wohnung/duplicates.py` erkennt Duplikate über Portale hinweg, auch am gleichen Foto; Standardbilder eines Vermieters (etwa Vonovia) zählen dabei nicht.
