@@ -30,7 +30,6 @@
 <section id="searches-view" class="page" hidden><div class="page-head"><h1>Suchen</h1><button class="round-button" data-new id="new-search" aria-label="Neue Suche" title="Neue Suche"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div><div id="search-list" class="search-groups"></div></section>
 <section id="settings-view" class="page" hidden><div class="page-head"><h1>Einstellungen</h1></div>
 <div class="group form-group"><label class="field"><span><b>Automatische Suche</b><small id="auto-text"></small></span><input id="auto" class="switch" type="checkbox"></label></div>
-<div class="group form-group"><div class="field"><span><b>Bewerbungstext</b><small id="template-summary">Vorlage für Wohnungsbewerbungen</small></span><button type="button" class="pill compact" id="template-edit">Einfügen</button></div></div>
 <div class="segment settings-tabs" id="settings-tabs" role="group" aria-label="Bereich"><button type="button" data-settings-tab="mail" aria-pressed="true">Mails</button><button type="button" data-settings-tab="sources" aria-pressed="false">Quellen</button><button type="button" data-settings-tab="data" aria-pressed="false">Daten</button></div>
 <div data-settings-panel="mail">
 <form id="mail-form">
@@ -55,6 +54,7 @@
 <div data-settings-panel="sources" id="source-list" hidden></div>
 <div data-settings-panel="data" hidden>
 <div class="group form-group">
+<div class="field"><span><b>Bewerbungstext</b></span><button type="button" class="pill compact" id="template-edit">Einfügen</button></div>
 <div class="field"><span><b>Ausgeblendete Treffer</b><small id="hidden-text"></small></span><button class="pill compact" id="restore-hidden">Wiederherstellen</button></div>
 <div class="field" id="clear-field"><span><b>Alle Treffer löschen</b><small id="clear-text"></small></span><span class="confirm-actions" id="clear-actions"></span></div>
 </div>
@@ -78,7 +78,6 @@
 <dialog id="template-editor" class="sheet" tabindex="-1" aria-labelledby="template-title"><form class="sheet-body" id="template-form">
 <div class="sheet-grip" aria-hidden="true"></div>
 <div class="sheet-top"><h2 id="template-title" class="sheet-heading">Bewerbungstext</h2><button type="button" class="round-button small" data-close aria-label="Bewerbungstext schließen"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
-<p class="group-note">Deine Vorlage wird beim Bewerben auf eine Wohnung eingefügt. Du kannst sie dort für das Inserat anpassen.</p>
 <div class="group"><label class="sr-only" for="template-text">Bewerbungstext</label><textarea id="template-text" class="plain-textarea" rows="10" maxlength="20000" placeholder="Bewerbungstext hier einfügen …"></textarea></div>
 <p class="group-note down" id="template-error" role="alert" hidden></p>
 <div class="sheet-actions"><button type="submit" class="pill primary" id="template-save">Speichern</button><button type="button" class="pill" data-close>Abbrechen</button></div>
@@ -145,12 +144,9 @@
 <label class="field stacked"><span>Ort oder Postleitzahl</span><input id="flat-place" required minlength="2" maxlength="120" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="flat-place-options" aria-autocomplete="list" placeholder="Darmstadt"></label>
 <div id="flat-place-options" class="place-options" role="listbox" aria-label="Orte" hidden></div>
 <label class="field"><span><b>Umkreis</b><small id="flat-radius-hint"></small></span><span class="unit-input"><select id="flat-radius" aria-label="Umkreis"></select><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span></label>
+<label class="field"><span><b>Ohne Ortsteile</b></span><input id="flat-districts" placeholder="Wixhausen, Eberstadt" autocomplete="off"></label>
 </div>
 <p class="group-note" id="flat-place-hint" hidden>Nicht aus der Liste gewählt – der Ort wird beim Abruf per Name gesucht.</p>
-<details class="more" id="flat-district-options"><summary><span>Ortsteile ausschließen</span><small id="flat-district-summary"></small><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></summary>
-<div class="group form-group"><label class="field stacked"><span>Ortsteile, durch Kommas getrennt</span><input id="flat-districts" placeholder="z. B. Wixhausen, Eberstadt" autocomplete="off" aria-describedby="flat-district-note"></label></div>
-<p class="group-note" id="flat-district-note">Inserate mit diesen Ortsteilen in der Adresse werden ausgeblendet. Fehlt der Ortsteil, bleibt das Inserat sichtbar.</p>
-</details>
 <div class="group form-group">
 <label class="field"><span><b>Warmmiete bis</b><small>Nennt ein Inserat nur die Kaltmiete, wird geschätzt</small></span><span class="unit-input"><input id="flat-rent" type="number" inputmode="numeric" min="1" max="100000" step="10" required placeholder="1300"><em>€</em></span></label>
 <label class="field"><span><b>Fläche ab</b></span><span class="unit-input"><input id="flat-area" type="number" inputmode="decimal" min="0" max="10000" step="1" placeholder="0"><em>m²</em></span></label>

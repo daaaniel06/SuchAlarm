@@ -53,9 +53,6 @@ export function renderMailStatus() {
 
 export function renderSettings(checking) {
   const hasTemplate = Boolean(state.template?.trim());
-  $('template-summary').textContent = hasTemplate
-    ? 'Vorlage für Wohnungsbewerbungen gespeichert'
-    : 'Noch kein Text gespeichert';
   $('template-edit').textContent = hasTemplate ? 'Bearbeiten' : 'Einfügen';
   $('hidden-text').textContent = state.hidden
     ? `${state.hidden} ausgeblendet · nach links gewischt`
