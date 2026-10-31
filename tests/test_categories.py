@@ -212,6 +212,50 @@ class CategoryTests(unittest.TestCase):
         self.assertTrue(load.call_args_list[1].kwargs['follow'])  # the second page waits for its own slot
         self.assertNotEqual(cadence.query_key('kleinanzeigen', search), cadence.query_key('kleinanzeigen', self.sofa))
 
+    def test_both_only_keeps_pickup_only_offers_inside_the_searched_area(self):
+        cadence.save_location('kleinanzeigen', '10115', '9668')
+        search = dict(self.sofa, delivery='beides')
+
+        def card(n, place, shipping, status=''):
+            return dict(
+                title='Ecksofa',
+                url=f'https://www.kleinanzeigen.de/s-anzeige/ecksofa/{n}-88-3331',
+                price='100 €',
+                shipping=shipping,
+                text=f'{place} Ecksofa 100 € {shipping} {status}',
+            )
+
+        pages = {
+            search_url('kleinanzeigen', 'Ecksofa', search): [card(1, '10115 Mitte(2 km)', 'Nur Abholung')],
+            search_url('kleinanzeigen', 'Ecksofa', dict(search, delivery='versand')): [
+                card(2, '80331 München', 'Nur Abholung'),
+                card(3, '20095 Hamburg', 'Abholung möglich'),
+                card(4, '80331 München', '+ 4,50 € Versand'),
+                card(5, '20095 Hamburg', 'Kostenloser Versand'),
+                card(6, '80331 München', 'Versand möglich'),
+                card(7, '20095 Hamburg', 'Versand möglich', 'Nur Abholung'),
+                card(8, '80331 München', 'Keine Angabe'),
+            ],
+        }
+        load = AsyncMock(side_effect=lambda page, source, url, follow=False: dict(rows=pages[url], text=''))
+
+        @asynccontextmanager
+        async def browser(source):
+            yield None
+
+        with (
+            patch.object(sources, 'load_page', load),
+            patch.object(sources, 'browser_page', browser),
+            patch.object(sources.images, 'remember'),
+        ):
+            offers, _ = asyncio.run(sources.fetch.__wrapped__('kleinanzeigen', search))
+        self.assertEqual(sorted(offer.url.split('/')[-1][0] for offer in offers), ['1', '4', '5', '6'])
+
+    def test_ebay_still_accepts_shipping_unless_pickup_only_is_stated(self):
+        self.assertFalse(sources.shippable('ebay', dict(text='Nur Abholung')))
+        self.assertTrue(sources.shippable('ebay', dict(text='Kostenloser Versand')))
+        self.assertTrue(sources.shippable('ebay', dict(text='')))
+
     def test_other_spellings_are_searched_one_page_each_and_count_as_a_match(self):
         cadence.save_location('kleinanzeigen', '10115', '9668')
         search = dict(self.sofa, query='Ecksofa', alternatives='Eckcouch')
