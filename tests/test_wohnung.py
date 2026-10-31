@@ -106,6 +106,10 @@ class TextTests(unittest.TestCase):
             ('Neue Mieter gesucht: 3 Zimmer Altbau', False),
             ('TAUSCHWOHNUNG Suche 3-Zimmer-Wohnung in Potsdam zum Tausch', False),
             ('Helle 2-Zimmer Wohnung mit Balkon', False),
+            ('Single-Apartment sucht Mieter', False),  # NHW's own titles
+            ('Schöne 3-Zimmer-Wohnung sucht neuen Mieter', False),
+            ('Vermieter sucht ruhige Mieterin', False),
+            ('Ruhiger Mieter sucht 2-Zimmer-Wohnung', True),
         ):
             self.assertIs(domain.is_wanted_ad(title), wanted, title)
 
