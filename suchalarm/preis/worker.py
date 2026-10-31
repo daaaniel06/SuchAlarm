@@ -293,6 +293,7 @@ def reset(conn, search_id, old, payload):
         or all_terms(old) != payload.terms()
     ):
         conn.execute('DELETE FROM notifications WHERE search_id=?', (search_id,))
+        conn.execute('DELETE FROM outbox WHERE search_id=?', (search_id,))
 
 
 def search_url(source, search):
