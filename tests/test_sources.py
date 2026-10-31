@@ -434,6 +434,23 @@ class MarkupChangeTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(sources.markup_changed('ebay', [dict(self.card(n), url='') for n in range(60)]))
         self.assertFalse(sources.markup_changed('ebay', [self.card(n, price='') for n in range(4)]))
 
+    def test_given_away_cards_have_a_readable_price_without_digits(self):
+        rows = [
+            dict(
+                self.card(n, price='Zu verschenken'),
+                url=f'https://www.kleinanzeigen.de/s-anzeige/spiel/{1000 + n}-279-1234',
+            )
+            for n in range(6)
+        ]
+        self.assertFalse(sources.markup_changed('kleinanzeigen', rows))
+        self.assertEqual(sources.listing_rows('kleinanzeigen', dict(rows=rows, text='')), rows)
+        self.assertTrue(sources.markup_changed('kleinanzeigen', [dict(row, price='') for row in rows]))
+        for free, expected in ((True, len(rows)), (False, 0)):
+            with self.subTest(free=free):
+                offers = parse_rows('kleinanzeigen', rows, dict(query='Spiel', free=free))
+                self.assertEqual(len(offers), expected)
+                self.assertTrue(all(offer.price == 0 for offer in offers))
+
     async def test_changed_markup_is_a_retried_failure_not_zero_hits(self):
         search = dict(query='Spiel PS5', min_price=0, max_price=5000, include_shipping=False)
         rows = [self.card(n, price='') for n in range(20)]

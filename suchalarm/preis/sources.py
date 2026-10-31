@@ -163,6 +163,12 @@ def ebay_in_germany(row):
 
 
 MARKUP_SAMPLE, MARKUP_USABLE_SHARE = 5, 0.2  # at least 5 cards, under 20 % usable
+GIVEN_AWAY = re.compile(r'zu verschenken', re.I)
+
+
+def has_price_text(value):
+    text = str(value)
+    return bool(re.search(r'\d', text) or GIVEN_AWAY.search(text))
 
 
 def markup_changed(source, rows):
@@ -172,7 +178,7 @@ def markup_changed(source, rows):
         for r in rows
         if clean_title(source, r.get('title', ''))
         and canonical(source, r.get('url', ''))
-        and re.search(r'\d', str(r.get('price', '')))
+        and has_price_text(r.get('price', ''))
     )
     return len(rows) >= MARKUP_SAMPLE and usable < len(rows) * MARKUP_USABLE_SHARE
 
@@ -193,9 +199,6 @@ DELIVERABLE = re.compile(
     r'lieferbar|auf lager|lieferzeit|werktage|lieferung\s*:\s*bis\b|lieferung\s+(?:heute|morgen)', re.I
 )
 EURO_AMOUNT = re.compile(r'(\d(?:[\d.,\s\xa0]*\d)?)')
-
-
-GIVEN_AWAY = re.compile(r'zu verschenken', re.I)
 
 
 def row_price(row, search=None):
