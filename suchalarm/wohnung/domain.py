@@ -290,8 +290,7 @@ def query_text(source, search):
     p = profile(search)
     values = [place_query(p).casefold(), (p['place'] or {}).get('kind') or '', str(p['radius'])]
     values += [f'{p[limit]:g}' for limit in PORTAL_LIMITS.get(source, ())]
-    if source in ('immoscout24', 'kleinanzeigen-wohnung'):
-        values.append(str('Tauschwohnung' in p['exclusions']))
+    values += [trait for trait in PORTAL_EXCLUSIONS.get(source, ()) if trait in p['exclusions']]
     return '\n'.join(values)
 
 
@@ -304,6 +303,11 @@ PORTAL_LIMITS = {  # the search's limits each portal applies itself
     'immowelt': ALL_LIMITS,
     'immobilien-de': ALL_LIMITS,
     'ohne-makler': ('maxRent', 'minArea'),
+}
+PORTAL_EXCLUSIONS = {  # the excluded traits each portal leaves out itself (checked live 31.10.2026)
+    'immoscout24': ('WBS',),
+    'wg-gesucht': ('Befristet', 'Tauschwohnung'),
+    'immowelt': ('WBS', 'Befristet', 'Tauschwohnung', 'WG-Zimmer'),
 }
 
 

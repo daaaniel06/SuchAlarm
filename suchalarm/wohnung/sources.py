@@ -234,8 +234,9 @@ async def _kleinanzeigen(p, number=1):
 
 def _immowelt_list(request):
     """A function expression for page.evaluate: the offers of REQUEST (portals.immowelt_search), asked for
-    from inside Immowelt's own result page, then their contents in one further request. A refusal reads
-    as a blocked page; any other failed answer leaves 'total' empty, so the page counts as unreadable."""
+    from inside Immowelt's own result page, then their contents in batches of portals.IMMOWELT_BATCH. A
+    refusal reads as a blocked page; any other failed answer leaves 'total' empty, so the page counts as
+    unreadable."""
     return f"""async () => {{
   const page = {{ title: document.title, text: document.body ? document.body.innerText.slice(0, 20000) : '',
                  rows: [], total: null }};
@@ -247,10 +248,11 @@ def _immowelt_list(request):
     method: 'POST', headers: {{ 'content-type': 'application/json' }}, body: JSON.stringify({json.dumps(request)}) }}));
   if (!found) return page;
   const ids = found.classifieds.map(offer => offer.id);
-  if (ids.length) {{
-    const offers = await read(await fetch('/classifiedList/' + ids.join(','), {{ headers: {{ 'x-language': 'de' }} }}));
+  for (let start = 0; start < ids.length; start += {portals.IMMOWELT_BATCH}) {{
+    const batch = ids.slice(start, start + {portals.IMMOWELT_BATCH});
+    const offers = await read(await fetch('/classifiedList/' + batch.join(','), {{ headers: {{ 'x-language': 'de' }} }}));
     if (!offers) return page;
-    page.rows = offers;
+    page.rows.push(...offers);
   }}
   page.total = found.totalCount;
   return page;

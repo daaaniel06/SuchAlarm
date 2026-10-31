@@ -25,7 +25,8 @@ log = logging.getLogger('suchalarm')
 # result page uses (sources._immowelt): newest first and already cut to the search's limits.
 
 IMMOWELT = 'https://www.immowelt.de'
-IMMOWELT_PAGE_SIZE = 30  # the most offers one request for their contents carries
+IMMOWELT_PAGE_SIZE = 100  # offers per search request; the site's own page asks for 30
+IMMOWELT_BATCH = 30  # offers per request for their contents: the IDs go into the path, which 403s past about 1 kB
 
 
 def immowelt_place_url(query):
@@ -51,9 +52,16 @@ def immowelt_search(path, profile, page=1):
         'numberOfRoomsMin': math.floor(profile['minRooms']),
     }
     limits = {name: value for name, value in limits.items() if value}
+    limits.update(_excluded(profile.get('exclusions', [])))
     paging = {'page': page} if page > 1 else {}
     address = f'{IMMOWELT}/classified-search?' + urlencode(
-        {'distributionTypes': 'Rent', 'estateTypes': 'Apartment', 'locations': place, **limits, **paging}
+        {
+            'distributionTypes': 'Rent',
+            'estateTypes': 'Apartment',
+            'locations': place,
+            **{name: ','.join(value) if isinstance(value, list) else value for name, value in limits.items()},
+            **paging,
+        }
     )
     request = {
         'criteria': {
@@ -65,6 +73,32 @@ def immowelt_search(path, profile, page=1):
         'paging': {'page': page, 'size': IMMOWELT_PAGE_SIZE, 'order': 'DateDesc'},
     }
     return address, request
+
+
+# The kinds of offer Immowelt knows (projectTypes); a search naming some leaves out the others.
+PROJECT_TYPES = (
+    'Flatsharing',
+    'Investment',
+    'Life_Annuity',
+    'New_Build',
+    'Projected',
+    'Resale',
+    'Short_Time_Rental',
+    'Stock',
+    'Swap_Apartment',
+)
+EXCLUDED_TYPES = {'Befristet': 'Short_Time_Rental', 'Tauschwohnung': 'Swap_Apartment', 'WG-Zimmer': 'Flatsharing'}
+
+
+def _excluded(exclusions):
+    """The search criteria that leave out the excluded traits (checked live on 31.10.2026)."""
+    criteria: dict[str, str | list[str]] = {}
+    if 'WBS' in exclusions:
+        criteria['certificateOfEligibilityNeeded'] = 'No'
+    unwanted = {EXCLUDED_TYPES[trait] for trait in exclusions if trait in EXCLUDED_TYPES}
+    if unwanted:
+        criteria['projectTypes'] = [kind for kind in PROJECT_TYPES if kind not in unwanted]
+    return criteria
 
 
 def immowelt_cards(offers):

@@ -119,16 +119,16 @@ class BrowserExtractionTests(unittest.IsolatedAsyncioTestCase):
         """Immowelt's list, asked for from its result page: the search, then the offers' contents."""
         offers = (Path(__file__).parent / 'fixtures' / 'immowelt' / 'list.json').read_text()
         asked, refuse = [], []
+        ids = [f'26A{n:09d}' for n in range(31)]  # one more than a request for their contents carries
 
         async def answer(route):
             request = route.request
             asked.append((urlparse(request.url).path, request.post_data, request.headers.get('x-language')))
             if request.url.endswith('/serp-bff/search'):
-                ids = [{'id': '26AAAAAAAAA1'}, {'id': '26AAAAAAAAA2'}]
                 if refuse:
                     await route.fulfill(status=403, body='')
                 else:
-                    await route.fulfill(json={'totalCount': 2, 'classifieds': ids})
+                    await route.fulfill(json={'totalCount': 31, 'classifieds': [{'id': i} for i in ids]})
             elif '/classifiedList/' in request.url:
                 await route.fulfill(content_type='application/json', body=offers)
             else:
@@ -139,11 +139,14 @@ class BrowserExtractionTests(unittest.IsolatedAsyncioTestCase):
         address, request = portals.immowelt_search(path, {'maxRent': 900, 'minArea': 40, 'minRooms': 2})
         await page.goto(address)
         data = await page.evaluate(flat_sources._immowelt_list(request), 'immowelt')
-        self.assertEqual(data['total'], 2)
-        self.assertEqual(len(portals.immowelt_cards(data['rows'])), 3)
-        search, contents = asked[1:]
+        self.assertEqual(data['total'], 31)
+        self.assertEqual(len(portals.immowelt_cards(data['rows'])), 6)  # the fixture's 3 offers per answer
+        search, *contents = asked[1:]
         self.assertEqual(json.loads(search[1]), request)
-        self.assertEqual(contents, ('/classifiedList/26AAAAAAAAA1,26AAAAAAAAA2', None, 'de'))
+        self.assertEqual(
+            contents,
+            [('/classifiedList/' + ','.join(ids[:30]), None, 'de'), ('/classifiedList/' + ids[30], None, 'de')],
+        )
         refuse.append(True)
         data = await page.evaluate(flat_sources._immowelt_list(request), 'immowelt')
         self.assertIsNone(data['total'])

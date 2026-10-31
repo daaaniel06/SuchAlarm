@@ -77,8 +77,10 @@ def immoscout_url(profile, region, coords, page=1):
         'pagenumber': str(page),
         'pagesize': str(PAGE_SIZE),
     }
-    if 'Tauschwohnung' in profile.get('exclusions', []):
-        params['exclusioncriteria'] = 'swapflat'
+    # haspromotion is "Wohnberechtigungsschein erforderlich". There is no working swap filter:
+    # exclusioncriteria=swapflat is ignored (checked live on 31.10.2026).
+    if 'WBS' in profile.get('exclusions', []):
+        params['haspromotion'] = 'false'
     if profile.get('minArea'):
         params['livingspace'] = f'{profile["minArea"]:.1f}-'
     if profile.get('minRooms'):
