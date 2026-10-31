@@ -40,4 +40,10 @@ def _cheaper_at(conn):
         conn.execute('ALTER TABLE wohnung.listings ADD COLUMN cheaper_at REAL')
 
 
-MIGRATIONS = (_create, _move, _cheaper_at)
+def _stock_pages(conn):
+    """Further pages of a new search's whole stock (pages.py): their flats are starting stock, not new."""
+    if 'stock' not in {r[1] for r in conn.execute('PRAGMA wohnung.table_info(more_pages)')}:
+        conn.execute('ALTER TABLE wohnung.more_pages ADD COLUMN stock INTEGER NOT NULL DEFAULT 0')
+
+
+MIGRATIONS = (_create, _move, _cheaper_at, _stock_pages)

@@ -257,7 +257,7 @@ def _immowelt_list(request):
 }}"""
 
 
-async def _immowelt(p):
+async def _immowelt(p, number=1):
     """The place's newest offers, already cut to the search's limits.
 
     The place's page is found once through its old address, which redirects to it; that visit then waits
@@ -274,7 +274,7 @@ async def _immowelt(p):
         looked_up = cadence.location(source, _key(query)) is None
         if looked_up:
             cadence.book(source, 'page')
-        address, request = portals.immowelt_search(await _location(source, query, location), p)
+        address, request = portals.immowelt_search(await _location(source, query, location), p, number)
         data = await browser.load_page(
             page,
             source,
@@ -388,6 +388,7 @@ PAGED = (
     'wg-gesucht',
     'ohne-makler',
     'immobilien-de',
+    'immowelt',
 )  # the others list everything on one page
 
 
@@ -399,7 +400,7 @@ async def cards(source, search, page=1):
     if source == 'kleinanzeigen-wohnung':
         return await _kleinanzeigen(p, page)
     if source == 'immowelt':
-        return await _immowelt(p)
+        return await _immowelt(p, page)
     if source == 'wg-gesucht':
         return await _wg_gesucht(p, page)
     if source == 'ohne-makler':
