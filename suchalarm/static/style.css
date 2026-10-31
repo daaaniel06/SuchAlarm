@@ -946,6 +946,7 @@ main {
   background: var(--fill);
 }
 .form-group > .field + .field,
+.form-group > .place-options + .field,
 .group > li + li {
   border-top: 1px solid var(--fill-2);
 }
