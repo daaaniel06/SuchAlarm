@@ -40,9 +40,9 @@ def immowelt_location(final_url, city):
     return path
 
 
-def immowelt_search(path, profile):
-    """(result page, search request) for the place's PATH. The page shows the same search on the site,
-    so the request is sent from there. priceMax limits the cold rent, so the warm limit is a safe bound;
+def immowelt_search(path, profile, page=1):
+    """(result page, search request) for the place's PATH and the result PAGE. The page shows the same
+    search on the site, so the request is sent from there. priceMax limits the cold rent, so the warm limit is a safe bound;
     the limits are widened to whole numbers, the exact check stays local."""
     place = path.rsplit('/', 1)[-1].upper()  # ".../darmstadt-64283/ad08de2508" -> "AD08DE2508"
     limits = {
@@ -51,8 +51,9 @@ def immowelt_search(path, profile):
         'numberOfRoomsMin': math.floor(profile['minRooms']),
     }
     limits = {name: value for name, value in limits.items() if value}
-    page = f'{IMMOWELT}/classified-search?' + urlencode(
-        {'distributionTypes': 'Rent', 'estateTypes': 'Apartment', 'locations': place, **limits}
+    paging = {'page': page} if page > 1 else {}
+    address = f'{IMMOWELT}/classified-search?' + urlencode(
+        {'distributionTypes': 'Rent', 'estateTypes': 'Apartment', 'locations': place, **limits, **paging}
     )
     request = {
         'criteria': {
@@ -61,9 +62,9 @@ def immowelt_search(path, profile):
             'location': {'placeIds': [place]},
             **limits,
         },
-        'paging': {'page': 1, 'size': IMMOWELT_PAGE_SIZE, 'order': 'DateDesc'},
+        'paging': {'page': page, 'size': IMMOWELT_PAGE_SIZE, 'order': 'DateDesc'},
     }
-    return page, request
+    return address, request
 
 
 def immowelt_cards(offers):

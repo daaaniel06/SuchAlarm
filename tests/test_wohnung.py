@@ -460,6 +460,9 @@ class ParserTests(unittest.TestCase):
         )
         self.assertNotIn('spaceMin', page)
         self.assertNotIn('numberOfRoomsMin', request['criteria'])
+        page, request = portals.immowelt_search(path, profile(search()), page=3)
+        self.assertTrue(page.endswith('&page=3'))  # its own address, so the page cache keeps the pages apart
+        self.assertEqual(request['paging']['page'], 3)
 
     def test_immowelt_detail(self):
         # The exposé sections of live pages (27.10.2026) as sources.IMMOWELT_EXPOSE reads them.
@@ -748,6 +751,7 @@ class PageTests(TempData):
         cadence.save_location('wg-gesucht', 'darmstadt', '["Darmstadt", 23]')
         cadence.save_location('ohne-makler', 'darmstadt', '/immobilien/wohnung-mieten/hessen/darmstadt/')
         cadence.save_location('immobilien-de', 'darmstadt', 'darmstadt')
+        cadence.save_location('immowelt', 'darmstadt', '/suche/mieten/wohnung/hessen/darmstadt-64283/ad08de2508')
 
         @asynccontextmanager
         async def browser_page(hosts):
@@ -757,7 +761,7 @@ class PageTests(TempData):
 
         async def load_page(page, source, url, *args, **kwargs):
             visited.append(url)
-            return {'rows': [], 'html': '', 'text': ''}
+            return {'rows': [], 'html': '', 'text': '', 'total': 0}
 
         async def get_html(source, url, follow=False):
             visited.append(url)
