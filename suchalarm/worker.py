@@ -161,12 +161,12 @@ def _record_delivery(batch, entries, outcome, error):
             conn.execute('UPDATE outbox SET batch=NULL WHERE batch=?', (batch,))
             store.put_setting(conn, 'mail_error', f'{error} Neuer Versuch in 10 Minuten.')
             return
-        # Sent, or perhaps sent: record it so the same offer never comes twice. A search deleted while the
-        # mail went out took its history along; it gets none.
+        # Only the entries still belonging to this batch count; an edit or deletion may have removed them.
         now = time.time()
         conn.executemany(
-            'INSERT OR REPLACE INTO notifications SELECT ?,?,?,? WHERE EXISTS (SELECT 1 FROM searches WHERE id=?)',
-            [(search['id'], offer['url'], price, now, search['id']) for search, offer, price in entries],
+            'INSERT OR REPLACE INTO notifications SELECT search_id,url,?,? FROM outbox '
+            'WHERE search_id=? AND url=? AND batch=?',
+            [(price, now, search['id'], offer['url'], batch) for search, offer, price in entries],
         )
         conn.execute('DELETE FROM outbox WHERE batch=?', (batch,))
         if outcome == 'sent' and error is None:

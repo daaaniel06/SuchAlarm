@@ -493,10 +493,15 @@ def listing_rows(source, data):
 def shippable(source, row):
     """Whether a card from the nationwide search can be sent: Kleinanzeigen says "Versand möglich"
     (or names a cost); on eBay everything except "Nur Abholung"."""
-    text = ' '.join(row.get('text', '').split())
+    text = ' '.join((row.get('text', '') + ' ' + row.get('shipping', '')).split())
+    if re.search(r'\bnur abholung\b', text, re.I):
+        return False
     if source == 'kleinanzeigen':
-        return 'Versand möglich' in text or bool(row.get('shipping', '').strip())
-    return not re.search(r'\bnur abholung\b', text, re.I)
+        return (
+            bool(re.search(r'\bversand möglich\b', text, re.I))
+            or shipping(row.get('shipping', ''), amount_only=True) is not None
+        )
+    return True
 
 
 def browser_page(source):

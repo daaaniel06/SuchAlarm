@@ -13,10 +13,11 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from suchalarm import mailer, scheduler, store, worker
-from suchalarm.app import app
+from suchalarm.app import app, create, delete, update
 from suchalarm.core import browser, cadence, images
 from suchalarm.preis import sources
 from suchalarm.preis.domain import Offer, canonical, clean_title, eligible, matches, money, select_offers, shipping
+from suchalarm.preis.models import Search as ProductSearch
 from suchalarm.preis.sources import parse_rows
 
 PAYLOAD = dict(query='Resident Evil Requiem', max_price=3500, sources=['ebay'], include_shipping=False, active=False)
@@ -253,6 +254,64 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 [tuple(r) for r in conn.execute('SELECT search_id, url FROM notifications')], [(1, self.offer.url)]
             )
+
+    async def test_a_reused_search_id_gets_no_receipt_from_the_previous_search(self):
+        await self.found(self.offer)
+
+        async def recreate_while_sending(deliver, message):
+            await delete(self.search['id'])
+            created = await create(ProductSearch(query='Laptop', max_price=5000, sources=['ebay']))
+            self.assertEqual(created['id'], self.search['id'])
+            return {}
+
+        with patch('suchalarm.worker.asyncio.to_thread', side_effect=recreate_while_sending):
+            await worker.send_digest()
+        self.assertEqual(store.search(self.search['id'])['query'], 'Laptop')
+        self.assertEqual((self.count('notifications'), self.count('outbox')), (0, 0))
+        self.assertEqual(self.count('batches', "WHERE status='sent'"), 1)
+
+    async def test_a_price_basis_edit_while_sending_does_not_swallow_a_later_drop(self):
+        with store.db() as conn:
+            conn.execute('UPDATE searches SET include_shipping=0, max_price=5000 WHERE id=1')
+        self.search = store.search(1)
+        offer = replace(self.offer, price=1000, shipping=2000)
+        await self.found(offer)
+
+        async def edit_while_sending(deliver, message):
+            await update(1, ProductSearch(query='Spiel', max_price=5000, sources=['ebay'], include_shipping=True))
+            return {}
+
+        with patch('suchalarm.worker.asyncio.to_thread', side_effect=edit_while_sending):
+            await worker.send_digest()
+        self.assertEqual(self.count('notifications'), 0)
+        self.assertEqual(self.count('batches', "WHERE status='sent'"), 1)
+        self.search = store.search(1)
+        await self.found(offer)
+        with store.db() as conn:
+            self.assertEqual(conn.execute('SELECT price FROM notifications').fetchone()[0], 3000)
+        await self.found(replace(offer, price=500))
+        with store.db() as conn:
+            self.assertEqual(conn.execute('SELECT price FROM outbox').fetchone()[0], 2500)
+
+    async def test_a_price_basis_edit_before_restart_does_not_restore_the_old_receipt(self):
+        await self.found(self.offer)
+        with store.db() as conn:
+            self.assertIsNotNone(worker._claim_batch(conn, store.mail_settings(), time.time(), 'preis'))
+        await update(1, ProductSearch(query='Spiel', max_price=3500, sources=['ebay'], include_shipping=False))
+        store.init()
+        self.assertEqual((self.count('notifications'), self.count('outbox')), (0, 0))
+        self.assertEqual(self.count('batches', "WHERE status='unknown'"), 1)
+
+    async def test_pausing_while_sending_still_records_the_accepted_mail(self):
+        await self.found(self.offer)
+
+        async def pause_while_sending(deliver, message):
+            await update(1, ProductSearch(query='Spiel', max_price=3500, sources=['ebay'], active=False))
+            return {}
+
+        with patch('suchalarm.worker.asyncio.to_thread', side_effect=pause_while_sending):
+            await worker.send_digest()
+        self.assertEqual((self.count('notifications'), self.count('outbox')), (1, 0))
 
     async def test_mails_off_means_no_flood_later(self):
         await self.found(self.offer)

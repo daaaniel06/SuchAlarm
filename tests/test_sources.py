@@ -3,6 +3,7 @@ import os
 import tempfile
 import time
 import unittest
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -489,6 +490,60 @@ class RouteGuardTests(unittest.IsolatedAsyncioTestCase):
 class DeliveryQueueTests(unittest.IsolatedAsyncioTestCase):
     setUp = SourceLoadingTests.setUp
     tearDown = SourceLoadingTests.tearDown
+
+    def starting_vinted_searches(self):
+        store.init()
+        payload = products.MODEL(query='Spiel', max_price=4000, sources=['vinted'], include_fee=False)
+        with store.db() as conn:
+            ids = [store.add_search(conn, 'preis', *payload.columns()) for _ in range(2)]
+            store.put_setting(conn, 'mail_enabled', '1')
+            store.put_setting(conn, 'recipients', '["test@example.com"]')
+        searches = [store.search(sid) for sid in ids]
+        offer = Offer('vinted', 'https://www.vinted.de/items/1', 'Spiel', 3000)
+        for search in searches:
+            products.finish(search, [products.save(search, 'vinted', [offer], None, time.time())])
+        return searches, offer
+
+    async def test_shared_shipping_keeps_starting_stock_silent_when_a_search_resumes(self):
+        searches, offer = self.starting_vinted_searches()
+        paused_id = searches[1]['id']
+        with store.db() as conn:
+            conn.execute('UPDATE searches SET active=0 WHERE id=?', (paused_id,))
+        products._apply_shipping(offer.url, 249)
+        with store.db() as conn:
+            conn.execute('UPDATE searches SET active=1 WHERE id=?', (paused_id,))
+        resumed = store.search(paused_id)
+        known = replace(offer, shipping=249)
+        products.finish(resumed, [products.save(resumed, 'vinted', [known], None, time.time())])
+        with store.db() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM outbox').fetchone()[0], 0)
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM notifications').fetchone()[0], 2)
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM shipping_baselines').fetchone()[0], 0)
+        new = replace(known, url='https://www.vinted.de/items/2', price=2800)
+        products.finish(resumed, [products.save(resumed, 'vinted', [known, new], None, time.time())])
+        with store.db() as conn:
+            self.assertEqual(
+                [tuple(r) for r in conn.execute('SELECT search_id,url FROM outbox')], [(paused_id, new.url)]
+            )
+
+    async def test_paused_vinted_searches_never_start_shipping_lookups(self):
+        self.starting_vinted_searches()
+        with store.db() as conn:
+            conn.execute('UPDATE searches SET active=0')
+        fetch = AsyncMock()
+        with patch.object(sources, 'fetch_shipping', fetch), patch.object(cadence, 'ready_at', return_value=0):
+            await products.update_shipping()
+        fetch.assert_not_awaited()
+
+    async def test_unknown_shared_shipping_keeps_the_starting_marks(self):
+        searches, offer = self.starting_vinted_searches()
+        with store.db() as conn:
+            conn.execute('UPDATE searches SET active=0 WHERE id=?', (searches[1]['id'],))
+        products._apply_shipping(offer.url, None)
+        with store.db() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM shipping_baselines').fetchone()[0], 2)
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM notifications').fetchone()[0], 0)
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM outbox').fetchone()[0], 0)
 
     async def test_one_detail_per_step_reuses_global_page_budget_and_cache(self):
         offers = [Offer('vinted', f'https://www.vinted.de/items/{i}', 'Spiel PS5', 3000 + i) for i in (1, 2)]

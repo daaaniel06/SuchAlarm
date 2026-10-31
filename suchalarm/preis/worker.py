@@ -227,7 +227,7 @@ def cleanup():
 
 
 def _vinted_searches():
-    return {s['id']: s for s in store.searches() if s['active'] and 'vinted' in s['sources']}
+    return {s['id']: s for s in store.searches('preis') if 'vinted' in s['sources']}
 
 
 def _fresh_vinted_urls(searches):
@@ -238,11 +238,11 @@ def _fresh_vinted_urls(searches):
             "WHERE o.source='vinted' AND s.error IS NULL AND s.checked_at>=? AND o.last_seen>=s.checked_at",
             (time.time() - FRESH_USED,),
         )
-        return {r['url'] for r in rows if r['search_id'] in searches}
+        return {r['url'] for r in rows if r['search_id'] in searches and searches[r['search_id']]['active']}
 
 
 def _apply_shipping(url, amount):
-    """Store a looked-up shipping price everywhere the offer appears and mail it if it now qualifies."""
+    """Share the shipping price with paused searches too; enqueue() only counts their offers as known."""
     searches = _vinted_searches()
     with store.db() as conn:
         rows = [
@@ -252,7 +252,9 @@ def _apply_shipping(url, amount):
         ]
         baselines = {r[0] for r in conn.execute('SELECT search_id FROM shipping_baselines WHERE url=?', (url,))}
         if amount is not None:
-            conn.execute('DELETE FROM shipping_baselines WHERE url=?', (url,))
+            conn.executemany(
+                'DELETE FROM shipping_baselines WHERE search_id=? AND url=?', [(r['search_id'], url) for r in rows]
+            )
         conn.executemany(
             'UPDATE offers SET shipping=? WHERE search_id=? AND url=?', [(amount, r['search_id'], url) for r in rows]
         )
@@ -293,6 +295,7 @@ def reset(conn, search_id, old, payload):
         or all_terms(old) != payload.terms()
     ):
         conn.execute('DELETE FROM notifications WHERE search_id=?', (search_id,))
+        conn.execute('DELETE FROM outbox WHERE search_id=?', (search_id,))
 
 
 def search_url(source, search):
