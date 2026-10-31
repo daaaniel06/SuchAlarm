@@ -1186,6 +1186,20 @@ class WorkerTests(TempData):
         row = next(r for r in catalog.listings(flat_search) if r['url'].endswith('/2'))
         self.assertEqual((row['rent'], row['status'], row['reasons']), (1100.0, 'excluded', ['WBS']))
 
+    def test_a_paused_search_gets_detail_pages_only_on_request(self):
+        flat_search = self.stored_search()
+        self.run_check([self.card(1)], flat_search)
+        self.run_check([self.card(1), self.card(2)], flat_search)  # 2 is new: its detail page is queued
+        with store.db() as conn:
+            conn.execute('UPDATE searches SET active=0 WHERE id=?', (flat_search['id'],))
+        detail = AsyncMock(return_value={'rent': 1000.0})
+        with patch.object(flats.sources, 'detail', new=detail), patch.object(flats.cadence, 'ready_at', return_value=0):
+            self.assertIsNone(asyncio.run(details.detail_step()))
+            detail.assert_not_awaited()
+            with store.db() as conn:
+                self.assertTrue(details.request_detail(conn, 'https://www.immobilienscout24.de/expose/2'))
+            self.assertEqual(asyncio.run(details.detail_step()), 'https://www.immobilienscout24.de/expose/2')
+
     def test_a_higher_rent_on_the_card_reads_the_detail_page_again(self):
         flat_search = self.stored_search(max_price=130000)
         self.run_check([self.card(1)], flat_search)
@@ -1244,7 +1258,7 @@ class WorkerTests(TempData):
         url = 'https://www.immowelt.de/expose/abc'
         with store.db() as conn:
             conn.execute(
-                "INSERT INTO listing_details(url,source,state,created_at) VALUES (?,'immowelt','pending',?)",
+                "INSERT INTO listing_details(url,source,state,created_at,requested) VALUES (?,'immowelt','pending',?,1)",
                 (url, time.time()),
             )
         blocked = AsyncMock(side_effect=browser.Blocked('Anbieter blockiert die Browser-Abfrage (HTTP 403).'))

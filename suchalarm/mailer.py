@@ -116,8 +116,8 @@ def _explain(error, sending):
 
 
 def deliver(message):
-    """Send over SMTP. Returns the recipients the server refused while it took the others (sorted; usually
-    a mistyped address). Raises DeliveryError with a short German reason, never secrets."""
+    """Send over SMTP. Returns the recipients the server refused while it took the others, each with its SMTP
+    code (address -> code, sorted). Raises DeliveryError with a short German reason, never secrets."""
     current = _usable_server()
     del message['From']  # the mailbox that sends it, whatever the server is set to now
     message['From'] = current.sender
@@ -138,12 +138,21 @@ def deliver(message):
             refused = client.send_message(message)
     except Exception as error:
         raise _explain(error, sending) from None
-    return sorted(refused)
+    return {address: refused[address][0] for address in sorted(refused)}
 
 
 def refusal(refused):
-    """What to show when the server took a mail but refused some of its recipients."""
-    return f'Der Mailserver hat {", ".join(refused)} nicht angenommen – Adresse prüfen.'
+    """What to show when the server took a mail but refused some of its recipients (address -> SMTP code).
+    A 4xx code is temporary (RFC 5321): the address is fine, that copy just did not arrive. Nothing is resent
+    either way: the others already have the mail."""
+    lasting = [address for address, code in refused.items() if code >= 500]
+    passing = [address for address, code in refused.items() if code < 500]
+    parts = []
+    if lasting:
+        parts.append(f'Der Mailserver hat {", ".join(lasting)} nicht angenommen – Adresse prüfen.')
+    if passing:
+        parts.append(f'Der Mailserver hat {", ".join(passing)} vorübergehend abgelehnt; dort kam diese Mail nicht an.')
+    return ' '.join(parts)
 
 
 def _mail(search):
