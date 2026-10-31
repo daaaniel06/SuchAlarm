@@ -194,6 +194,45 @@ class SourceLoadingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['vintedShipping'], '')
 
 
+class AvailabilityTests(unittest.TestCase):
+    def card(self, title, status=''):
+        return dict(
+            title=title,
+            url='https://www.ebay.de/itm/12345',
+            price='35 €',
+            text=f'{title} 35 € {status}',
+        )
+
+    def test_product_words_are_not_availability_statuses(self):
+        for title, status in (
+            ('Soldier of Fortune PC', ''),
+            ('Soldat Actionfigur', ''),
+            ('Spiel PS5', 'Top Angebote'),
+            ('Auktionskatalog', ''),
+        ):
+            with self.subTest(title=title, status=status):
+                offers = parse_rows('ebay', [self.card(title, status)], dict(query=title))
+                self.assertEqual(len(offers), 1)
+
+    def test_unavailable_and_auction_statuses_still_exclude_offers(self):
+        title = 'Spiel PS5'
+        for status in (
+            'Verkauft',
+            'Reserviert',
+            'Sold',
+            '3 Gebote',
+            '1 Gebot',
+            'Auktion',
+            'Ausverkauft',
+            'Gesuch',
+            'Beendet',
+            'Nicht lieferbar',
+            'Nicht verfügbar',
+        ):
+            with self.subTest(status=status):
+                self.assertEqual(parse_rows('ebay', [self.card(title, status)], dict(query=title)), [])
+
+
 class ShippingTests(unittest.TestCase):
     def test_kleinanzeigen_shipping_never_infers_a_cost_from_availability(self):
         for label, expected in (('Versand möglich', None), ('+ 4,50 € Versand', 450), ('Nur Abholung', None)):

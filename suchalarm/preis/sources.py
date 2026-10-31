@@ -181,9 +181,12 @@ MAX_TITLE, MAX_SELLER, MAX_CONDITION = 400, 200, 100
 CARS = '216'  # Kleinanzeigen's car section; its cards carry mileage and first registration
 PRICE_RANGE = re.compile(r'\b(?:bis|to)\b|\s[-–]\s', re.I)  # "20 bis 30 €": no single price
 # Reserved, sold or auction listings never count as a buyable offer; negotiable ("VB") ones only if the search allows them.
-UNAVAILABLE = re.compile(
-    r'reserviert|verkauft|beendet|sold|nicht lieferbar|nicht verfügbar|ausverkauft|auktion|gebote|\bgesuch\b', re.I
+UNAVAILABLE_PATTERNS = (
+    r'\b(?:reserviert|verkauft|beendet|sold|ausverkauft|gesuch)\b',
+    r'\bnicht\s+(?:lieferbar|verfügbar)\b',
+    r'\b(?:auktion|gebote?)\b',
 )
+UNAVAILABLE = re.compile('|'.join(UNAVAILABLE_PATTERNS), re.I)
 NEGOTIABLE = re.compile(r'\bVB\b')
 # A DOM shop row without a structured EUR price only counts with a visible delivery promise.
 DELIVERABLE = re.compile(
