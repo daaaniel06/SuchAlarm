@@ -25,7 +25,8 @@ log = logging.getLogger('suchalarm')
 # result page uses (sources._immowelt): newest first and already cut to the search's limits.
 
 IMMOWELT = 'https://www.immowelt.de'
-IMMOWELT_PAGE_SIZE = 30  # the most offers one request for their contents carries
+IMMOWELT_PAGE_SIZE = 100  # offers per search request; the site's own page asks for 30
+IMMOWELT_BATCH = 30  # offers per request for their contents: the IDs go into the path, which 403s past about 1 kB
 
 
 def immowelt_place_url(query):

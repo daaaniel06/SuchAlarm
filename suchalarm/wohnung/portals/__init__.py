@@ -58,6 +58,7 @@ from .immoscout import (  # noqa: F401
 )
 from .immowelt import (  # noqa: F401
     IMMOWELT,
+    IMMOWELT_BATCH,
     IMMOWELT_SECTIONS,
     immowelt_cards,
     immowelt_detail,

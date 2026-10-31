@@ -454,7 +454,7 @@ class ParserTests(unittest.TestCase):
             {'distributionTypes': ['Rent'], 'estateTypes': ['Apartment'], 'location': {'placeIds': ['AD08DE2508']},
              'priceMax': 900, 'spaceMin': 40, 'numberOfRoomsMin': 2},
         )  # fmt: skip
-        self.assertEqual(request['paging'], {'page': 1, 'size': 30, 'order': 'DateDesc'})
+        self.assertEqual(request['paging'], {'page': 1, 'size': 100, 'order': 'DateDesc'})
         page, request = portals.immowelt_search(
             path, profile(search(filters={'min_area': 0, 'min_rooms': 0, 'exclusions': []}))
         )
