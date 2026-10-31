@@ -179,7 +179,7 @@ async def _location(source, query, resolve):
 # --- Result lists -----------------------------------------------------------------------
 
 
-async def _immoscout(search, p, page=1):
+async def _immoscout(p, page=1):
     query, place = place_query(p), p['place'] or {}
     headers = {'User-Agent': portals.IMMOSCOUT_UA, 'Content-Type': 'application/json'}
     if place.get('kind') == 'plz':
@@ -396,7 +396,7 @@ async def cards(source, search, page=1):
     """The cards of one portal query, newest first; PAGE counts only on the PAGED portals."""
     p = profile(search)
     if source == 'immoscout24':
-        return portals.immoscout_parse(await _immoscout(search, p, page))
+        return portals.immoscout_parse(await _immoscout(p, page))
     if source == 'kleinanzeigen-wohnung':
         return await _kleinanzeigen(p, page)
     if source == 'immowelt':
@@ -414,20 +414,25 @@ async def cards(source, search, page=1):
     raise LookupError(source)
 
 
-@cadence.shared_search(cache_version=1)
+@cadence.shared_search(cache_version=2)
 async def fetch(source, search):
-    """(listings, None) of one portal query; the decorator shares, caches and times it, select() filters
-    per search."""
-    listings = [Listing.from_card(source, card) for card in await cards(source, search)]
-    images.remember(source, {listing.url: listing.image for listing in listings if listing.image})
-    return listings, None
+    """(listings, how many the page held) of one portal query; the decorator shares, caches and times it,
+    select() filters per search. The count tells pages.py whether the portal's page was full."""
+    listings = await _page(source, search)
+    return listings, len(listings)
 
 
 async def more(source, search, page):
-    """A further result page of one search after a burst of new flats: not shared or cached, only booked."""
+    """(listings of this search, how many the page held) of a further result page, while a search takes
+    in its stock or after a burst of new flats: not shared or cached, only booked."""
+    listings = await _page(source, search, page)
+    return select(listings, search), len(listings)
+
+
+async def _page(source, search, page=1):
     listings = [Listing.from_card(source, card) for card in await cards(source, search, page)]
     images.remember(source, {listing.url: listing.image for listing in listings if listing.image})
-    return select(listings, search)
+    return listings
 
 
 def select(listings, search):

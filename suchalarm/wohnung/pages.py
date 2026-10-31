@@ -18,7 +18,7 @@ from .domain import WHOLE_STOCK, Listing, cheaper, could_match, profile
 log = logging.getLogger('suchalarm')
 
 
-FULL_PAGE = 15  # a page of at least this many flats, all new, may have pushed more new ones onto the next
+FULL_PAGE = 15  # a portal page that held at least this many offers may have more behind it
 
 MAX_PAGE = 3
 
@@ -27,43 +27,78 @@ STOCK_PAGES = 50  # a new search takes in the whole stock; this only stops a por
 MORE_TRIES = 2
 
 
-def save_result(search, source, listings, now):
-    """Store a successful result; queue detail pages for new listings.
+def save_result(search, source, listings, listed, now):
+    """Store a successful result (LISTED: how many offers the portal's page held before select()); queue
+    detail pages for new listings.
 
     bauverein and NHW list their whole stock, so a flat missing there is let: it goes. The other portals
     are read on their first page (newest first), after the first result also on the pages behind it: a flat
     missing there may just have moved down, so it stays until cleanup() finds it unseen for KEEP_LISTINGS.
+    The first result, and a page 1 that read_stock_again() asked for, is starting stock.
     Returns the URLs of genuinely new listings (not the starting stock)."""
-    sid, wanted = search['id'], profile(search)
+    sid = search['id']
     with store.db() as conn:
-        seen = dict(conn.execute('SELECT url, first_seen FROM listings WHERE search_id=? AND source=?', (sid, source)))
-        succeeded = conn.execute(
-            'SELECT 1 FROM source_status WHERE search_id=? AND source=? AND error IS NULL', (sid, source)
-        ).fetchone()
-        baseline = {listing.url for listing in listings} if not seen and not succeeded else set()
-        conn.executemany('INSERT OR IGNORE INTO start_offers VALUES (?,?)', [(sid, url) for url in baseline])
-        new = _store(
-            conn, sid, source, listings, seen | _in_order(listings, baseline, now), wanted, now, sources.centre(search)
-        )
+        job = _job(conn, sid, source)
+        reading_stock = job is not None and bool(job['stock'])
+        stock = _first_result(conn, sid, source) or (reading_stock and job['page'] == 1)
+        unseen = _save_page(conn, search, source, listings, now, stock)
         if source in WHOLE_STOCK:
             _drop_let(conn, sid, source, listings)
         conn.execute(STATUS_COLUMNS + 'VALUES (?,?,?,NULL,?,0)', (sid, source, now, len(listings)))
-        if baseline:
-            _more_after(conn, sid, source, 1, listings, baseline, stock=True)
-        elif not _reading_stock(conn, sid, source):
-            _more_after(conn, sid, source, 1, listings, new)
-    return new
+        if stock or not reading_stock:  # the reading of the stock goes on behind a regular check
+            _queue_next(conn, sid, source, 1, listings, listed, unseen, stock)
+    return set() if stock else unseen
 
 
-def _in_order(listings, urls, newest):
-    """first_seen of the stock URLS, counting down from NEWEST in the portal's order (newest first), so the
-    stock read page by page lists the freshest flats first."""
-    ranked = [item.url for item in listings if item.url in urls]
-    return {url: newest - position for position, url in enumerate(ranked)}
+def save_more(search, source, page, listings, listed, now):
+    """Store a further result page. Its unseen flats are starting stock while a search takes in the stock,
+    otherwise they count like any new ones. Returns the URLs of new ones."""
+    sid = search['id']
+    with store.db() as conn:
+        job = _job(conn, sid, source)
+        if job is None or job['page'] != page:
+            return set()  # a regular check decided anew in the meantime
+        stock = bool(job['stock'])
+        unseen = _save_page(conn, search, source, listings, now, stock)
+        _queue_next(conn, sid, source, page, listings, listed, unseen, stock)
+    return set() if stock else unseen
 
 
-def _reading_stock(conn, sid, source):
-    return conn.execute('SELECT 1 FROM more_pages WHERE search_id=? AND source=? AND stock=1', (sid, source)).fetchone()
+def read_stock_again(conn, sid, changed):
+    """The portal request of the CHANGED sources (other limits): it may list older flats not seen yet. The next
+    result reads the stock again from page 1, so they join the starting stock instead of being mailed."""
+    conn.executemany(
+        'INSERT OR REPLACE INTO more_pages(search_id,source,page,tries,stock) VALUES (?,?,1,0,1)',
+        [(sid, source) for source in changed if source in sources.PAGED],
+    )
+
+
+def _job(conn, sid, source):
+    return conn.execute('SELECT page, stock FROM more_pages WHERE search_id=? AND source=?', (sid, source)).fetchone()
+
+
+def _first_result(conn, sid, source):
+    known = conn.execute('SELECT 1 FROM listings WHERE search_id=? AND source=?', (sid, source)).fetchone()
+    succeeded = conn.execute(
+        'SELECT 1 FROM source_status WHERE search_id=? AND source=? AND error IS NULL', (sid, source)
+    ).fetchone()
+    return not known and not succeeded
+
+
+def _save_page(conn, search, source, listings, now, stock):
+    """Store one result page; returns the URLs not seen before. With STOCK they join the starting stock,
+    ranked below everything known in the portal's order (newest first), so the stock read page by page
+    lists the freshest flats first."""
+    sid = search['id']
+    seen = dict(conn.execute('SELECT url, first_seen FROM listings WHERE search_id=? AND source=?', (sid, source)))
+    unseen = {item.url for item in listings if item.url not in seen}
+    if stock:
+        conn.executemany('INSERT OR IGNORE INTO start_offers VALUES (?,?)', [(sid, url) for url in unseen])
+        oldest = min(seen.values(), default=now)
+        ranked = [url for url in dict.fromkeys(item.url for item in listings) if url in unseen]
+        seen |= {url: oldest - 1 - position for position, url in enumerate(ranked)}
+    _store(conn, sid, source, listings, seen, profile(search), now, sources.centre(search))
+    return unseen
 
 
 def _drop_let(conn, sid, source, listings):
@@ -77,7 +112,7 @@ def _drop_let(conn, sid, source, listings):
 
 def _store(conn, sid, source, listings, seen, wanted, now, middle=None):
     """Write listings (SEEN: url -> first_seen of those known); queue detail pages of new ones that can
-    still fit. Returns the new URLs."""
+    still fit."""
     before = {
         url: Listing(**json.loads(body))
         for url, body in conn.execute('SELECT url, body FROM listings WHERE search_id=? AND source=?', (sid, source))
@@ -89,12 +124,14 @@ def _store(conn, sid, source, listings, seen, wanted, now, middle=None):
     )
     dropped = [item.url for item in listings if item.url in before and cheaper(before[item.url], item)]
     _mark_cheaper(conn, sid, source, dropped, now)
-    new = [item for item in listings if item.url not in seen]
     conn.executemany(
         "INSERT OR IGNORE INTO listing_details(url,source,state,created_at) VALUES (?,?,'pending',?)",
-        [(item.url, source, now) for item in new if source in sources.DETAILS and could_match(item, wanted, middle)],
+        [
+            (item.url, source, now)
+            for item in listings
+            if item.url not in seen and source in sources.DETAILS and could_match(item, wanted, middle)
+        ],
     )
-    return {item.url for item in new}
 
 
 def _mark_cheaper(conn, sid, source, urls, now):
@@ -107,40 +144,25 @@ def _mark_cheaper(conn, sid, source, urls, now):
         read_again(conn, source, urls, now)
 
 
-def _more_after(conn, sid, source, page, listings, unseen, stock=False):
-    """Queue the next page after a full one. While a new search takes in the STOCK, as long as pages bring
-    flats not seen yet; otherwise only after a page of nothing but new flats, which may have pushed more down."""
-    more = bool(unseen) if stock else len(unseen) == len(listings)
-    last = STOCK_PAGES if stock else MAX_PAGE
-    goes_on = source in sources.PAGED and len(listings) >= FULL_PAGE and more
-    if goes_on and page < last:
+def _queue_next(conn, sid, source, page, listings, listed, unseen, stock):
+    """Queue the page after PAGE, or end the reading. Only a page that was full (LISTED offers before the
+    search's own place filter) can have one behind it. While a search takes in its STOCK, reading goes on as
+    long as pages bring flats not seen yet (a page of only other places' offers says nothing about the end);
+    otherwise only after a page of nothing but new flats, which may have pushed more down."""
+    full = source in sources.PAGED and listed >= FULL_PAGE
+    if stock:
+        more, last = full and (bool(unseen) or not listings), STOCK_PAGES
+    else:
+        more, last = full and bool(listings) and unseen == {item.url for item in listings}, MAX_PAGE
+    if more and page < last:
         conn.execute(
             'INSERT OR REPLACE INTO more_pages(search_id,source,page,tries,stock) VALUES (?,?,?,0,?)',
             (sid, source, page + 1, int(stock)),
         )
         return
-    if goes_on and stock:
-        log.warning('Stock of %s stopped after %s pages; narrow the search to see the rest', source, last)
+    if more and stock:
+        log.warning('Reading the stock of %s stopped after %s pages; narrow the search to see the rest', source, last)
     conn.execute('DELETE FROM more_pages WHERE search_id=? AND source=?', (sid, source))
-
-
-def save_more(search, source, page, listings, now):
-    """Store a further result page. Its flats are starting stock while a new search takes in the stock,
-    otherwise its new flats count like any others. Returns the URLs of new ones."""
-    sid = search['id']
-    with store.db() as conn:
-        due = conn.execute(
-            'SELECT page, stock FROM more_pages WHERE search_id=? AND source=?', (sid, source)
-        ).fetchone()
-        if due is None or due['page'] != page:
-            return set()  # a regular check decided anew in the meantime
-        seen = dict(conn.execute('SELECT url, first_seen FROM listings WHERE search_id=? AND source=?', (sid, source)))
-        stock = {item.url for item in listings if item.url not in seen} if due['stock'] else set()
-        conn.executemany('INSERT OR IGNORE INTO start_offers VALUES (?,?)', [(sid, url) for url in stock])
-        known = seen | _in_order(listings, stock, min(seen.values(), default=now) - 1)
-        new = _store(conn, sid, source, listings, known, profile(search), now, sources.centre(search))
-        _more_after(conn, sid, source, page, listings, stock if due['stock'] else new, bool(due['stock']))
-    return new
 
 
 async def more_step(now=None):
@@ -156,7 +178,7 @@ async def more_step(now=None):
         return None
     where = (job['search_id'], job['source'])
     try:
-        listings = await asyncio.wait_for(sources.more(job['source'], search, job['page']), timeout=FETCH_TIMEOUT)
+        found, listed = await asyncio.wait_for(sources.more(job['source'], search, job['page']), timeout=FETCH_TIMEOUT)
     except cadence.Deferred:
         return None
     except asyncio.CancelledError:
@@ -173,5 +195,5 @@ async def more_step(now=None):
         log.warning('Page %s of %s failed (%s)', job['page'], job['source'], type(exc).__name__)
         return job
     cadence.outcome(job['source'], 'page')
-    save_more(search, job['source'], job['page'], listings, time.time())
+    save_more(search, job['source'], job['page'], found, listed, time.time())
     return job

@@ -319,7 +319,12 @@ def searches(kind=None) -> list[Search]:
 def search(search_id) -> Search | None:
     """One search, or None if it was deleted."""
     with db() as conn:
-        row = conn.execute('SELECT * FROM searches WHERE id=?', (search_id,)).fetchone()
+        return read_search(conn, search_id)
+
+
+def read_search(conn, search_id) -> Search | None:
+    """One search as CONN sees it (also an edit not yet committed), or None."""
+    row = conn.execute('SELECT * FROM searches WHERE id=?', (search_id,)).fetchone()
     return _search(row) if row else None
 
 
