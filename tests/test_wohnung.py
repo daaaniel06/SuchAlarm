@@ -816,6 +816,35 @@ class WorkerTests(TempData):
         pages.save_result(flat_search, 'immoscout24', page(300)[:5], time.time())
         self.assertEqual(self.due(), [])  # not a full page
 
+    def test_a_new_search_reads_the_whole_stock_page_by_page(self):
+        flat_search = self.stored_search()
+        page = lambda start, size=pages.FULL_PAGE: [self.card(n) for n in range(start, start + size)]  # noqa: E731
+        self.assertEqual(pages.save_result(flat_search, 'immoscout24', page(0), time.time()), set())
+        self.assertEqual(self.due(), [(2, 0)])
+        with patch.object(flats.sources, 'more', new=AsyncMock(return_value=page(100))):
+            asyncio.run(pages.more_step())
+        self.assertEqual(self.due(), [(3, 0)])
+        new = pages.save_result(flat_search, 'immoscout24', [self.card(500), *page(0)], time.time())
+        self.assertEqual(new, {'https://www.immobilienscout24.de/expose/500'})
+        self.assertEqual(self.due(), [(3, 0)])  # a regular check does not end the reading of the stock
+        with patch.object(flats.sources, 'more', new=AsyncMock(return_value=page(200, 3))):
+            asyncio.run(pages.more_step())
+        self.assertEqual(self.due(), [])  # the last page was not full
+        rows = catalog.listings(flat_search)
+        self.assertEqual(len(rows), 34)
+        self.assertEqual(sorted(r['url'].rsplit('/', 1)[1] for r in rows if not r['start']), ['500'])
+        with store.db() as conn:
+            pending = [r[0] for r in conn.execute('SELECT url FROM listing_details')]
+        self.assertEqual(pending, ['https://www.immobilienscout24.de/expose/500'])  # the stock gets none
+
+    def test_reading_the_stock_stops_at_a_page_without_unseen_flats(self):
+        flat_search = self.stored_search()
+        first = [self.card(n) for n in range(pages.FULL_PAGE)]
+        pages.save_result(flat_search, 'immoscout24', first, time.time())
+        with patch.object(flats.sources, 'more', new=AsyncMock(return_value=first)):  # the portal ignores the page
+            asyncio.run(pages.more_step())
+        self.assertEqual(self.due(), [])
+
     def test_first_result_is_the_stock_and_only_new_listings_get_a_detail_page(self):
         flat_search = self.stored_search()
         self.assertEqual(self.run_check([self.card(1), self.card(2)], flat_search), {'immoscout24'})
