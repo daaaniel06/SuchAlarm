@@ -89,7 +89,10 @@ def finish(search, saved):
 
 def save_result(search, source, offers, reference, now):
     """Replace a source's stored offers with a successful result. Returns the URLs that form its
-    starting point: the first readable result of a source is not news and is never mailed."""
+    starting point: the first readable result of a source is not news and is never mailed.
+
+    An offer waiting for the mail stays until it is sent: only the first result page is read, so newer
+    offers may just have pushed it off, which does not mean it is gone."""
     sid = search['id']
     with store.db() as conn:
         seen = dict(conn.execute('SELECT url, first_seen FROM offers WHERE search_id=? AND source=?', (sid, source)))
@@ -97,7 +100,12 @@ def save_result(search, source, offers, reference, now):
         # The app shows no "new" dot for this starting point either.
         conn.executemany('INSERT OR IGNORE INTO start_offers VALUES (?,?)', [(sid, url) for url in baseline])
         sent = dict(conn.execute('SELECT url, sent_at FROM notifications WHERE search_id=?', (sid,)))
-        conn.execute('DELETE FROM offers WHERE search_id=? AND source=?', (sid, source))
+        current = {offer.url for offer in offers}
+        waiting = {r[0] for r in conn.execute('SELECT url FROM outbox WHERE search_id=? AND batch IS NULL', (sid,))}
+        conn.executemany(
+            'DELETE FROM offers WHERE search_id=? AND source=? AND url=?',
+            [(sid, source, url) for url in seen if url in current or url not in waiting],
+        )
         conn.executemany(
             'INSERT INTO offers VALUES (?,?,?,?,?,?,?,?,?,?)',
             [
