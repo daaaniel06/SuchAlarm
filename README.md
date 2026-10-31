@@ -2,7 +2,7 @@
 
 <p align="center">
   <b>Dein eigener Alarm für neue Wohnungen und günstige Gebrauchtwaren.</b><br>
-  Selbst gehosteter Wohnungsbot für ImmoScout24, Immowelt, Kleinanzeigen und WG-Gesucht, dazu Preisvergleich und Preisalarm für Gebrauchtwaren: vergleicht Kleinanzeigen, eBay und Vinted, gleicht mit dem Neupreis auf idealo ab und meldet Schnäppchen unter deinem Wunschpreis. Prüft die Portale im Hintergrund und meldet sich per Mail.
+  Selbst gehosteter Wohnungsbot für ImmoScout24, Immowelt, Kleinanzeigen, WG-Gesucht, ohne-makler.net und immobilien.de, dazu Preisvergleich und Preisalarm für Gebrauchtwaren: vergleicht Kleinanzeigen, eBay und Vinted, gleicht mit dem Neupreis auf idealo ab und meldet Schnäppchen unter deinem Wunschpreis. Prüft die Portale im Hintergrund und meldet sich per Mail.
 </p>
 
 <p align="center">
@@ -75,14 +75,14 @@ Die genauen Regeln (Preisgrenzen, Taktung, Grenzen der Quellen, Mails, Bilder) s
 | --- | --- | --- |
 | Wohnungen | ImmoScout24 | App-Schnittstelle |
 | Wohnungen | Kleinanzeigen, Immowelt | Browser |
-| Wohnungen | WG-Gesucht, NHW, bauverein | direkt |
+| Wohnungen | WG-Gesucht, ohne-makler.net, immobilien.de, NHW, bauverein | direkt |
 | Preise | eBay (Sofortkauf, gebraucht, Standort Deutschland) | Browser |
 | Preise | Kleinanzeigen, Vinted | Browser |
 | Preise | idealo (Neupreis-Vergleich) | Browser |
 
 Seiten laufen standardmäßig über ein getarntes Firefox. Direkte Abrufe gibt es nur dort, wo sie ohne Mehraufwand gehen, etwa bei Vorschaubildern und App-Schnittstellen. Jeder Abruf läuft durch dieselbe zentrale Taktung.
 
-**Regionale Grenzen:** ImmoScout24, Kleinanzeigen, Immowelt und WG-Gesucht funktionieren bundesweit. WG-Gesucht sucht nur nach Ortsnamen, nicht nach Postleitzahl, und liest Wohnungen und 1-Zimmer-Wohnungen mit Höchstmiete, Mindestfläche und -zimmern; die Orts-ID holt Suchalarm einmal über WG-Gesuchts eigene Ortssuche und merkt sie sich. NHW und bauverein haben ohnehin nur Bestand in der Region.
+**Regionale Grenzen:** ImmoScout24, Kleinanzeigen, Immowelt und WG-Gesucht funktionieren bundesweit. Immowelt liest die neuesten Inserate, schon nach Miete, Fläche und Zimmern vorgefiltert. WG-Gesucht sucht nur nach Ortsnamen, nicht nach Postleitzahl, und liest Wohnungen und 1-Zimmer-Wohnungen mit Höchstmiete, Mindestfläche und -zimmern; die Orts-ID holt Suchalarm einmal über WG-Gesuchts eigene Ortssuche und merkt sie sich. ohne-makler.net liest die neuesten Inserate mit Höchstmiete und Mindestfläche, auch nach Postleitzahl (dann ohne Umkreis). immobilien.de liest immer den ganzen Ort, ohne Umkreis; viele Inserate dort sind Kopien von ohne-makler.net und erscheinen nach dem Lesen der Detailseiten als ein Inserat. NHW und bauverein haben ohnehin nur Bestand in der Region.
 
 ## Schnellstart
 

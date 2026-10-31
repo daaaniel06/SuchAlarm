@@ -14,6 +14,8 @@ export const short = {
   'kleinanzeigen-wohnung': 'KA',
   'wg-gesucht': 'WG',
   immowelt: 'IW',
+  'ohne-makler': 'OM',
+  'immobilien-de': 'IM',
   bauverein: 'BV',
   nhw: 'NH',
 };

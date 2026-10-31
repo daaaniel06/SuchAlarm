@@ -8,7 +8,9 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .domain import SOURCES, TRAITS
 
-FlatSource = Literal['immoscout24', 'kleinanzeigen-wohnung', 'wg-gesucht', 'immowelt', 'bauverein', 'nhw']
+FlatSource = Literal[
+    'immoscout24', 'kleinanzeigen-wohnung', 'wg-gesucht', 'immowelt', 'ohne-makler', 'immobilien-de', 'bauverein', 'nhw'
+]
 FLAT_RADII = (0, 2, 5, 10, 15, 20, 30, 50)
 DAY = r'^\d{4}-\d{2}-\d{2}$'
 

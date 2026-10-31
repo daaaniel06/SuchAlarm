@@ -15,6 +15,7 @@ let flatWords = [],
 const flatBoxes = () => [...document.querySelectorAll('[name=flat-source]')];
 const REGIONAL = {
   'wg-gesucht': 'WG-Gesucht nur mit Ortsnamen, ohne PLZ',
+  'immobilien-de': 'immobilien.de nur ganzer Ort, ohne Umkreis',
   bauverein: 'bauverein nur Darmstadt',
   nhw: 'NHW nur Hessen',
 };

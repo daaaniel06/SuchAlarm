@@ -14,6 +14,8 @@ SOURCES = {
     'kleinanzeigen-wohnung': 'Kleinanzeigen',
     'wg-gesucht': 'WG-Gesucht',
     'immowelt': 'Immowelt',
+    'ohne-makler': 'ohne-makler.net',
+    'immobilien-de': 'immobilien.de',
     'bauverein': 'bauverein AG',
     'nhw': 'NHW',
 }
@@ -287,14 +289,22 @@ def query_text(source, search):
         return 'whole stock'
     p = profile(search)
     values = [place_query(p).casefold(), (p['place'] or {}).get('kind') or '', str(p['radius'])]
-    if source in ('immoscout24', 'kleinanzeigen-wohnung', 'wg-gesucht'):
-        values += [f'{p["maxRent"]:g}', f'{p["minArea"]:g}', f'{p["minRooms"]:g}']
+    values += [f'{p[limit]:g}' for limit in PORTAL_LIMITS.get(source, ())]
     if source in ('immoscout24', 'kleinanzeigen-wohnung'):
         values.append(str('Tauschwohnung' in p['exclusions']))
     return '\n'.join(values)
 
 
 WHOLE_STOCK = ('bauverein', 'nhw')
+ALL_LIMITS = ('maxRent', 'minArea', 'minRooms')
+PORTAL_LIMITS = {  # the search's limits each portal applies itself
+    'immoscout24': ALL_LIMITS,
+    'kleinanzeigen-wohnung': ALL_LIMITS,
+    'wg-gesucht': ALL_LIMITS,
+    'immowelt': ALL_LIMITS,
+    'immobilien-de': ALL_LIMITS,
+    'ohne-makler': ('maxRent', 'minArea'),
+}
 
 
 # --- Filter rules --------------------------------------------------------------------

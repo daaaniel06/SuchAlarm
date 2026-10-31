@@ -1,7 +1,8 @@
 """Fetching flat portals: one shared, budgeted request per portal query, place lookups, detail pages.
 
-ImmoScout24 (app API), bauverein (JSON), NHW and WG-Gesucht (HTML) are fetched directly; Kleinanzeigen
-and Immowelt through the remote browser. Every request goes through the page budget of its site.
+ImmoScout24 (app API), bauverein (JSON), NHW, WG-Gesucht, ohne-makler.net and immobilien.de (HTML) are
+fetched directly; Kleinanzeigen and Immowelt through the remote browser. Every request goes through the
+page budget of its site.
 """
 
 import json
@@ -11,7 +12,17 @@ from urllib.parse import urlencode
 
 from ..core import browser, cadence, http, images
 from . import portals
-from .domain import Listing, beyond_radius, distance_km, is_wanted_ad, outside_home, place_query, profile
+from .domain import (
+    SOURCES,
+    Listing,
+    beyond_radius,
+    distance_km,
+    home_area,
+    is_wanted_ad,
+    outside_home,
+    place_query,
+    profile,
+)
 
 log = logging.getLogger('suchalarm')
 
@@ -21,11 +32,17 @@ BROWSER_HOSTS = {
     'kleinanzeigen-wohnung': {'www.kleinanzeigen.de', 'kleinanzeigen.de'},
     'immowelt': {'www.immowelt.de', 'immowelt.de'},
 }
-CARDS = {
-    'kleinanzeigen-wohnung': 'article[data-adid]',
-    'immowelt': '[data-testid="serp-core-classified-card-testid"]',
-}
-DETAILS = ('immoscout24', 'kleinanzeigen-wohnung', 'wg-gesucht', 'immowelt', 'bauverein', 'nhw')
+KLEINANZEIGEN_CARDS = 'article[data-adid]'
+DETAILS = (
+    'immoscout24',
+    'kleinanzeigen-wohnung',
+    'wg-gesucht',
+    'immowelt',
+    'ohne-makler',
+    'immobilien-de',
+    'bauverein',
+    'nhw',
+)
 
 
 def _extract_cards(selector):
@@ -89,8 +106,10 @@ def out_of_area(search, source):
     if source == 'wg-gesucht':
         if place.get('kind') == 'plz':
             return 'Sucht nur nach Ortsnamen, nicht nach Postleitzahl'
-        if cadence.location('wg-gesucht', _key(_wg_place(p))) == WG_UNKNOWN:
+        if cadence.location('wg-gesucht', _key(_wg_place(p))) == UNKNOWN_PLACE:
             return 'Kennt diesen Ort nicht'
+    if source in ('ohne-makler', 'immobilien-de') and cadence.location(source, _key(place_query(p))) == UNKNOWN_PLACE:
+        return 'Kennt diesen Ort nicht'
     known = cadence.location('osm', _key(place_query(p)))
     if known and source == 'bauverein':
         lat, lon, _ = json.loads(known)
@@ -131,7 +150,7 @@ async def suggest(text):
     return places
 
 
-WG_UNKNOWN = ''  # kept for a town WG-Gesucht has no suggestion for, so it is asked only once
+UNKNOWN_PLACE = ''  # kept for a town a portal's place search does not know, so it is asked only once
 
 
 def _wg_place(p):
@@ -139,13 +158,13 @@ def _wg_place(p):
 
 
 async def _wg_city(place):
-    """What WG-Gesucht's place field suggests for the place, as stored: '[slug, ID]' or WG_UNKNOWN."""
+    """What WG-Gesucht's place field suggests for the place, as stored: '[slug, ID]' or UNKNOWN_PLACE."""
     try:
         answer = await http.get_json('wg-gesucht', portals.wg_cities_url(place))
     except http.NotFound:
-        return WG_UNKNOWN
+        return UNKNOWN_PLACE
     city = portals.wg_city(answer, place)
-    return json.dumps(city) if city else WG_UNKNOWN
+    return json.dumps(city) if city else UNKNOWN_PLACE
 
 
 async def _location(source, query, resolve):
@@ -180,15 +199,8 @@ async def _immoscout(search, p, page=1):
     return await http.get_json('immoscout24', url, headers, portals.IMMOSCOUT_BODY, follow=looked_up)
 
 
-def _readable_cards(source):
-    def readable(data, follow):
-        return (
-            bool(data['rows'])
-            or browser.EMPTY.search(data['text'])
-            or (source == 'kleinanzeigen-wohnung' and 'Leider keine' in data['text'])
-        )
-
-    return readable
+def _kleinanzeigen_readable(data, follow):
+    return bool(data['rows']) or browser.EMPTY.search(data['text']) or 'Leider keine' in data['text']
 
 
 async def _kleinanzeigen(p, number=1):
@@ -214,18 +226,43 @@ async def _kleinanzeigen(p, number=1):
             source,
             portals.kleinanzeigen_url(p, identifier, number),  # the result page's number
             looked_up,
-            extract=_extract_cards(CARDS[source]),
-            readable=_readable_cards(source),
+            extract=_extract_cards(KLEINANZEIGEN_CARDS),
+            readable=_kleinanzeigen_readable,
         )
     return portals.kleinanzeigen_parse(data['html']) if data['rows'] else []  # an empty page passed on its text
 
 
-async def _immowelt(p):
-    """The place's page as Immowelt shows it (order "Relevanz").
+def _immowelt_list(request):
+    """A function expression for page.evaluate: the offers of REQUEST (portals.immowelt_search), asked for
+    from inside Immowelt's own result page, then their contents in one further request. A refusal reads
+    as a blocked page; any other failed answer leaves 'total' empty, so the page counts as unreadable."""
+    return f"""async () => {{
+  const page = {{ title: document.title, text: document.body ? document.body.innerText.slice(0, 20000) : '',
+                 rows: [], total: null }};
+  const read = async response => {{
+    if ({json.dumps(browser.REFUSAL_STATUSES)}.includes(response.status)) page.text = 'Zugriff verweigert\\n' + page.text;
+    return response.ok ? response.json() : null;
+  }};
+  const found = await read(await fetch('/serp-bff/search', {{
+    method: 'POST', headers: {{ 'content-type': 'application/json' }}, body: JSON.stringify({json.dumps(request)}) }}));
+  if (!found) return page;
+  const ids = found.classifieds.map(offer => offer.id);
+  if (ids.length) {{
+    const offers = await read(await fetch('/classifiedList/' + ids.join(','), {{ headers: {{ 'x-language': 'de' }} }}));
+    if (!offers) return page;
+    page.rows = offers;
+  }}
+  page.total = found.totalCount;
+  return page;
+}}"""
 
-    Sorting by date is not possible: Immowelt answers the sorted search, also when chosen in its own menu,
-    with a DataDome captcha, and no captcha is worked around. The place's page is found once through its
-    old address, which redirects to it; that visit then waits for the next slot like any second page."""
+
+async def _immowelt(p):
+    """The place's newest offers, already cut to the search's limits.
+
+    The place's page is found once through its old address, which redirects to it; that visit then waits
+    for the next slot like any second page. The list is asked for from the search's own result page,
+    which keys the page cache."""
     source, query = 'immowelt', place_query(p)
     async with browser.browser_page(BROWSER_HOSTS[source]) as page:
 
@@ -237,16 +274,16 @@ async def _immowelt(p):
         looked_up = cadence.location(source, _key(query)) is None
         if looked_up:
             cadence.book(source, 'page')
-        path = await _location(source, query, location)
+        address, request = portals.immowelt_search(await _location(source, query, location), p)
         data = await browser.load_page(
             page,
             source,
-            portals.IMMOWELT + path,
+            address,
             looked_up,
-            extract=_extract_cards(CARDS[source]),
-            readable=_readable_cards(source),
+            extract=_immowelt_list(request),
+            readable=lambda data, follow: data['total'] is not None,
         )
-    return portals.immowelt_parse(data['html']) if data['rows'] else []
+    return portals.immowelt_cards(data['rows'])
 
 
 async def _wg_gesucht(p, page=1):
@@ -257,10 +294,68 @@ async def _wg_gesucht(p, page=1):
         raise RuntimeError('WG-Gesucht sucht nur nach Ortsnamen, nicht nach Postleitzahl.')
     looked_up = cadence.location(source, _key(place)) is None
     city = await _location(source, place, lambda: _wg_city(place))
-    if city == WG_UNKNOWN:
+    if city == UNKNOWN_PLACE:
         raise RuntimeError(f'WG-Gesucht kennt den Ort „{place}“ nicht.')
     html = await http.get_html(source, portals.wg_url(json.loads(city), p, page), follow=looked_up)
     return portals.wg_parse(html)
+
+
+async def _listed_place(source, p, resolve):
+    """(place, looked up now) of a portal whose place is found once through its own place search."""
+    query = place_query(p)
+    looked_up = cadence.location(source, _key(query)) is None
+    place = await _location(source, query, resolve)
+    if place == UNKNOWN_PLACE:
+        raise RuntimeError(f'{SOURCES[source]} kennt den Ort „{query}“ nicht.')
+    return place, looked_up
+
+
+async def _result_page(source, url, page, follow):
+    """A result page's HTML; past the last page the portals answer 404, which means no further offers."""
+    try:
+        return await http.get_html(source, url, follow=follow)
+    except http.NotFound:
+        if page > 1:
+            return None
+        raise
+
+
+async def _ohne_makler(p, page=1):
+    """The newest offers of a postcode, or of a town: its path is found once through the site's place
+    search and the state from OpenStreetMap, then the list follows as a further request."""
+    source = 'ohne-makler'
+    if (p['place'] or {}).get('kind') == 'plz':
+        place, looked_up = place_query(p), False
+    else:
+        place, looked_up = await _listed_place(source, p, lambda: _om_path(p))
+    html = await _result_page(source, portals.om_url(place, p, page), page, looked_up)
+    return portals.om_parse(html) if html else []
+
+
+async def _om_path(p):
+    town = home_area(p)
+    name = portals.om_town(await http.get_json('ohne-makler', portals.om_places_url(town)), town)
+    state = (await locate(place_query(p), follow=True))[2] if name else ''
+    return portals.om_path(state, name) if state else UNKNOWN_PLACE
+
+
+async def _immobilien_de(p, page=1):
+    """The town's newest offers (a postcode stands for its town: the site has no radius). The town's
+    token is found once through the site's place search, then the list follows as a further request."""
+    source = 'immobilien-de'
+    slug, looked_up = await _listed_place(source, p, lambda: _id_slug(p))
+    html = await _result_page(source, portals.id_url(slug, p, page), page, looked_up)
+    return portals.id_parse(html) if html else []
+
+
+async def _id_slug(p):
+    town = home_area(p)
+    if (p['place'] or {}).get('kind') == 'plz':
+        town = portals.id_town(await http.get_json('immobilien-de', portals.id_places_url(town)))
+        if not town:
+            return UNKNOWN_PLACE
+    answer = await http.get_json('immobilien-de', portals.id_places_url(town), follow=True)
+    return portals.id_city(answer, town) or UNKNOWN_PLACE
 
 
 async def _bauverein():
@@ -287,7 +382,13 @@ async def _bauverein():
     return cards
 
 
-PAGED = ('immoscout24', 'kleinanzeigen-wohnung', 'wg-gesucht')  # the others list everything on one page
+PAGED = (
+    'immoscout24',
+    'kleinanzeigen-wohnung',
+    'wg-gesucht',
+    'ohne-makler',
+    'immobilien-de',
+)  # the others list everything on one page
 
 
 async def cards(source, search, page=1):
@@ -301,6 +402,10 @@ async def cards(source, search, page=1):
         return await _immowelt(p)
     if source == 'wg-gesucht':
         return await _wg_gesucht(p, page)
+    if source == 'ohne-makler':
+        return await _ohne_makler(p, page)
+    if source == 'immobilien-de':
+        return await _immobilien_de(p, page)
     if source == 'bauverein':
         return await _bauverein()
     if source == 'nhw':
@@ -383,6 +488,10 @@ async def detail(source, url):
         return await _immowelt_detail(url)
     if source == 'wg-gesucht':
         return portals.wg_detail(await http.get_html(source, url))
+    if source == 'ohne-makler':
+        return portals.om_detail(await http.get_html(source, url))
+    if source == 'immobilien-de':
+        return portals.id_detail(await http.get_html(source, url))
     if source == 'bauverein':
         endpoint, payload = portals.polyestate('object-details', {'id': portals.bauverein_identifier(url)})
         return portals.bauverein_detail(await http.get_json(source, endpoint, portals.BAUVEREIN_HEADERS, payload))
