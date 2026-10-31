@@ -111,6 +111,29 @@ class TextTests(unittest.TestCase):
 
 
 class FilterTests(unittest.TestCase):
+    def test_excluded_districts_only_match_whole_names_in_the_location(self):
+        wanted = {**PROFILE, 'city': 'Darmstadt', 'excludedDistricts': ['Wixhausen', 'Eberstadt']}
+        for place, expected in (
+            ('64291 Darmstadt-Wixhausen', 'excluded'),
+            ('Darmstadt, EBERSTADT', 'excluded'),
+            ('64283 Darmstadt, Bessungen', 'matched'),
+            ('Wixhausenstraße 12, Darmstadt', 'matched'),
+            ('Darmstadt', 'matched'),
+            ('', 'matched'),
+        ):
+            with self.subTest(place=place):
+                item = flat(place=place, text='Gute Anbindung nach Eberstadt')
+                self.assertEqual(match(item, wanted)[0], expected)
+
+    def test_excluded_districts_are_local_filters_and_old_searches_keep_working(self):
+        original = search()
+        changed = search(filters={**original['filters'], 'excluded_districts': ['Eberstadt']})
+        self.assertEqual(profile(changed)['excludedDistricts'], ['Eberstadt'])
+        self.assertEqual(profile(original)['excludedDistricts'], [])
+        for source in domain.SOURCES:
+            with self.subTest(source=source):
+                self.assertEqual(domain.query_text(source, original), domain.query_text(source, changed))
+
     def test_filter_boundaries(self):
         for changes, expected in (
             ({}, 'matched'),
@@ -1342,6 +1365,78 @@ class ApiAndMailTests(TempData):
             {'url': f'https://www.immobilienscout24.de/expose/{number}', 'title': f'Wohnung {number}',
              'place': 'Darmstadt', 'rent': 1100, 'area': 60, 'rooms': 2, **changes},
         )  # fmt: skip
+
+    def test_excluded_districts_are_saved_normalized_and_applied_to_notifications(self):
+        flat_search = self.create(
+            filters={'excluded_districts': [' Wixhausen ', 'Eberstadt', 'wixhausen'], 'exclusions': []}
+        )
+        self.assertEqual(flat_search['filters']['excluded_districts'], ['Wixhausen', 'Eberstadt'])
+        with store.db() as conn:
+            store.put_setting(conn, 'recipients', '["a@example.com"]')
+            store.put_setting(conn, 'mail_enabled:wohnung', '1')
+        pages.save_result(flat_search, 'immoscout24', [], 0, time.time())
+        found = [
+            self.card(1, place='Darmstadt-Eberstadt'),
+            self.card(2, place='Darmstadt, Bessungen'),
+            self.card(3, place='Darmstadt-Wixhausen'),
+        ]
+        pages.save_result(flat_search, 'immoscout24', found, len(found), time.time())
+        with store.db() as conn:
+            conn.execute("UPDATE listing_details SET state='done', body='{}'")
+        outbox.queue_mails()
+        with store.db() as conn:
+            self.assertEqual([row[0] for row in conn.execute('SELECT url FROM outbox')], [found[1].url])
+        rows = self.client.get('/api/state').json()['listings']
+        self.assertEqual(
+            {row['url']: row['status'] for row in rows},
+            {found[0].url: 'excluded', found[1].url: 'matched', found[2].url: 'excluded'},
+        )
+
+    def test_removed_district_queues_missing_details_on_the_next_result(self):
+        flat_search = self.create(filters={'excluded_districts': ['Eberstadt'], 'exclusions': ['WBS']})
+        stock = self.card(1, place='Darmstadt, Bessungen')
+        new = self.card(2, place='Darmstadt-Eberstadt')
+        pages.save_result(flat_search, 'immoscout24', [stock], 1, time.time())
+        pages.save_result(flat_search, 'immoscout24', [stock, new], 2, time.time())
+        with store.db() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM listing_details').fetchone()[0], 0)
+            store.put_setting(conn, 'recipients', '["test@example.com"]')
+            store.put_setting(conn, 'mail_enabled:wohnung', '1')
+        response = self.client.put(
+            f'/api/searches/{flat_search["id"]}',
+            json={
+                'kind': 'wohnung',
+                'query': 'Darmstadt',
+                'max_price': 130000,
+                'sources': flat_search['sources'],
+                'filters': {'excluded_districts': [], 'exclusions': ['WBS']},
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        pages.save_result(store.search(flat_search['id']), 'immoscout24', [stock, new], 2, time.time())
+        with store.db() as conn:
+            self.assertEqual(
+                [tuple(row) for row in conn.execute('SELECT url,state FROM listing_details')], [(new.url, 'pending')]
+            )
+            conn.execute("UPDATE listing_details SET state='done', body='{}'")
+        outbox.queue_mails()
+        with store.db() as conn:
+            self.assertEqual([row[0] for row in conn.execute('SELECT url FROM outbox')], [new.url])
+
+    def test_excluded_districts_reject_empty_overlong_and_too_many_names(self):
+        for names in ([' '], ['x' * 81], [f'Ortsteil {n}' for n in range(21)]):
+            with self.subTest(names=names):
+                response = self.client.post(
+                    '/api/searches',
+                    json={
+                        'kind': 'wohnung',
+                        'query': 'Darmstadt',
+                        'max_price': 130000,
+                        'sources': ['nhw'],
+                        'filters': {'excluded_districts': names},
+                    },
+                )
+                self.assertEqual(response.status_code, 422)
 
     def test_flat_searches_are_created_and_edited_through_the_common_endpoint(self):
         created = self.create()

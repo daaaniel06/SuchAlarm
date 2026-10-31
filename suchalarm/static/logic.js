@@ -162,6 +162,9 @@ export const flatSummary = s => {
     f.min_area ? `ab ${decimal(f.min_area)} m²` : '',
     f.min_rooms ? `ab ${decimal(f.min_rooms)} Zi.` : '',
     s.radius ? `${s.radius} km Umkreis` : 'nur im Ort',
+    f.excluded_districts?.length
+      ? `${f.excluded_districts.length} ${f.excluded_districts.length === 1 ? 'Ortsteil' : 'Ortsteile'} ausgeschlossen`
+      : '',
   ]
     .filter(Boolean)
     .join(' · ');

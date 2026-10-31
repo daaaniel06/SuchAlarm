@@ -121,8 +121,7 @@ def _drop_let(conn, sid, source, listings):
 
 
 def _store(conn, sid, source, listings, seen, wanted, now, middle=None):
-    """Write listings (SEEN: url -> first_seen of those known); queue detail pages of new ones that can
-    still fit."""
+    """Write listings (SEEN: url -> first_seen); queue missing details of fitting listings beyond the stock."""
     before = {
         url: Listing(**json.loads(body))
         for url, body in conn.execute('SELECT url, body FROM listings WHERE search_id=? AND source=?', (sid, source))
@@ -137,12 +136,13 @@ def _store(conn, sid, source, listings, seen, wanted, now, middle=None):
     if source in sources.DETAILS:
         # The detail page states the rent that counts; one read before the change no longer does.
         read_again(conn, source, [item.url for item in moved], now)
+    stock = {row[0] for row in conn.execute('SELECT url FROM start_offers WHERE search_id=?', (sid,))}
     conn.executemany(
         "INSERT OR IGNORE INTO listing_details(url,source,state,created_at) VALUES (?,?,'pending',?)",
         [
             (item.url, source, now)
             for item in listings
-            if item.url not in seen and source in sources.DETAILS and could_match(item, wanted, middle)
+            if item.url not in stock and source in sources.DETAILS and could_match(item, wanted, middle)
         ],
     )
 

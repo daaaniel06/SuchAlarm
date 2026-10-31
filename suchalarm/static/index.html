@@ -54,6 +54,7 @@
 <div data-settings-panel="sources" id="source-list" hidden></div>
 <div data-settings-panel="data" hidden>
 <div class="group form-group">
+<div class="field"><span><b>Bewerbungstext</b></span><button type="button" class="pill compact" id="template-edit">Einfügen</button></div>
 <div class="field"><span><b>Ausgeblendete Treffer</b><small id="hidden-text"></small></span><button class="pill compact" id="restore-hidden">Wiederherstellen</button></div>
 <div class="field" id="clear-field"><span><b>Alle Treffer löschen</b><small id="clear-text"></small></span><span class="confirm-actions" id="clear-actions"></span></div>
 </div>
@@ -74,6 +75,13 @@
 <div class="sheet-actions"><button type="button" class="pill primary" id="application-open">Kopieren &amp; öffnen</button><button type="button" class="pill" id="application-copy">Nur kopieren</button></div>
 <div class="sheet-secondary"><button type="button" class="text-button" id="application-mark">Als beworben markieren</button><button type="button" class="text-button" id="application-unmark" hidden>Markierung entfernen</button><button type="button" class="text-button" id="application-template">Als Vorlage speichern</button></div>
 </div></dialog>
+<dialog id="template-editor" class="sheet" tabindex="-1" aria-labelledby="template-title"><form class="sheet-body" id="template-form">
+<div class="sheet-grip" aria-hidden="true"></div>
+<div class="sheet-top"><h2 id="template-title" class="sheet-heading">Bewerbungstext</h2><button type="button" class="round-button small" data-close aria-label="Bewerbungstext schließen"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+<div class="group"><label class="sr-only" for="template-text">Bewerbungstext</label><textarea id="template-text" class="plain-textarea" rows="10" maxlength="20000" placeholder="Bewerbungstext hier einfügen …"></textarea></div>
+<p class="group-note down" id="template-error" role="alert" hidden></p>
+<div class="sheet-actions"><button type="submit" class="pill primary" id="template-save">Speichern</button><button type="button" class="pill" data-close>Abbrechen</button></div>
+</form></dialog>
 <dialog id="mail-server" class="sheet" tabindex="-1" aria-labelledby="mail-server-title"><form class="sheet-body" id="server-form" novalidate>
 <div class="sheet-grip" aria-hidden="true"></div>
 <div class="sheet-top"><h2 id="mail-server-title" class="sheet-heading">Mailserver</h2><button type="button" class="round-button small" data-close aria-label="Mailserver schließen"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
@@ -136,6 +144,7 @@
 <label class="field stacked"><span>Ort oder Postleitzahl</span><input id="flat-place" required minlength="2" maxlength="120" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="flat-place-options" aria-autocomplete="list" placeholder="Darmstadt"></label>
 <div id="flat-place-options" class="place-options" role="listbox" aria-label="Orte" hidden></div>
 <label class="field"><span><b>Umkreis</b><small id="flat-radius-hint"></small></span><span class="unit-input"><select id="flat-radius" aria-label="Umkreis"></select><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span></label>
+<label class="field"><span><b>Ohne Ortsteile</b></span><input id="flat-districts" placeholder="Wixhausen, Eberstadt" autocomplete="off"></label>
 </div>
 <p class="group-note" id="flat-place-hint" hidden>Nicht aus der Liste gewählt – der Ort wird beim Abruf per Name gesucht.</p>
 <div class="group form-group">

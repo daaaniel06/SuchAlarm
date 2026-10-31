@@ -52,6 +52,8 @@ export function renderMailStatus() {
 }
 
 export function renderSettings(checking) {
+  const hasTemplate = Boolean(state.template?.trim());
+  $('template-edit').textContent = hasTemplate ? 'Bearbeiten' : 'Einfügen';
   $('hidden-text').textContent = state.hidden
     ? `${state.hidden} ausgeblendet · nach links gewischt`
     : 'Keine · nach links wischen blendet einen Treffer aus';
@@ -92,6 +94,29 @@ $('settings-tabs').addEventListener('click', e => {
   if (!b) return;
   tab = b.dataset.settingsTab;
   render();
+});
+$('template-edit').addEventListener('click', () => {
+  $('template-text').value = state.template || '';
+  $('template-error').hidden = true;
+  $('template-editor').showModal();
+  $('template-text').focus();
+});
+$('template-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  $('template-edit').disabled = $('template-save').disabled = $('template-text').disabled = true;
+  $('template-error').hidden = true;
+  try {
+    const text = $('template-text').value;
+    await api('template', { method: 'PUT', body: JSON.stringify({ text }) });
+    $('template-editor').close();
+    await refresh();
+    message(text.trim() ? 'Bewerbungstext gespeichert.' : 'Bewerbungstext entfernt.');
+  } catch (err) {
+    $('template-error').textContent = err.message;
+    $('template-error').hidden = false;
+  } finally {
+    $('template-edit').disabled = $('template-save').disabled = $('template-text').disabled = false;
+  }
 });
 function sourceField(x) {
   const next = nextFetch(x.source),
