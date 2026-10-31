@@ -91,7 +91,12 @@ def _current(conn, job):
 
 
 def _first_result(conn, sid, source):
-    known = conn.execute('SELECT 1 FROM listings WHERE search_id=? AND source=?', (sid, source)).fetchone()
+    """Whether this is the source's first result: a flat kept only for its mail (reset) does not count."""
+    known = conn.execute(
+        'SELECT 1 FROM listings l WHERE search_id=? AND source=? AND NOT EXISTS '
+        '(SELECT 1 FROM outbox x WHERE x.search_id=l.search_id AND x.url=l.url AND x.batch IS NULL)',
+        (sid, source),
+    ).fetchone()
     return not known and not started(conn, sid, source)
 
 

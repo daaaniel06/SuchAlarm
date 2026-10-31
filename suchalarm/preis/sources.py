@@ -193,6 +193,8 @@ UNAVAILABLE_PATTERNS = (
     r'\b(?:auktion|gebote?)\b',
 )
 UNAVAILABLE = re.compile('|'.join(UNAVAILABLE_PATTERNS), re.I)
+# eBay's sales counters on listings still for sale ("Mehr als 10 verkauft", "Fast ausverkauft").
+SALES_COUNTER = re.compile(r'\b(?:mehr als\s+)?\d[\d.]*\s+verkauft\b|\bfast\s+ausverkauft\b', re.I)
 NEGOTIABLE = re.compile(r'\bVB\b')
 # A DOM shop row without a structured EUR price only counts with a visible delivery promise.
 DELIVERABLE = re.compile(
@@ -213,6 +215,13 @@ def row_price(row, search=None):
     return money(match.group(1)) if match else None
 
 
+def status_text(row):
+    """What a card says about the offer itself: without title and the seller's description ("Verkauft wird …",
+    "kein VB") and without sales counters. Cards cached before extract.js read 'status' fall back to their text."""
+    text = row['status'] if 'status' in row else row.get('text', '')
+    return SALES_COUNTER.sub(' ', text.replace('\xad', ''))
+
+
 def usable(source, row, title, url, search):
     """Whether a card is a single, buyable offer that matches the search."""
     if not title or not url or not title_fits(source, title, search):
@@ -220,9 +229,10 @@ def usable(source, row, title, url, search):
     if source == 'ebay' and not ebay_in_germany(row):
         return False
     price_text, text = str(row.get('price', '')), row.get('text', '').replace('\xad', '')
-    if PRICE_RANGE.search(price_text) or UNAVAILABLE.search(price_text + ' ' + text):
+    status = price_text + ' ' + status_text(row)
+    if PRICE_RANGE.search(price_text) or UNAVAILABLE.search(status):
         return False
-    if not search.get('negotiable') and NEGOTIABLE.search(price_text + ' ' + text):
+    if not search.get('negotiable') and NEGOTIABLE.search(status):
         return False
     if source == 'kleinanzeigen' and section(source, search) == CARS and not vehicle_fits(text, search):
         return False
@@ -418,7 +428,7 @@ def repair_cached(source, search, value, observed_at):
     return {'offers': [asdict(o) for o in offers], 'reference': reference}
 
 
-@cadence.shared_search(cache_version=5, cached_parser=repair_cached)
+@cadence.shared_search(cache_version=6, cached_parser=repair_cached)
 async def fetch(source, search):
     """(offers, idealo reference) of one provider query; the decorator shares, caches and times it."""
     return await _visit(source, search)

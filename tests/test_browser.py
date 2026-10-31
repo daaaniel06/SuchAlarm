@@ -130,6 +130,12 @@ class BrowserExtractionTests(unittest.IsolatedAsyncioTestCase):
                 ].price,
                 2400,
             )
+            await page.set_content(
+                '<article class="aditem"><h2><a class="ellipsis" href="https://www.kleinanzeigen.de/s-anzeige/spiel/12345-279-123">Resident Evil Requiem PS5 verkauft</a></h2><p class="aditem-main--middle--description">Verkauft wird mein Spiel. Festpreis, kein VB.</p><p class="aditem-main--middle--price-shipping--price">24 €</p><span class="simpletag">Reserviert</span></article>'
+            )
+            data = await page.evaluate(EXTRACT, 'kleinanzeigen')
+            self.assertNotIn('Verkauft wird', data['rows'][0]['status'])
+            self.assertIn('Reserviert', data['rows'][0]['status'])
             for location, count in (
                 ('aus Deutschland', 1),
                 ('aus Vereinigte Staaten von Amerika', 0),

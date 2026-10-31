@@ -235,12 +235,12 @@ def distance_km(a, b):
 # Requests from flat seekers ("Paar sucht Wohnung", "Wohnung gesucht") posted
 # among offers. The Kleinanzeigen search already asks for offers only; this
 # title check is the safety net. Titles that look for a person for the flat
-# ("Nachmieter gesucht", "Suche Nachmieter") or also offer one ("biete") stay;
+# ("Nachmieter gesucht", "Suche Nachmieter", NHW's "… sucht Mieter") or also offer one ("biete") stay;
 # swaps are left to the "Tauschwohnung" exclusion.
 _SEEKING = re.compile(r'\b(?:suche|suchen|sucht|gesucht)\b|\bauf\s+der\s+suche\b|\bwohnungssuche\b', re.I)
 _OFFER_HINT = re.compile(
     r'\b(?:nach|unter)mieter(?:in|innen)?\b|\bnachfolger(?:in)?\b|\bmitbewohner(?:in|innen)?\b|\bbewohner(?:in|innen)?\b|\bbiete\b|\bzu\s+vermieten\b|tausch'
-    r'|\b(?:neue[nr]?|nette[nr]?|zuverlässige[nr]?)?\s*mieter(?:in|innen)?\s+gesucht\b|\bsuchen?\s+(?:eine[nr]?\s+)?(?:neue[nr]?\s+)?mieter',
+    r'|\b(?:neue[nr]?|nette[nr]?|zuverlässige[nr]?)?\s*mieter(?:in|innen)?\s+gesucht\b|\bsuch(?:e|en|t)\s+(?:\w+\s+){0,2}(?:nach)?mieter(?:in|innen)?\b',
     re.I,
 )
 
@@ -432,7 +432,8 @@ def match(listing, profile, centre=None):
         (listing.rooms, profile['minRooms'], 'Zimmer', 'Zu wenige Zimmer'),
     ):
         if value is None:
-            missing.append(label + ' fehlt')
+            if minimum:  # without a minimum a missing value rules nothing out
+                missing.append(label + ' fehlt')
         elif value < minimum:
             return 'excluded', [reason]
     if (profile['exclusions'] or profile.get('excludeWords')) and not listing.exclusions_known:

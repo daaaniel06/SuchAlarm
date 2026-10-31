@@ -17,6 +17,7 @@
       seller: '.aditem-main--top--left',
       condition: '.simpletag',
       shipping: '.aditem-main--middle--price-shipping',
+      description: '.aditem-main--middle--description',
     },
     vinted: {
       cards: '[data-testid="grid-item"]',
@@ -152,6 +153,8 @@
           : '',
       image: picture(card),
       text: card.textContent.slice(0, 2500),
+      // What the card says about the offer: without its title and the seller's own description.
+      status: textWithout(card, [c.title, c.description, 'script, style'].filter(Boolean).join(', ')).slice(0, 2500),
     };
   });
   const structured = [];

@@ -106,6 +106,10 @@ class TextTests(unittest.TestCase):
             ('Neue Mieter gesucht: 3 Zimmer Altbau', False),
             ('TAUSCHWOHNUNG Suche 3-Zimmer-Wohnung in Potsdam zum Tausch', False),
             ('Helle 2-Zimmer Wohnung mit Balkon', False),
+            ('Single-Apartment sucht Mieter', False),  # NHW's own titles
+            ('Schöne 3-Zimmer-Wohnung sucht neuen Mieter', False),
+            ('Vermieter sucht ruhige Mieterin', False),
+            ('Ruhiger Mieter sucht 2-Zimmer-Wohnung', True),
         ):
             self.assertIs(domain.is_wanted_ad(title), wanted, title)
 
@@ -150,6 +154,11 @@ class FilterTests(unittest.TestCase):
             ({'title': 'Paar sucht Wohnung'}, 'excluded'),
         ):
             self.assertEqual(match(flat(**changes), PROFILE)[0], expected, changes)
+
+    def test_a_missing_area_or_room_count_only_matters_with_a_minimum(self):
+        free = {**PROFILE, 'minArea': 0, 'minRooms': 0}
+        self.assertEqual(match(flat(area=None, rooms=None), free)[0], 'matched')
+        self.assertEqual(match(flat(rooms=None), {**free, 'minRooms': 2}), ('unclear', ['Zimmer fehlt']))
 
     def test_known_violation_beats_missing_data(self):
         self.assertEqual(match(flat(rent=None, area=None, traits=['WBS']), PROFILE)[0], 'excluded')
@@ -251,7 +260,7 @@ KLEINANZEIGEN_PAGE = """<main id="srchrslt-content"><ul>
 <article class="aditem" data-adid="3515855658" data-href="/s-anzeige/helle-2-zimmer/3515855658-203-7965"><div><script type="application/ld+json">{"title":"x 999 €"}</script><img src="https://img.kleinanzeigen.de/api/v1/prod-ads/images/2a/abc?rule=$_2.AUTO" alt="">
 <div><span>14480 Potsdam</span><span>(6 km)</span></div><h3><a href="/s-anzeige/helle-2-zimmer/3515855658-203-7965">Helle 2-Zimmer &amp; Balkon</a></h3>
 <p>Schön</p><p class="price">1.050 €</p><span>62,5 m²</span><span>2 Zi.</span></div></article>
-<article class="aditem" data-adid="3520717913" data-href="/s-anzeige/tauschwohnung/3520717913-203-7963"><h3><a>TAUSCHWOHNUNG Mitte</a></h3><p>700 € VB</p></article>
+<article class="aditem" data-adid="3520717913" data-href="/s-anzeige/tauschwohnung/3520717913-203-7963"><h3><a>TAUSCHWOHNUNG Mitte</a></h3><p class="price">700 € VB</p></article>
 <article class="aditem" data-adid="3520000001" data-href="/s-anzeige/paar-sucht/3520000001-203-7963"><h3><a>Junges Paar sucht 2-Zimmer-Wohnung</a></h3><p>900 €</p></article>
 </ul></main>"""
 
@@ -379,6 +388,12 @@ class ParserTests(unittest.TestCase):
             ('Helle 2-Zimmer & Balkon', '14480 Potsdam', 1050, 62.5, 2),
         )
         self.assertEqual(cards[1]['traits'], ['Tauschwohnung'])
+        # Amounts in the title or the teaser are no rent: deposit, parking, kitchen.
+        noisy = KLEINANZEIGEN_PAGE.replace('Helle 2-Zimmer &amp; Balkon', 'Helle 2 Zi., 40 m² Garten, Stellplatz 60 €')
+        noisy = noisy.replace('<p>Schön</p>', '<p>Kaution 3.150 € (3 Kaltmieten), 3 Zi. möglich</p>')
+        card = portals.kleinanzeigen_parse(noisy)[0]
+        self.assertEqual((card['coldRent'], card['area'], card['rooms']), (1050, 62.5, 2))
+        self.assertIn('Kaution', card['text'])
         self.assertTrue(first['imageSource'].endswith('rule=$_72.AUTO'))
         with self.assertRaises(Unreadable):
             portals.kleinanzeigen_parse('<html>Bitte bestätigen Sie, dass Sie kein Roboter sind</html>')
@@ -1699,6 +1714,31 @@ class ApiAndMailTests(TempData):
         outbox.queue_mails()
         self.assertEqual(self.queued(), ['1', '2'])  # 1 now fits, 2 is cheaper than mailed
 
+    def test_a_queued_flat_survives_a_wider_radius(self):
+        flat_search = self.create(sources=['immoscout24'], filters={'min_area': 40, 'min_rooms': 2, 'exclusions': []})
+        with store.db() as conn:
+            store.put_setting(conn, 'recipients', json.dumps(['a@example.com']))
+            store.put_setting(conn, 'mail_enabled:wohnung', '1')
+        pages.save_result(flat_search, 'immoscout24', [], 0, time.time())
+        pages.save_result(flat_search, 'immoscout24', [self.card(1)], 1, time.time())
+        with store.db() as conn:
+            conn.execute("UPDATE listing_details SET state='done', body='{}'")
+        outbox.queue_mails()
+        self.assertEqual(self.queued(), ['1'])
+        response = self.client.put(
+            f'/api/searches/{flat_search["id"]}',
+            json={'kind': 'wohnung', 'query': 'Darmstadt', 'max_price': 130000, 'radius': 10,
+                  'sources': ['immoscout24'], 'filters': {'min_area': 40, 'min_rooms': 2, 'exclusions': []}},
+        )  # fmt: skip
+        self.assertEqual(response.status_code, 200, response.text)
+        with store.db() as conn:  # the mail goes out before the portal is read again
+            entries = outbox.take_pending(conn)
+        self.assertEqual([offer['url'][-1] for _, offer, _ in entries], ['1'])
+        wider = store.search(flat_search['id'])
+        pages.save_result(wider, 'immoscout24', [self.card(1), self.card(2)], 2, time.time())
+        rows = {row['url'][-1]: row for row in catalog.listings(wider)}
+        self.assertEqual((rows['1']['start'], rows['2']['start']), (False, True))  # the rest is the new stock
+
 
 def duplicates_close(first, second):
     from suchalarm.wohnung import duplicates
@@ -1924,6 +1964,33 @@ class DuplicateMailTests(ApiAndMailTests):
         outbox.queue_mails()
         with store.db() as conn:
             self.assertEqual([r[0] for r in conn.execute('SELECT url FROM outbox')], [fitting.url])
+
+    def test_the_fitting_twin_is_mailed_while_the_first_one_is_still_unclear(self):
+        flat_search = self.create(
+            sources=['immoscout24', 'immowelt'], filters={'min_area': 40, 'min_rooms': 2, 'exclusions': ['WBS']}
+        )
+        with store.db() as conn:
+            store.put_setting(conn, 'recipients', json.dumps(['a@example.com']))
+            store.put_setting(conn, 'mail_enabled:wohnung', '1')
+        place = {'place': 'Heinrichstraße 12, 64283 Darmstadt'}
+        pages.save_result(flat_search, 'immoscout24', [], 0, time.time())
+        pages.save_result(flat_search, 'immowelt', [], 0, time.time())
+        first = self.card(1, **place)
+        pages.save_result(flat_search, 'immoscout24', [first], 1, time.time())
+        twin = Listing.from_card('immowelt', {'url': 'https://www.immowelt.de/expose/x', 'title': 'Wohnung zur Miete',
+                                              'rent': 1100, 'area': 60, 'rooms': 2, **place})  # fmt: skip
+        pages.save_result(flat_search, 'immowelt', [twin], 1, time.time() + 60)
+        with store.db() as conn:  # the twin's detail page is read first
+            conn.execute("UPDATE listing_details SET state='done', body='{}' WHERE url=?", (twin.url,))
+        outbox.queue_mails()
+        with store.db() as conn:  # then the first one's: it needs a WBS
+            conn.execute(
+                "UPDATE listing_details SET state='done', body=? WHERE url=?",
+                (json.dumps({'traits': ['WBS']}), first.url),
+            )
+        outbox.queue_mails()
+        with store.db() as conn:
+            self.assertEqual([r[0] for r in conn.execute('SELECT url FROM outbox')], [twin.url])
 
     def test_a_copy_queued_before_its_twin_was_recognised_is_not_mailed(self):
         flat_search = self.create(

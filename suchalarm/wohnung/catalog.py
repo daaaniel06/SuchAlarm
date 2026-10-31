@@ -96,10 +96,13 @@ def listings(search):
     return result
 
 
+VERDICT_ORDER = {'matched': 0, 'unclear': 1, 'excluded': 2}
+
+
 def _fitting_first(row):
-    """Order within a group of the same flat: a listing the search may want before one it rules out (one
-    portal may ask a few euros more), then the first found."""
-    return (row['status'] == 'excluded', row['first_seen'], row['url'])
+    """Order within a group of the same flat: a listing that fits before one still unclear (it may never be
+    mailable) before one the search rules out (one portal may ask a few euros more), then the first found."""
+    return (VERDICT_ORDER[row['status']], row['first_seen'], row['url'])
 
 
 def _twin(row):
