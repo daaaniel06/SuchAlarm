@@ -8,3 +8,4 @@ data/
 node_modules/
 .mypy_cache/
 compose.yml
+ui-screenshots/
