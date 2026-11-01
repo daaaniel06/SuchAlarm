@@ -79,13 +79,22 @@ export function message(text, error = false, action = null) {
   );
 }
 
-let timer;
+let timer,
+  asked = 0,
+  shown = 0;
+// Polling, tab switches and actions may overlap: an answer older than the one shown is dropped, so
+// after "await refresh()" the state is at least as new as that request.
 export async function refresh() {
+  const ticket = ++asked;
   try {
-    state = await api('state');
+    const next = await api('state', { signal: AbortSignal.timeout(20000) });
+    if (ticket < shown) return;
+    shown = ticket;
+    state = next;
     render();
   } catch (err) {
-    message(err.message, true);
+    if (ticket < shown) return;
+    message(err.name === 'TimeoutError' ? 'Server antwortet nicht. Bitte erneut versuchen.' : err.message, true);
     clearTimeout(timer);
     timer = setTimeout(refresh, 15000);
   }

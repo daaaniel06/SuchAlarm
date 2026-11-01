@@ -920,6 +920,24 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(self.client.delete('/api/hidden').json(), {'restored': 1})
         self.assertEqual(self.client.post('/api/hidden', json=dict(swipe, search_id=999)).status_code, 404)
 
+    def test_learned_words_show_per_category_and_can_be_taken_back(self):
+        self.assertEqual(self.state()['learned'], {})
+        sid = self.create()
+        category = self.state()['searches'][0]['category'] or 'sonstiges'
+        for n in range(2):
+            url = f'https://www.ebay.de/itm/9{n}'
+            with store.db() as conn:
+                conn.execute(
+                    "INSERT INTO offers VALUES (?,'ebay',?,?,900,0,'','',1,1)", (sid, url, f'Poster gerahmt {n}')
+                )
+            self.client.post('/api/hidden', json={'search_id': sid, 'url': url, 'hidden': True})
+        self.assertEqual(self.state()['learned'], {category: ['gerahmt', 'poster']})
+        forget = {'category': category, 'word': 'poster'}
+        self.assertEqual(self.client.post('/api/learned/forget', json=forget).status_code, 200)
+        self.assertEqual(self.state()['learned'], {category: ['gerahmt']})
+        unknown = dict(forget, category='gibtsnicht')
+        self.assertEqual(self.client.post('/api/learned/forget', json=unknown).status_code, 422)
+
     def test_clearing_offers_keeps_the_record_of_reported_ones(self):
         sid = self.create()
         self.offer(sid, 'https://www.ebay.de/itm/7', 900, notified=True)

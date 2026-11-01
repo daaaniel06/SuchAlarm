@@ -43,4 +43,12 @@ def _hidden_titles(conn):
     )
 
 
-MIGRATIONS = (_create, _move, _clean_titles, _hidden_titles)
+def _forgotten_words(conn):
+    """Learned words the user took back, per category (learning.forget)."""
+    conn.execute(
+        'CREATE TABLE IF NOT EXISTS preis.forgotten_words '
+        '(category TEXT NOT NULL, word TEXT NOT NULL, PRIMARY KEY(category, word))'
+    )
+
+
+MIGRATIONS = (_create, _move, _clean_titles, _hidden_titles, _forgotten_words)

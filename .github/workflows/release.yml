@@ -1,5 +1,5 @@
 # Runs only for a release: a pushed tag (v1.0.0 etc.) or a manual run with the version. Runs the checks, then builds the
-# Docker image, pushes it to ghcr.io/daaaniel06/suchalarm and creates the GitHub release from CHANGELOG.md. No CI on pushes.
+# Docker image, pushes it to ghcr.io/daaaniel06/suchalarm and creates the GitHub release from CHANGELOG.md. Pull requests: checks.yml.
 name: Release
 
 on:
