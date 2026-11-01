@@ -2,7 +2,7 @@
 // instead of the portal. Applying happens on the portal; the page copies the text and remembers the day.
 
 import { dateText, decimal, district, escapeHtml, euro, mapCoordinates, mapView, moveIn } from './logic.js';
-import { $, markOpened, safeImage, safeLink, short, sourceName } from './ui.js';
+import { $, bookmarkIcon, markOpened, safeImage, safeLink, short, sourceName } from './ui.js';
 import { api, message, refresh, state } from './page.js';
 
 let open = null; // { search_id, url } of the flat in the sheet
@@ -12,6 +12,8 @@ const spots = new Map(); // URL -> {lat, lon, approx}, 'pending' or 'none'; look
 
 const openIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"/></svg>';
 const closeIcon = '<svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>';
+const hideIcon =
+  '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c5 0 9 4.5 10 7a12 12 0 0 1-3.2 4.3M6.6 6.6A12 12 0 0 0 2 12c1 2.5 5 7 10 7a9.6 9.6 0 0 0 4.4-1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
 
 // The flat as it is now: the live listing, or the watch list's snapshot once the portal dropped it.
 function current() {
@@ -57,8 +59,8 @@ export function renderSheet() {
 
 function rentLine(o) {
   if (!o.price) return ['–', 'Miete nicht angegeben'];
-  if (o.estimated || o.note === 'geschätzt') return [euro(o.price), 'Geschätzt: Kaltmiete + ca. 3 €/m²'];
-  return [euro(o.price), 'Warmmiete pro Monat'];
+  if (o.estimated || o.note === 'geschätzt') return [euro(o.price), 'Warmmiete geschätzt'];
+  return [euro(o.price), 'Warmmiete'];
 }
 
 function detailHtml({ o, saved, live }) {
@@ -85,7 +87,7 @@ function detailHtml({ o, saved, live }) {
         ? `<div class="details-note"><p><b>${o.details === 'failed' ? 'Detailseite nicht lesbar' : 'Nur Angaben aus der Trefferliste'}</b>Warmmiete und Beschreibung stehen auf der Detailseite.</p><button class="pill compact" data-sheet="load">${o.details === 'failed' ? 'Erneut' : 'Laden'}</button></div>`
         : '';
   const place = district(o.place) || 'Wohnung';
-  return `<div class="sheet-grip" aria-hidden="true"></div>${image ? `<img class="sheet-photo" src="${image}" alt="" decoding="async">` : ''}<div class="sheet-top"><span class="source-mark ${o.source}" aria-hidden="true">${short[o.source]}</span><span class="sheet-source">${escapeHtml(sourceName(o.source))}${live ? ` · ${escapeHtml(new Date(o.first_seen * 1000).toLocaleDateString('de-DE'))}` : ' · nicht mehr gefunden'}</span><button class="round-button small" data-sheet="close" aria-label="Schließen">${closeIcon}</button></div><h2 id="detail-title" tabindex="-1">${escapeHtml(place)}</h2><p class="sheet-address">${escapeHtml(o.place || '')}</p><p class="sheet-price${o.estimated || o.note === 'geschätzt' ? ' estimate' : ''}">${price}<span>${priceNote}${move ? ` · ${move}` : ''}</span></p>${facts}<p class="sheet-title">${escapeHtml(o.title)}</p>${reasons.length ? `<p class="sheet-reason${o.status === 'matched' ? '' : ' warn'}">${escapeHtml(reasons.join(' · '))}</p>` : ''}${twins ? `<p class="sheet-twins">Auch bei ${twins} <button class="text-button" data-sheet="separate">Nicht dieselbe Wohnung</button></p>` : ''}${saved?.applied_at ? `<p class="sheet-applied">Beworben am ${dateText(saved.applied_at)}</p>` : ''}${note}<div class="sheet-actions"><button class="pill primary" data-sheet="apply">${saved?.applied_at ? 'Bewerbung ansehen' : 'Bewerben'}</button><a class="pill" href="${safeLink(o.url)}" target="_blank" rel="noopener noreferrer">Inserat öffnen${openIcon}</a></div><div class="sheet-secondary"><button class="text-button" data-sheet="save" aria-pressed="${Boolean(saved)}">${saved ? 'Von der Merkliste nehmen' : 'Merken'}</button>${live ? '<button class="text-button" data-sheet="hide">Ausblenden</button>' : ''}</div>`;
+  return `<div class="sheet-grip" aria-hidden="true"></div>${image ? `<img class="sheet-photo" src="${image}" alt="" decoding="async">` : ''}<div class="sheet-top"><span class="source-mark ${o.source}" aria-hidden="true">${short[o.source]}</span><span class="sheet-source">${escapeHtml(sourceName(o.source))}${live ? ` · ${escapeHtml(new Date(o.first_seen * 1000).toLocaleDateString('de-DE'))}` : ' · nicht mehr gefunden'}</span><span class="sheet-tools"><button class="round-button small tool${saved ? ' on' : ''}" data-sheet="save" aria-pressed="${Boolean(saved)}" aria-label="${saved ? 'Von der Merkliste nehmen' : 'Merken'}" title="${saved ? 'Gemerkt' : 'Merken'}">${bookmarkIcon}</button>${live ? `<button class="round-button small tool" data-sheet="hide" aria-label="Ausblenden" title="Ausblenden">${hideIcon}</button>` : ''}<button class="round-button small" data-sheet="close" aria-label="Schließen">${closeIcon}</button></span></div><h2 id="detail-title" tabindex="-1">${escapeHtml(place)}</h2><p class="sheet-address">${escapeHtml(o.place || '')}</p><p class="sheet-price${o.estimated || o.note === 'geschätzt' ? ' estimate' : ''}">${price}<span>${priceNote}${move ? ` · ${move}` : ''}</span></p>${facts}<p class="sheet-title">${escapeHtml(o.title)}</p>${reasons.length ? `<p class="sheet-reason${o.status === 'matched' ? '' : ' warn'}">${escapeHtml(reasons.join(' · '))}</p>` : ''}${twins ? `<p class="sheet-twins">Auch bei ${twins} <button class="text-button" data-sheet="separate">Nicht dieselbe Wohnung</button></p>` : ''}${saved?.applied_at ? `<p class="sheet-applied">Beworben am ${dateText(saved.applied_at)}</p>` : ''}${note}<div class="sheet-actions"><button class="pill primary" data-sheet="apply">${saved?.applied_at ? 'Bewerbung ansehen' : 'Bewerben'}</button><a class="pill" href="${safeLink(o.url)}" target="_blank" rel="noopener noreferrer">Inserat öffnen${openIcon}</a></div>`;
 }
 
 // The flat's position comes from the server: the portal's coordinates, or its address looked up once.

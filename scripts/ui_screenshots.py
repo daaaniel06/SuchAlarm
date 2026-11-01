@@ -2,7 +2,8 @@
 
     .venv/bin/python scripts/ui_screenshots.py --ref origin/main docs/ui/vorher
     .venv/bin/python scripts/ui_screenshots.py docs/ui/nachher
-    .venv/bin/python scripts/ui_screenshots.py --compare docs/ui/vorher docs/ui/nachher docs/ui/index.html
+    .venv/bin/python scripts/ui_screenshots.py --compare docs/ui/vorher docs/ui/nachher docs/ui/index.html \
+        --notes docs/ui/notizen.json
 
 Starts the app on its own DATA_DIR (a temporary folder) without worker and image downloads, fills in
 searches, hits, watch list, source states and mail history, and photographs both areas on a phone (375 px)
@@ -13,6 +14,8 @@ reaches the local server.
 
 import argparse
 import asyncio
+import difflib
+import fnmatch
 import hashlib
 import html
 import io
@@ -375,39 +378,123 @@ async def capture(page, path, size):
         height = await page.evaluate('document.documentElement.scrollHeight')
     await page.set_viewport_size(dict(width=size['width'], height=max(size['height'], height)))
     await page.wait_for_timeout(200)
-    await page.screenshot(path=path)
+    await page.screenshot(path=path, animations='disabled')  # the new dot's pop would differ from shot to shot
     await page.set_viewport_size(dict(width=size['width'], height=size['height']))
 
 
 # Comparison page
 
 
-def compare(before, after, target):
-    """A local page with each screenshot before and after side by side."""
+def changed_bands(first, second):
+    """Where two screenshots differ: (top, bottom, left, right) boxes in pixels for each of them.
+
+    Rows are matched like lines in a text diff, so content that only moved up or down counts as unchanged.
+    A row that still differs is compared once more, softened and within 2 px up or down of where it moved:
+    text that lands half a pixel apart after a shift is the same text, and stays unmarked."""
+    from PIL import Image, ImageChops, ImageFilter
+
+    a, b = Image.open(first).convert('RGB'), Image.open(second).convert('RGB')
+    rows = lambda image: [image.crop((0, y, image.width, y + 1)).tobytes() for y in range(image.height)]  # noqa: E731
+    soft = [image.convert('L').filter(ImageFilter.GaussianBlur(1)) for image in (a, b)]
+
+    def differs(side, y, shift):
+        """The column span where row Y of one side differs from the other side near Y + SHIFT, or None."""
+        mine, other = soft[side], soft[1 - side]
+        row, best = mine.crop((0, y, mine.width, y + 1)), None
+        for there in range(y + shift - 2, y + shift + 3):
+            if not 0 <= there < other.height or other.width != mine.width:
+                continue
+            diff = ImageChops.difference(row, other.crop((0, there, other.width, there + 1))).point(
+                lambda v: v > 40 and 255
+            )
+            box = diff.getbbox()
+            if box is None or sum(diff.histogram()[255:]) <= 5:
+                return None
+            best = box if best is None or box[2] - box[0] < best[2] - best[0] else best
+        return (best[0], best[2]) if best else (0, mine.width)
+
+    marks: tuple[list, list] = ([], [])
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, rows(a), rows(b), autojunk=False).get_opcodes():
+        if tag == 'equal':
+            continue
+        for side, top, bottom, shift in ((0, i1, i2, j1 - i1), (1, j1, j2, i1 - j1)):
+            found = marks[side]
+            for y in range(top, bottom):
+                span = differs(side, y, shift)
+                if span is None:
+                    continue
+                if found and y - found[-1][1] < 24:  # close rows read as one change
+                    last = found.pop()
+                    found.append((last[0], y + 1, min(span[0], last[2]), max(span[1], last[3])))
+                else:
+                    found.append((y, y + 1, *span))
+    return marks, (a.size, b.size)
+
+
+def compare(before, after, target, notes=None):
+    """A local page with each screenshot before and after side by side: changed regions boxed, views without
+    any change marked as such, and the notes (JSON: {"zusammenfassung": [...], "ansichten": [{"muster":
+    ["handy-*-treffer"], "text": "..."}]}) above the views they name."""
+    notes = json.loads(notes.read_text(encoding='utf-8')) if notes else {}
     names = sorted({p.name for p in before.glob('*.png')} | {p.name for p in after.glob('*.png')})
     rel = lambda p: os.path.relpath(p, target.parent)  # noqa: E731
-    rows = []
+    sections, links = [], []
     for name in names:
-        cells = ''.join(
-            f'<figure><figcaption>{label}</figcaption>'
-            + (f'<img src="{html.escape(rel(d / name))}" loading="lazy" alt="">' if (d / name).exists() else '<p>–</p>')
-            + '</figure>'
-            for label, d in (('Vorher', before), ('Nachher', after))
+        view = name[:-4]
+        texts = [n['text'] for n in notes.get('ansichten', []) if any(fnmatch.fnmatch(view, m) for m in n['muster'])]
+        both = (before / name).exists() and (after / name).exists()
+        marks, sizes = changed_bands(before / name, after / name) if both else (([], []), ((1, 1), (1, 1)))
+        same = both and not marks[0] and not marks[1]
+        cells = ''
+        for label, folder, found, (width, height) in zip(
+            ('Vorher', 'Nachher'), (before, after), marks, sizes, strict=True
+        ):
+            boxes = ''.join(
+                f'<i style="top:{top / height:.2%};height:{(bottom - top) / height:.2%};'
+                f'left:{left / width:.2%};width:{(right - left) / width:.2%}"></i>'
+                for top, bottom, left, right in found
+            )
+            image = (
+                f'<div class="shot"><img src="{html.escape(rel(folder / name))}" loading="lazy" alt="">{boxes}</div>'
+                if (folder / name).exists()
+                else '<p>–</p>'
+            )
+            cells += f'<figure><figcaption>{label}</figcaption>{image}</figure>'
+        status = (
+            '<p class="same">Keine sichtbare Änderung.</p>'
+            if same
+            else ''.join(f'<p class="note">{html.escape(t)}</p>' for t in texts)
         )
-        rows.append(
-            f'<section id="{name[:-4]}"><h2>{html.escape(name[:-4])}</h2><div class="pair">{cells}</div></section>'
+        sections.append(
+            f'<section id="{view}" class="{"same" if same else "changed"}"><h2>{html.escape(view)}</h2>'
+            f'{status}<div class="pair">{cells}</div></section>'
         )
-    links = ' '.join(f'<a href="#{n[:-4]}">{html.escape(n[:-4])}</a>' for n in names)
+        links.append(f'<a href="#{view}" class="{"same" if same else "changed"}">{html.escape(view)}</a>')
+    summary = ''.join(f'<li>{html.escape(t)}</li>' for t in notes.get('zusammenfassung', []))
+    changed = sum('class="changed"' in s for s in sections)
     target.write_text(
         '<!doctype html><html lang="de"><meta charset="utf-8"><title>Suchalarm: Vorher/Nachher</title>'
         '<meta name="viewport" content="width=device-width,initial-scale=1"><style>'
         'body{font:15px/1.5 system-ui,sans-serif;margin:0 auto;padding:24px;max-width:1800px;background:#f4f4f5;color:#0a0a0a}'
-        'nav{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:13px;margin-bottom:24px}a{color:#1a47b8}'
-        'h2{font-size:15px;margin:32px 0 8px}.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}'
-        'figure{margin:0}figcaption{font-size:13px;font-weight:600;color:#636369;margin-bottom:4px}'
-        'img{width:100%;border:1px solid #e9e9ec;border-radius:8px;background:#fff}'
-        'section[id^=handy] .pair{grid-template-columns:repeat(2,minmax(0,420px))}</style>'
-        f'<h1>Suchalarm – Vorher / Nachher</h1><nav>{links}</nav>{"".join(rows)}</html>\n',
+        'nav{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:13px;margin:16px 0 24px}a{color:#1a47b8}'
+        'nav a.same{color:#707077}nav a.changed::before{content:"● ";color:#1a47b8}'
+        '.summary{background:#fff;border-radius:16px;padding:16px 24px;max-width:900px}.summary li{margin:4px 0}'
+        'h2{font-size:15px;margin:40px 0 8px}.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}'
+        '.note{margin:4px 0;padding:6px 12px;border-left:3px solid #1a47b8;background:#e7efff;border-radius:4px;max-width:900px}'
+        '.same{color:#707077}figure{margin:0}figcaption{font-size:13px;font-weight:600;color:#636369;margin-bottom:4px}'
+        '.shot{position:relative}.shot i{position:absolute;outline:2px solid #1a47b8;outline-offset:1px;'
+        'background:rgb(26 71 184/.08);border-radius:4px;pointer-events:none}'
+        'img{display:block;width:100%;border:1px solid #e9e9ec;border-radius:8px;background:#fff}'
+        'section[id^=handy] .pair{grid-template-columns:repeat(2,minmax(0,420px))}'
+        'body:has(#only:checked) section.same,body:has(#only:checked) nav a.same{display:none}'
+        'body:has(#boxes:not(:checked)) .shot i{display:none}</style>'
+        '<h1>Suchalarm – Vorher / Nachher</h1>'
+        + (f'<ul class="summary">{summary}</ul>' if summary else '')
+        + f'<p>{changed} von {len(names)} Ansichten geändert. Blaue Rahmen zeigen, wo sich etwas verändert hat '
+        '(nur verschobene Inhalte zählen nicht).</p>'
+        '<label><input type="checkbox" id="only"> Nur geänderte Ansichten</label> &nbsp; '
+        '<label><input type="checkbox" id="boxes" checked> Rahmen zeigen</label>'
+        f'<nav>{"".join(links)}</nav>{"".join(sections)}</html>\n',
         encoding='utf-8',
     )
 
@@ -417,9 +504,10 @@ def main():
     parser.add_argument('out', type=Path, nargs='?', help='folder for the screenshots')
     parser.add_argument('--ref', help='frontend (suchalarm/static) from this git ref, e.g. origin/main')
     parser.add_argument('--compare', nargs=3, type=Path, metavar=('VORHER', 'NACHHER', 'HTML'))
+    parser.add_argument('--notes', type=Path, help='with --compare: JSON with a summary and notes per view')
     args = parser.parse_args()
     if args.compare:
-        compare(*args.compare)
+        compare(*args.compare, notes=args.notes)
         return
     if not args.out:
         parser.error('Zielordner fehlt')

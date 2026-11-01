@@ -1,0 +1,43 @@
+{
+  "zusammenfassung": [
+    "Selbsterklärende Hilfetexte entfernt: „von – bis“, „„150 € VB“ zählt dann als 150 €“, „Gratis bei Kleinanzeigen“, der Satz unter Versand/Abholung/Beides, „Pausierte Suchen verschicken keine Mails“, „Nur Angebote unter deinem Höchstpreis“ und „Anbieter werden automatisch mit Abstand abgefragt“.",
+    "Detailblatt: „Warmmiete geschätzt“ statt „Geschätzt: Kaltmiete + ca. 3 €/m²“, „Warmmiete“ statt „Warmmiete pro Monat“.",
+    "Desktop: Suchen und Einstellungen sind so breit wie die Trefferliste (720 statt 640 px) und beginnen an derselben Kante wie der Bereichsschalter.",
+    "Einstellungen → Quellen am Handy: Bei gestörten Quellen stehen „Details“ und „Neu versuchen“ rechtsbündig wie in den anderen Zeilen.",
+    "Bereichsschalter am Handy: „N neu“ steht neben dem Namen statt umgebrochen, dafür fällt dort das Icon weg."
+  ],
+  "ansichten": [
+    {
+      "muster": ["*-preis-editor-*"],
+      "text": "Ohne die Hilfetexte unter Preis, „Auch VB-Angebote“, „Zu verschenken“, unter Versand/Abholung/Beides und unter „Suche aktiv“."
+    },
+    {
+      "muster": ["*-wohnung-editor-bearbeiten"],
+      "text": "Ohne den Hilfetext unter „Suche aktiv“ (in „Weitere Optionen“)."
+    },
+    {
+      "muster": ["*-wohnung-detail"],
+      "text": "Unter dem Preis: „Warmmiete geschätzt“ statt „Geschätzt: Kaltmiete + ca. 3 €/m²“."
+    },
+    {
+      "muster": ["*-einstellungen-*", "*-mailserver"],
+      "text": "Ohne den Hilfetext unter „Automatische Suche“ (bleibt, wenn sie pausiert ist)."
+    },
+    {
+      "muster": ["*-einstellungen-mails"],
+      "text": "Ohne den Hilfetext unter „Mails zu Preisen“."
+    },
+    {
+      "muster": ["desktop-*-suchen", "desktop-*-editor-*", "desktop-*-einstellungen-*", "desktop-*-mailserver"],
+      "text": "Die Spalte ist so breit wie die Trefferliste. Überschrift und Gruppen beginnen an derselben Kante wie der Bereichsschalter."
+    },
+    {
+      "muster": ["handy-*-treffer*", "handy-*-merkliste*", "handy-*-suchen", "handy-*-editor-*", "handy-wohnung-detail", "handy-wohnung-bewerbung"],
+      "text": "Ganz oben im Bereichsschalter: „N neu“ steht neben dem Namen statt umgebrochen, dafür fällt dort das Icon weg."
+    },
+    {
+      "muster": ["handy-*-einstellungen-quellen"],
+      "text": "Bei WG-Gesucht und Vinted (gestört) stehen „Details“ und „Neu versuchen“ rechtsbündig."
+    }
+  ]
+}

@@ -42,11 +42,6 @@ const deliveryText = s =>
         : 'ohne Versand';
 // Searches with pickup show postcode and radius; "beides" also takes shipped offers from all of Germany.
 export const PICKUP = ['abholung', 'beides'];
-export const DELIVERY_HINTS = {
-  versand: 'Deutschlandweit mit Versand',
-  abholung: 'Nur Angebote im Umkreis deiner PLZ',
-  beides: 'Im Umkreis abholen oder deutschlandweit mit Versand',
-};
 // What sets a search apart besides price and delivery, as small tags.
 function searchTags(s) {
   const f = s.filters || {},
@@ -90,7 +85,8 @@ function flatTags(s) {
 // One group per category, in the fixed category order; flat searches are one group.
 export function renderSearches(searches) {
   const label = `Neue ${AREA_TEXT[area].search}`;
-  $('new-search').textContent = label;
+  $('new-search').setAttribute('aria-label', label);
+  $('new-search').title = label;
   if (area === 'wohnung') {
     $('search-list').innerHTML = searches.length
       ? `<section class="search-group"><ul class="group">${searches.map(searchItem).join('')}</ul></section>`
