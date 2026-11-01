@@ -11,7 +11,6 @@ import hashlib
 import hmac
 import json
 import os
-import secrets
 from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import quote
@@ -55,12 +54,7 @@ def app_url():
 
 
 def _secret():
-    key = store.settings().get('link_secret')
-    if not key:
-        with store.db() as conn:
-            conn.execute("INSERT OR IGNORE INTO settings VALUES ('link_secret', ?)", (secrets.token_urlsafe(32),))
-        key = store.settings()['link_secret']  # another request may have been first
-    return key.encode()
+    return store.settings()['link_secret'].encode()  # made by store.init()
 
 
 def _sign(body):

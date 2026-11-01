@@ -99,6 +99,26 @@ class MailLinkTests(unittest.TestCase):
         self.client.delete(f'/api/searches/{self.sid}')
         self.assertEqual(self.client.get(self.path(maillinks.link('pause', s=self.sid))).status_code, 410)
 
+    def test_an_old_link_never_reaches_a_newer_search(self):
+        """SQLite would hand a deleted search's ID to the next one; an old pause link must not pause it."""
+        old_link = self.path(maillinks.link('pause', s=self.sid))
+        self.client.delete(f'/api/searches/{self.sid}')
+        payload = dict(query='Pixel 8', max_price=40000, sources=['ebay'])
+        newer = self.client.post('/api/searches', json=payload).json()['id']
+        self.assertNotEqual(newer, self.sid)
+        self.assertEqual(self.client.post(old_link).status_code, 410)
+        self.assertEqual(store.search(newer)['active'], 1)
+
+    def test_composing_inside_the_delivery_transaction_does_not_lock(self):
+        """The first mail with links needs the link secret while the batch's transaction already writes."""
+        with store.db() as conn:
+            store.delete_setting(conn, 'link_secret')
+        store.init()  # as at a restart of an existing installation
+        with store.db() as conn:
+            conn.execute('DELETE FROM hidden')  # the transaction holds the write lock, as after sorting out hits
+            message = mailer.compose_digest([(store.read_search(conn, self.sid), dict(OFFER))], ['a@b.de'], 'b1')
+        self.assertTrue(message['List-Unsubscribe'])
+
     def test_the_mail_carries_the_links_and_unsubscribe_headers(self):
         search = store.search(self.sid)
         message = mailer.compose_digest([(search, dict(OFFER))], ['a@example.com'], 'b1')

@@ -7,6 +7,7 @@ covers all. Request budgets, the page cache and the queue live in cadence.db, th
 
 import json
 import os
+import secrets
 import sqlite3
 import time
 from collections.abc import Callable
@@ -304,6 +305,8 @@ def init():
             _migrate(conn, schema, part.migrations)
         _migrate(conn, 'main', MIGRATIONS)
         _recover_interrupted_delivery(conn)
+        # Signs the links in mails (maillinks.py); made here, as the delivery's open transaction could not.
+        conn.execute("INSERT OR IGNORE INTO settings VALUES ('link_secret', ?)", (secrets.token_urlsafe(32),))
 
 
 # Searches
@@ -338,9 +341,16 @@ def read_search(conn, search_id) -> Search | None:
 
 
 def add_search(conn, kind, columns, values):
-    """Store a new search of KIND; returns its ID."""
+    """Store a new search of KIND; returns its ID. An ID is never given twice (SQLite would reuse the last
+    one after a deletion), so a link in an old mail cannot reach a newer search."""
+    last = conn.execute(
+        'SELECT MAX(COALESCE((SELECT MAX(id) FROM searches), 0), '
+        "COALESCE((SELECT CAST(value AS INTEGER) FROM settings WHERE key='last_search_id'), 0))"
+    ).fetchone()[0]
     marks = ','.join('?' * len(columns))
-    return conn.execute(f'INSERT INTO searches({",".join(columns)},kind) VALUES ({marks},?)', (*values, kind)).lastrowid
+    conn.execute(f'INSERT INTO searches(id,{",".join(columns)},kind) VALUES (?,{marks},?)', (last + 1, *values, kind))
+    put_setting(conn, 'last_search_id', str(last + 1))
+    return last + 1
 
 
 def change_search(conn, search_id, columns, values):
