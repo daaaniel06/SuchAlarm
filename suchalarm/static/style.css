@@ -965,12 +965,11 @@ main {
   font-size: 13px;
   font-weight: 450;
 }
-/* Mails: "Testmail senden" sits as a text button beside the recipients' title. */
-.recipients-head {
+/* Mails: the test mail sits as an icon beside the server's button. */
+.field-tools {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
+  align-items: center;
+  gap: 8px;
 }
 /* Settings: Automatische Suche on top, then one tab bar over the full width. */
 .settings-tabs {
@@ -994,14 +993,18 @@ main {
   background: var(--down);
   vertical-align: middle;
 }
-/* Both areas' mail settings in one group: a line between the areas and between their rows. */
-.mail-area + .mail-area,
-.mail-area > .field + .field {
+/* Both areas' mail settings in one group: a line only between the areas. Rhythm and batch belong to
+   the switch above them, so they follow it closer and without a line. */
+.mail-area + .mail-area {
   border-top: 1px solid var(--fill-2);
 }
-/* Rhythm and batch belong to the switch above them. */
 .mail-area > .field + .field {
+  min-height: 44px;
+  padding-block: 2px;
   padding-left: 32px;
+}
+.mail-area > .field:last-child:not(:first-child) {
+  padding-bottom: 12px;
 }
 #source-list .more {
   margin-top: 0;
@@ -1184,8 +1187,9 @@ main {
   transform: translateX(20px);
 }
 
-.recipient-items > .field {
-  border-bottom: 1px solid var(--fill-2);
+.recipient-items > .field,
+.recipient-items + .field {
+  border-top: 1px solid var(--fill-2);
 }
 .field input.add-input {
   flex: 1;
@@ -1237,6 +1241,12 @@ main {
 }
 .pill.primary:hover:not(:disabled) {
   background: var(--ink-hover);
+}
+.pill svg {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  margin-left: 8px;
 }
 .pill.compact {
   min-height: 40px;
