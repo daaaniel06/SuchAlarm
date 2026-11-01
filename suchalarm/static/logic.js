@@ -148,8 +148,13 @@ export function flatDetails(listing) {
     .filter(Boolean)
     .join(' · ');
 }
+// Today as an ISO day in local time (toISOString would give the UTC day, yesterday until 1 or 2 a.m.).
+export function localDay(now = new Date()) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
 // Move-in as the mail says it; a day already past means the flat is free now. TODAY is an ISO day.
-export function moveIn(day, today = new Date().toISOString().slice(0, 10)) {
+export function moveIn(day, today = localDay()) {
   if (!day) return '';
   return day <= today ? 'sofort frei' : `frei ab ${day.slice(8, 10)}.${day.slice(5, 7)}.${day.slice(0, 4)}`;
 }
@@ -170,7 +175,6 @@ export const flatSummary = s => {
     .join(' · ');
 };
 
-// Swipe gestures: the rubber band past the limit and the trackpad's after-swing
 // The map in a flat's sheet: the stored picture of the searched place shows its middle at
 // MAP_ZOOM, slid just enough to keep the flat in view; a flat outside gets an arrow on the frame's edge.
 export const MAP_ZOOM = 1.9,
@@ -244,6 +248,7 @@ export function mapView(map, spot) {
   return result;
 }
 
+// Swipe gestures: the rubber band past the limit and the trackpad's after-swing.
 export const SWIPE_MAX = 140,
   SWING_EVENTS = 10,
   SWING_SURE_MS = 150;
@@ -275,10 +280,10 @@ export function afterSwing(events) {
 
 // The hit a link in the mail points to: "#treffer=12:https%3A…" -> { searchId: 12, url }, else null.
 export function mailTarget(hash) {
-  const match = /^#treffer=(\d+):(.+)$/.exec(hash || '');
-  if (!match) return null;
+  const parts = /^#treffer=(\d+):(.+)$/.exec(hash || '');
+  if (!parts) return null;
   try {
-    return { searchId: Number(match[1]), url: decodeURIComponent(match[2]) };
+    return { searchId: Number(parts[1]), url: decodeURIComponent(parts[2]) };
   } catch {
     return null;
   }

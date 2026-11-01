@@ -199,7 +199,7 @@ document.addEventListener('click', async event => {
     try {
       const result = await api('hidden', { method: 'DELETE' });
       await refresh();
-      message(`${result.restored} Angebote wieder sichtbar`);
+      message(`${result.restored} Treffer wieder sichtbar`); // "Treffer" fits one or many, offers or flats
     } catch (err) {
       message(err.message, true);
     }

@@ -249,6 +249,21 @@ def download(source, url):
     return _thumbnail(raw)
 
 
+def _download_to_file(source, url):
+    """download() into the cache under its content's hash; returns (file name, bytes). Runs off the event loop."""
+    data = download(source, url)
+    name = hashlib.sha256(data).hexdigest() + '.webp'
+    fd, tmp = tempfile.mkstemp(dir=root())
+    try:
+        with os.fdopen(fd, 'wb') as target:
+            target.write(data)
+        os.replace(tmp, root() / name)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+    return name, len(data)
+
+
 async def step():
     now = time.time()
     with db() as conn:
@@ -264,19 +279,10 @@ async def step():
         except cadence.Deferred:
             continue
         try:
-            data = await asyncio.to_thread(download, job['source'], job['remote'])
-            name = hashlib.sha256(data).hexdigest() + '.webp'
-            fd, tmp = tempfile.mkstemp(dir=root())
-            try:
-                with os.fdopen(fd, 'wb') as target:
-                    target.write(data)
-                os.replace(tmp, root() / name)
-            finally:
-                if os.path.exists(tmp):
-                    os.unlink(tmp)
+            name, size = await asyncio.to_thread(_download_to_file, job['source'], job['remote'])
             with db() as conn:
                 conn.execute(
-                    "UPDATE pictures SET state='ready',filename=?,bytes=? WHERE key=?", (name, len(data), job['key'])
+                    "UPDATE pictures SET state='ready',filename=?,bytes=? WHERE key=?", (name, size, job['key'])
                 )
             cadence.outcome(job['source'], 'image', False)
         except asyncio.CancelledError:

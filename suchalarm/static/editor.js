@@ -133,8 +133,8 @@ export function openEditor(id) {
   $('search-form').reset();
   $('search-id').value = id || '';
   $('editor-title').textContent = search ? 'Suche bearbeiten' : 'Neue Suche';
-  const options = (id, empty, choices) =>
-    ($(id).innerHTML =
+  const options = (field, empty, choices) =>
+    ($(field).innerHTML =
       `<option value="">${empty}</option>` +
       Object.entries(choices)
         .map(([key, label]) => `<option value="${key}">${escapeHtml(label)}</option>`)

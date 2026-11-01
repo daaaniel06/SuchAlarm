@@ -51,7 +51,7 @@ export async function api(path, options = {}) {
     throw Error('Server nicht erreichbar. Bitte erneut versuchen.');
   }
   if (!response.ok)
-    throw Error(typeof data.detail === 'string' ? data.detail : 'Eingaben prüfen und erneut versuchen.');
+    throw Error(typeof data?.detail === 'string' ? data.detail : 'Eingaben prüfen und erneut versuchen.');
   return data;
 }
 
