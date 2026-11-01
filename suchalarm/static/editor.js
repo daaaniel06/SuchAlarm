@@ -38,11 +38,6 @@ function addWord() {
   $('add-word').disabled = true;
   renderWords();
 }
-function shippingHint() {
-  $('shipping-hint').textContent = $('include-shipping').checked
-    ? 'Artikel + Versand unter dem Höchstpreis'
-    : 'Nur der Artikelpreis zählt';
-}
 // The category chips on top preset the form; everything stays editable.
 let draft = { category: 'sonstiges', delivery: 'versand' };
 // The postcode of the most recent pickup search, so it does not have to be typed again.
@@ -167,7 +162,6 @@ export function openEditor(id) {
   $('delete-search').textContent = 'Suche löschen';
   deleteArmed = false;
   $('form-error').hidden = true;
-  shippingHint();
   draft = { category: search ? categoryOf(search) : 'sonstiges', delivery: search?.delivery || 'versand' };
   chooseCategory(draft.category, !search);
   renderWords();
@@ -195,7 +189,6 @@ function formError(text) {
   $('form-error').hidden = false;
 }
 
-$('include-shipping').addEventListener('change', shippingHint);
 $('include-fee').addEventListener('change', moreSummary);
 $('active').addEventListener('change', moreSummary);
 $('alternatives').addEventListener('input', moreSummary);

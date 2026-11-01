@@ -186,7 +186,7 @@ Ein Name pro Ziel, überall gleich: Treffer, Merkliste, Suchen, Einstellungen. D
 
 **The No Label Heading Rule.** Feldgruppen bekommen keine Überschrift, wenn ihre Zeilen sich selbst erklären („Mails zu Wohnungen“, „ohne WBS“, „Erstzulassung ab“). Abstand trennt Gruppen. Eine Überschrift bleibt nur, wo sie Gleichnamiges unterscheidet, etwa Kleinanzeigen unter Wohnungen und unter Preisen.
 
-**The Shipping Context Rule.** Der Versand-Schalter gehört in dieselbe Feldgruppe wie Suchbegriff und Höchstpreis. Die Erläuterung darunter beschreibt die Auswirkung auf den Alarm.
+**The Shipping Context Rule.** Der Versand-Schalter gehört in dieselbe Feldgruppe wie Suchbegriff und Höchstpreis. Er braucht keine Erläuterung; selbsterklärende Schalter und Felder bekommen keinen Hilfetext.
 
 **The New Dot Rule.** Ein Treffer trägt ein Treffer einen kleinen grünen Punkt vor dem Titel, wenn er nach dem letzten Besuch auf diesem Gerät gefunden wurde. Ein Besuch endet erst nach 10 Minuten Abwesenheit; Neuladen oder ein kurzer Tabwechsel behalten die Punkte. Beim ersten Besuch auf einem Gerät ist nichts neu, der erste Abruf einer Suche ist Bestand. Öffnen nimmt den Punkt sofort weg. Der Punkt springt einmal auf, spätere Aktualisierungen zeichnen ihn ruhig. Die Anzahl steht im Tab-Titel, die des anderen Bereichs als „3 neu“ an dessen Pill.
 

@@ -1,6 +1,6 @@
 {
   "zusammenfassung": [
-    "Selbsterklärende Hilfetexte entfernt: „von – bis“, „„150 € VB“ zählt dann als 150 €“, „Gratis bei Kleinanzeigen“, der Satz unter Versand/Abholung/Beides, „Pausierte Suchen verschicken keine Mails“, „Nur Angebote unter deinem Höchstpreis“ und „Anbieter werden automatisch mit Abstand abgefragt“.",
+    "Selbsterklärende Hilfetexte entfernt: „von – bis“, „„150 € VB“ zählt dann als 150 €“, „Gratis bei Kleinanzeigen“, der Satz unter Versand/Abholung/Beides, „Artikel + Versand unter dem Höchstpreis“, „Pausierte Suchen verschicken keine Mails“, „Nur Angebote unter deinem Höchstpreis“ und „Anbieter werden automatisch mit Abstand abgefragt“.",
     "Detailblatt: „Warmmiete geschätzt“ statt „Geschätzt: Kaltmiete + ca. 3 €/m²“, „Warmmiete“ statt „Warmmiete pro Monat“.",
     "Desktop: Suchen und Einstellungen sind so breit wie die Trefferliste (720 statt 640 px) und beginnen an derselben Kante wie der Bereichsschalter.",
     "Einstellungen → Quellen am Handy: Bei gestörten Quellen stehen „Details“ und „Neu versuchen“ rechtsbündig wie in den anderen Zeilen.",
@@ -9,7 +9,7 @@
   "ansichten": [
     {
       "muster": ["*-preis-editor-*"],
-      "text": "Ohne die Hilfetexte unter Preis, „Auch VB-Angebote“, „Zu verschenken“, unter Versand/Abholung/Beides und unter „Suche aktiv“."
+      "text": "Ohne die Hilfetexte unter Preis, „Auch VB-Angebote“, „Zu verschenken“, unter Versand/Abholung/Beides, unter „Versand einrechnen“ und unter „Suche aktiv“."
     },
     {
       "muster": ["*-wohnung-editor-bearbeiten"],
