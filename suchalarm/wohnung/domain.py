@@ -142,7 +142,11 @@ TRAIT_PATTERNS = {
         r'Tauschwohnung|Wohnungstausch|\bzum\s+Tausch|\bTausch\b|\btauschen\b',
         r'(?:kein|keine|nicht)\s+(?:\w+\s+){0,1}(?:Tausch|tauschen)',
     ),
-    'WG-Zimmer': (r'\bWG\b|WG-Zimmer|Mitbewohner(?:in)?', r'(?:keine|kein)\s+(?:\w+\s+){0,1}WG\b'),
+    # A flat "als WG geeignet" or "WG-tauglich" is a whole flat, not a room.
+    'WG-Zimmer': (
+        r'\bWG\b|WG-Zimmer|Mitbewohner(?:in)?',
+        r'(?:keine|kein)\s+(?:\w+\s+){0,1}WG\b|\b(?:als|für|zur)\s+(?:eine\s+)?WG\b|\bWG[- ]?(?:geeignet|tauglich)',
+    ),
 }
 
 
