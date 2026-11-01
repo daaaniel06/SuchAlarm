@@ -54,6 +54,9 @@ function searchTags(s) {
   if (f.platform) tags.push(state.choices.platforms[f.platform]);
   if (f.year_from) tags.push(`EZ ab ${f.year_from}`);
   if (f.km_to) tags.push(`bis ${thousands(f.km_to)} km`);
+  if (f.fuel) tags.push(state.choices.fuels[f.fuel]);
+  if (f.gearbox) tags.push(state.choices.gearboxes[f.gearbox]);
+  if (f.bike_type) tags.push(state.choices.bike_types[f.bike_type]);
   if (s.negotiable) tags.push('inkl. VB');
   if (s.free) tags.push('Verschenken');
   return tags;

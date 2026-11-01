@@ -13,6 +13,7 @@ from .domain import (
     around,
     canonical,
     clean_title,
+    kleinanzeigen_attributes,
     money,
     phrases,
     platform_ids,
@@ -92,7 +93,7 @@ def search_url(source, query, search=None):
 
 
 def kleinanzeigen_code(category, place, search):
-    """The part after "k0": section (c…), location ID and radius (l…r…), car limits."""
+    """The part after "k0": section (c…), location ID and radius (l…r…), car and bike filters."""
     code = f'c{category}' if category else ''
     if place:
         location = cadence.location('kleinanzeigen', place[0])
@@ -100,10 +101,8 @@ def kleinanzeigen_code(category, place, search):
         if location is None:
             raise LookupError(place[0])
         code += f'l{location}r{place[1]}'
-    filters = search.get('filters') or {}
-    if category == CARS and (filters.get('year_from') or filters.get('km_to')):
-        code += f'+autos.ez_i:{filters.get("year_from") or ""}%2C+autos.km_i:%2C{filters.get("km_to") or ""}'
-    return code
+    # Without the section Kleinanzeigen would ignore its attributes.
+    return code + kleinanzeigen_attributes(search) if category else code
 
 
 def row_shipping(row, price, source):
@@ -428,7 +427,7 @@ def repair_cached(source, search, value, observed_at):
     return {'offers': [asdict(o) for o in offers], 'reference': reference}
 
 
-@cadence.shared_search(cache_version=6, cached_parser=repair_cached)
+@cadence.shared_search(cache_version=7, cached_parser=repair_cached)
 async def fetch(source, search):
     """(offers, idealo reference) of one provider query; the decorator shares, caches and times it."""
     return await _visit(source, search)
