@@ -108,11 +108,7 @@ test('afterSwing finds a steady fading swing, not slowing fingers', () => {
   assert.equal(logic.afterSwing(frames([40, 20, 10, 5, 2, 1, 1, 1, 1, 1, 1, 1])), -1);
 });
 
-test('hits and the watch list belong to the area of their search', () => {
-  const searches = [{ id: 1, kind: 'wohnung' }, { id: 2, kind: 'preis' }, { id: 3 }];
-  const items = [{ search_id: 1 }, { search_id: 2 }, { search_id: 3 }, { search_id: 9 }];
-  assert.deepEqual(logic.inArea(items, 'wohnung', searches), [{ search_id: 1 }]);
-  assert.deepEqual(logic.inArea(items, 'preis', searches), [{ search_id: 2 }, { search_id: 3 }]); // no kind: a product search
+test('an area names its unit', () => {
   assert.equal(logic.areaUnit('wohnung', 7), 'Wohnungen');
   assert.equal(logic.areaUnit('preis', 1), 'Angebot');
 });

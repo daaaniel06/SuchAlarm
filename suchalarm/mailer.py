@@ -160,10 +160,6 @@ def _mail(search):
     return kinds.of(search).mail
 
 
-def shown_price(entry):
-    return _mail(entry[0]).price(*entry)
-
-
 def entry_price(entry):
     return _mail(entry[0]).price_text(*entry)
 
