@@ -69,6 +69,8 @@ class TextTests(unittest.TestCase):
             ('Nur mit WBS! Befristet bis 2027', ['WBS', 'Befristet']),
             ('TAUSCHWOHNUNG Weinbergstraße', ['Tauschwohnung']),
             ('Zimmer in netter WG, Mitbewohnerin gesucht', ['WG-Zimmer']),
+            ('Die Wohnung eignet sich perfekt als WG für 2-3 Personen', []),
+            ('Auch für eine WG geeignet, WG-tauglich, nicht WG geeignet', []),
             ('Zwischenmiete Dezember bis März', ['Befristet']),
             ('Wohnberechtigungsschein ist nicht erforderlich', []),
         ):
