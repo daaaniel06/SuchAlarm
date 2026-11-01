@@ -8,8 +8,8 @@ import { offerRow } from './rows.js';
 import { categoryOf, searchName, usedCategories } from './searches.js';
 
 export let filter = '',
-  checkStart = 0,
-  wasBusy = false,
+  checkStart = 0;
+let wasBusy = false,
   finishedUntil = 0;
 const manualSources = new Set();
 // Only this module assigns them; the page sets them through these.

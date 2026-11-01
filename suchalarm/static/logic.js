@@ -45,7 +45,7 @@ export function comparison(offer, search) {
   return offer.shipping === null ? null : item + offer.shipping;
 }
 // Given away (item price 0) counts for a search that wants it, whatever its minimum price; shipping may apply.
-export const given = (price, search) => price === 0 && Boolean(search.free);
+const given = (price, search) => price === 0 && Boolean(search.free);
 export function match(offer, search) {
   const value = comparison(offer, search);
   return value !== null && (given(offer.price, search) || value >= (search.min_price || 0)) && value < search.max_price;
@@ -112,10 +112,6 @@ export function parseServer(text) {
 
 // The key of each area's hit rows in /api/state (HITS in preis/worker.py, wohnung/worker.py).
 export const HITS = { wohnung: 'listings', preis: 'offers' };
-export function inArea(items, area, searches) {
-  const kinds = new Map(searches.map(s => [s.id, kindOf(s)]));
-  return items.filter(item => kinds.get(item.search_id) === area);
-}
 // New since the last visit: found after it, not the first result of a search, not opened yet.
 export const isFresh = (item, since, opened) => !item.start && item.first_seen > since && !opened.includes(item.url);
 export const newCount = (items, since, opened) =>
@@ -177,7 +173,7 @@ export const flatSummary = s => {
 
 // The map in a flat's sheet: the stored picture of the searched place shows its middle at
 // MAP_ZOOM, slid just enough to keep the flat in view; a flat outside gets an arrow on the frame's edge.
-export const MAP_ZOOM = 1.9,
+const MAP_ZOOM = 1.9,
   MAP_MARGIN = 0.1;
 const HEADINGS = [
   'nördlich',

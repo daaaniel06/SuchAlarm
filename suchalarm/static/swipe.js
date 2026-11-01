@@ -10,8 +10,8 @@ import { rows, settle, swiped } from './rows.js';
 // and runs only when the gesture is released.
 const SWIPE_ARM = 80;
 export let swipe = null,
-  wheel = null,
-  wheelLock = 0,
+  wheel = null;
+let wheelLock = 0,
   swallowClick = false;
 // Input can arrive faster than the screen refreshes (120 wheel events a second); the row is drawn
 // once per frame, as a GPU layer, and classes change only when the state really changes.
