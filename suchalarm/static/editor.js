@@ -78,6 +78,7 @@ function chooseCategory(key, presets) {
   [$('query').placeholder, $('max-price').placeholder] = PLACEHOLDERS[key] || ['', ''];
   document.querySelector('[data-filter=platform]').hidden = !c.filters.includes('platform');
   document.querySelector('[data-filter=vehicle]').hidden = !c.filters.includes('year_from');
+  document.querySelector('[data-filter=bike]').hidden = !c.filters.includes('bike_type');
   applyDelivery();
 }
 // Pickup searches run around a postcode; Vinted and idealo cannot do that and step aside.
@@ -103,9 +104,14 @@ function sourceNote() {
   const notes = [];
   if (draft.delivery === 'abholung') notes.push('Vinted und idealo können nicht im Umkreis suchen.');
   if (draft.delivery === 'beides') notes.push('Vinted und idealo suchen nur deutschlandweit mit Versand.');
-  const vehicle = !document.querySelector('[data-filter=vehicle]').hidden && ($('year-from').value || $('km-to').value);
-  if (vehicle && document.querySelector('[name=source][value=ebay]').checked)
-    notes.push('Erstzulassung und Kilometer filtert nur Kleinanzeigen, bei eBay gelten sie nicht.');
+  const ebay = document.querySelector('[name=source][value=ebay]').checked,
+    vehicle =
+      !document.querySelector('[data-filter=vehicle]').hidden &&
+      ['year-from', 'km-to', 'fuel', 'gearbox'].some(id => $(id).value);
+  if (vehicle && ebay) notes.push('Die Fahrzeugfilter wirken nur bei Kleinanzeigen, bei eBay gelten sie nicht.');
+  const bike = !document.querySelector('[data-filter=bike]').hidden && $('bike-type').value;
+  // eBay keeps E-Bikes in a section of their own, which the search then uses; other kinds it does not filter.
+  if (bike && bike !== 'ebike' && ebay) notes.push('Den Radtyp filtert nur Kleinanzeigen, bei eBay gilt er nicht.');
   $('source-note').textContent = notes.join(' ');
   $('source-note').hidden = !notes.length;
 }
@@ -127,11 +133,16 @@ export function openEditor(id) {
   $('search-form').reset();
   $('search-id').value = id || '';
   $('editor-title').textContent = search ? 'Suche bearbeiten' : 'Neue Suche';
-  $('platform').innerHTML =
-    '<option value="">Alle Plattformen</option>' +
-    Object.entries(state.choices.platforms)
-      .map(([key, label]) => `<option value="${key}">${escapeHtml(label)}</option>`)
-      .join('');
+  const options = (id, empty, choices) =>
+    ($(id).innerHTML =
+      `<option value="">${empty}</option>` +
+      Object.entries(choices)
+        .map(([key, label]) => `<option value="${key}">${escapeHtml(label)}</option>`)
+        .join(''));
+  options('platform', 'Alle Plattformen', state.choices.platforms);
+  options('fuel', 'Alle', state.choices.fuels);
+  options('gearbox', 'Alle', state.choices.gearboxes);
+  options('bike-type', 'Alle', state.choices.bike_types);
   $('radius').innerHTML = state.choices.radii.map(km => `<option value="${km}">${km} km</option>`).join('');
   $('query').value = search?.query || '';
   $('alternatives').value = search?.alternatives || '';
@@ -147,6 +158,9 @@ export function openEditor(id) {
   $('platform').value = f.platform || '';
   $('year-from').value = f.year_from || '';
   $('km-to').value = f.km_to || '';
+  $('fuel').value = f.fuel || '';
+  $('gearbox').value = f.gearbox || '';
+  $('bike-type').value = f.bike_type || '';
   sourceBoxes().forEach(el => (el.checked = search ? search.sources.includes(el.value) : true));
   words = splitWords(search?.excluded);
   $('more').open = false;
@@ -205,7 +219,7 @@ document.querySelectorAll('[data-delivery]').forEach(b =>
   }),
 );
 $('plz').addEventListener('input', () => ($('plz').value = $('plz').value.replace(/\D/g, '').slice(0, 5)));
-for (const id of ['year-from', 'km-to']) $(id).addEventListener('input', sourceNote);
+for (const id of ['year-from', 'km-to', 'fuel', 'gearbox', 'bike-type']) $(id).addEventListener('input', sourceNote);
 document.querySelector('.source-picker').addEventListener('change', sourceCount);
 $('toggle-sources').addEventListener('click', () => {
   const boxes = sourceBoxes().filter(x => !x.disabled),
@@ -278,7 +292,14 @@ $('search-form').addEventListener('submit', async event => {
     radius: pickup ? Number($('radius').value) : 0,
     negotiable: $('negotiable').checked,
     free: $('free').checked,
-    filters: { platform: $('platform').value || null, year_from: number('year-from'), km_to: number('km-to') },
+    filters: {
+      platform: $('platform').value || null,
+      year_from: number('year-from'),
+      km_to: number('km-to'),
+      fuel: $('fuel').value || null,
+      gearbox: $('gearbox').value || null,
+      bike_type: $('bike-type').value || null,
+    },
   };
   const id = $('search-id').value;
   $('save-search').disabled = true;

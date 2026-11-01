@@ -115,7 +115,12 @@
 <div class="group form-group">
 <label class="field"><span><b>Erstzulassung ab</b></span><span class="unit-input"><input id="year-from" type="number" inputmode="numeric" min="1950" max="2100" step="1" placeholder="2012"></span></label>
 <label class="field"><span><b>Kilometerstand bis</b></span><span class="unit-input"><input id="km-to" type="number" inputmode="numeric" min="1000" max="2000000" step="1000" placeholder="150000"><em>km</em></span></label>
+<label class="field"><span><b>Kraftstoff</b></span><span class="unit-input"><select id="fuel"></select><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span></label>
+<label class="field"><span><b>Getriebe</b></span><span class="unit-input"><select id="gearbox"></select><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span></label>
 </div>
+</div>
+<div class="group form-group" data-filter="bike">
+<label class="field"><span><b>Radtyp</b><small>Lässt bei Kleinanzeigen auch Zubehör weg</small></span><span class="unit-input"><select id="bike-type"></select><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span></label>
 </div>
 <div class="picker-head"><span id="sources-label">Quellen<small id="sources-count"></small></span><button type="button" class="text-button" id="toggle-sources">Keine</button></div>
 <div class="source-picker" role="group" aria-labelledby="sources-label"><label class="chip source-chip"><input type="checkbox" name="source" value="ebay"><span class="source-mark ebay" aria-hidden="true">EB</span>eBay</label><label class="chip source-chip"><input type="checkbox" name="source" value="kleinanzeigen"><span class="source-mark kleinanzeigen" aria-hidden="true">KA</span>Kleinanzeigen</label><label class="chip source-chip"><input type="checkbox" name="source" value="vinted"><span class="source-mark vinted" aria-hidden="true">VI</span>Vinted</label><label class="chip source-chip"><input type="checkbox" name="source" value="idealo"><span class="source-mark idealo" aria-hidden="true">ID</span>idealo</label></div>

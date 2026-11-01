@@ -6,7 +6,18 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from .domain import CATEGORIES, MAX_ALTERNATIVES, PICKUP_SOURCES, PLATFORMS, RADII, all_terms, alternatives
+from .domain import (
+    BIKE_TYPES,
+    CATEGORIES,
+    FUELS,
+    GEARBOXES,
+    MAX_ALTERNATIVES,
+    PICKUP_SOURCES,
+    PLATFORMS,
+    RADII,
+    all_terms,
+    alternatives,
+)
 
 Source = Literal['ebay', 'kleinanzeigen', 'vinted', 'idealo']
 # Changing one of these needs a fresh result; active and sources do not.
@@ -52,6 +63,9 @@ class Filters(BaseModel):
     platform: Literal[tuple(PLATFORMS)] | None = None  # type: ignore[valid-type]  # built from domain.py
     year_from: int | None = Field(default=None, ge=1950, le=2100)
     km_to: int | None = Field(default=None, ge=1000, le=2_000_000)
+    fuel: Literal[tuple(FUELS)] | None = None  # type: ignore[valid-type]
+    gearbox: Literal[tuple(GEARBOXES)] | None = None  # type: ignore[valid-type]
+    bike_type: Literal[tuple(BIKE_TYPES)] | None = None  # type: ignore[valid-type]
 
     def stored(self):
         return {key: value for key, value in self.model_dump().items() if value is not None}

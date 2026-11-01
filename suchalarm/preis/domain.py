@@ -50,6 +50,77 @@ EBAY_PLATFORMS: dict[str, tuple[str, ...]] = {
     'pc': ('PC',),
 }
 PROVIDER_PLATFORMS = {'vinted': VINTED_PLATFORMS, 'ebay': EBAY_PLATFORMS}
+# Car and bike filters. Kleinanzeigen filters them itself (attributes after "k0c…", checked live on 01.11.2026);
+# its cards show neither, so they are never checked again locally.
+FUELS = {'benzin': 'Benzin', 'diesel': 'Diesel', 'elektro': 'Elektro', 'hybrid': 'Hybrid'}
+GEARBOXES = {'automatik': 'Automatik', 'manuell': 'Schaltgetriebe'}
+BIKE_TYPES = {
+    'ebike': 'E-Bike',
+    'mountainbike': 'Mountainbike',
+    'rennrad': 'Rennrad',
+    'trekking': 'Trekking & Cross',
+    'city': 'Cityrad',
+    'kinder': 'Kinderrad',
+}
+KLEINANZEIGEN_BIKES = {
+    'ebike': 'fahrraeder.type_s:ebike',
+    'mountainbike': 'fahrraeder.type_s:mountainbike',
+    'rennrad': 'fahrraeder.type_s:rennrad',
+    'trekking': 'fahrraeder.type_s:cross',
+    'city': 'fahrraeder.type_s:city',
+    'kinder': 'fahrraeder.art_s:kinder',
+}
+# eBay files E-Bikes in a section of their own beside "Fahrräder" (01.11.2026: "e-bike" 301 hits there, 6.500+ here).
+EBAY_EBIKES = '74469'
+# Car titles often leave the make out ("Golf 7 TSI") inside the provider's car section; the make may be missing.
+CAR_MAKES = frozenset(
+    [
+        'vw',
+        'audi',
+        'bmw',
+        'mercedes',
+        'opel',
+        'ford',
+        'skoda',
+        'seat',
+        'cupra',
+        'renault',
+        'peugeot',
+        'citroen',
+        'fiat',
+        'toyota',
+        'hyundai',
+        'kia',
+        'mazda',
+        'nissan',
+        'honda',
+        'volvo',
+        'porsche',
+        'mini',
+        'dacia',
+        'tesla',
+        'smart',
+        'suzuki',
+        'mitsubishi',
+        'jeep',
+        'alfa',
+        'romeo',
+        'lancia',
+        'jaguar',
+        'land',
+        'rover',
+        'subaru',
+        'chevrolet',
+        'chrysler',
+        'dodge',
+        'lexus',
+        'saab',
+        'ds',
+        'mg',
+        'byd',
+        'polestar',
+    ]  # one line of makes reads better than one make per line
+)
 # A category presets a new search and narrows the provider search to its own section.
 # Section IDs were checked live on 23.10.2026 (eBay _sacat, Kleinanzeigen c…, Vinted catalog[]).
 CATEGORIES: dict[str, dict[str, Any]] = {
@@ -100,7 +171,7 @@ CATEGORIES: dict[str, dict[str, Any]] = {
         negotiable=True,
         free=True,
         radius=50,
-        filters=[],
+        filters=['bike_type'],
         portal={'ebay': '177831', 'kleinanzeigen': '217'},
     ),
     'autos': dict(
@@ -112,7 +183,7 @@ CATEGORIES: dict[str, dict[str, Any]] = {
         negotiable=True,
         free=False,
         radius=100,
-        filters=['year_from', 'km_to'],
+        filters=['year_from', 'km_to', 'fuel', 'gearbox'],
         portal={'ebay': '9801', 'kleinanzeigen': '216'},
     ),
     'sonstiges': dict(
@@ -296,14 +367,22 @@ def named_platforms(title):
     return named
 
 
+def without_make(search, words):
+    """A car search's words without the make, where something else is left: "VW Golf" is also "Golf 7 TSI"."""
+    if search.get('category') != 'autos':
+        return None
+    rest = [word for word in normalized(words).split() if word not in CAR_MAKES]
+    return ' '.join(rest) if rest and len(rest) < len(normalized(words).split()) else None
+
+
 def title_fits(source, title, search):
     """Whether an offer title belongs to the search: all words of one of its spellings, nothing excluded, not
     only other platforms. A provider's platform filter fills up with other platforms once its matches run out."""
     chosen, named = platform(search), named_platforms(title)
     excluded = search.get('excluded', '')
-    return any(
-        matches(title, wanted_words(source, search, phrase), excluded) for phrase in phrases(source, search)
-    ) and (chosen is None or not named or chosen in named)
+    wanted = [wanted_words(source, search, phrase) for phrase in phrases(source, search)]
+    wanted += [rest for words in wanted if (rest := without_make(search, words))]
+    return any(matches(title, words, excluded) for words in wanted) and (chosen is None or not named or chosen in named)
 
 
 def taught_away(title, search):
@@ -333,9 +412,40 @@ def learned_words(hidden, kept_titles):
     )
 
 
+def bike_type(search):
+    """The kind of bike a search is limited to, or None."""
+    chosen = (search.get('filters') or {}).get('bike_type')
+    return chosen if chosen in BIKE_TYPES else None
+
+
+def wants_ebike(search):
+    """A bike search for E-Bikes: chosen as its type or named in its words ("E-Bike", "Pedelec")."""
+    return bike_type(search) == 'ebike' or 'ebike' in normalized(all_terms(search)).split()
+
+
 def section(source, search):
     """The provider's own section for the search's category, or None."""
-    return CATEGORIES.get(search.get('category') or 'sonstiges', CATEGORIES['sonstiges'])['portal'].get(source)
+    category = search.get('category') or 'sonstiges'
+    if source == 'ebay' and category == 'fahrraeder' and wants_ebike(search):
+        return EBAY_EBIKES
+    return CATEGORIES.get(category, CATEGORIES['sonstiges'])['portal'].get(source)
+
+
+def kleinanzeigen_attributes(search):
+    """Kleinanzeigen's own filters after the section: car limits, fuel and gearbox, the kind of bike."""
+    filters, parts = search.get('filters') or {}, []
+    category = search.get('category')
+    if category == 'autos':
+        if filters.get('year_from') or filters.get('km_to'):
+            parts.append(f'autos.ez_i:{filters.get("year_from") or ""}%2C')
+            parts.append(f'autos.km_i:%2C{filters.get("km_to") or ""}')
+        if filters.get('fuel'):
+            parts.append(f'autos.fuel_s:{filters["fuel"]}')
+        if filters.get('gearbox'):
+            parts.append(f'autos.shift_s:{filters["gearbox"]}')
+    if category == 'fahrraeder' and bike_type(search):
+        parts.append(KLEINANZEIGEN_BIKES[bike_type(search)])
+    return ''.join('+' + part for part in parts)
 
 
 def around(source, search):
@@ -424,13 +534,36 @@ def mass_sellers(offers):
     return {seller for seller, count in counts.items() if count >= DEALER_FROM}
 
 
+# Words sellers write either way: "Volkswagen" is "VW", "Golf VII" is "Golf 7", "Pedelec" is "E-Bike".
+# I, V and X stay letters ("Xbox Series X", "iPhone X"), IX too: "BMW iX" is a car, not a 9.
+ROMAN = {'ii': '2', 'iii': '3', 'iv': '4', 'vi': '6', 'vii': '7', 'viii': '8'}
+ALIASES = tuple(
+    (re.compile(pattern), same)
+    for pattern, same in (
+        (r'\bvolkswagen\b', 'vw'),
+        (r'\bmercedes ?benz\b', 'mercedes'),
+        (r'\b(?:e ?bikes?|pedelecs?|elektro ?fahrrad|elektro ?fahrr(?:a|ae)der)\b', 'ebike'),
+        (r'\bmountain ?bikes?\b', 'mtb'),
+        (r'\be mtb\b', 'ebike mtb'),  # "E-MTB", "E-Mountainbike"
+        (r'\broad ?bikes?\b', 'rennrad'),
+        *((rf'\b{numeral}\b', value) for numeral, value in ROMAN.items()),
+    )
+)
+
+# "kein Unfall", "nicht defekt": an excluded word right after a negation says the opposite.
+NEGATION = r'(?:kein|keine|keinen|keiner|ohne|nicht|nie)'
+
+
 @lru_cache(maxsize=4096)  # the same titles and search words come back with every check
 def normalized(text):
     # Accents are spelled either way ("Résident Evil", "Hulle"); compare the base letters.
     text = ''.join(c for c in unicodedata.normalize('NFKD', text.casefold()) if not unicodedata.combining(c))
     text = re.sub(r'[^\w]+', ' ', text).strip()
     # Sellers write PS5, PS 5 and PlayStation 5 interchangeably.
-    return re.sub(r'\b(?:playstation|ps) ?([1-5])\b', r'ps\1', text)
+    text = re.sub(r'\b(?:playstation|ps) ?([1-5])\b', r'ps\1', text)
+    for pattern, same in ALIASES:
+        text = pattern.sub(same, text)
+    return text
 
 
 def _with_glued_pairs(words):
@@ -454,7 +587,15 @@ def matches(title, query, excluded=''):
     if not _has_all_words(text.split(), normalized(query).split()):
         return False
     padded = f' {text} '
-    return not any(term and f' {term} ' in padded for term in map(normalized, excluded.split(',')))
+    return not any(term and _excluded_at(padded, term) for term in map(normalized, excluded.split(',')))
+
+
+def _excluded_at(padded, term):
+    """Whether TERM stands in PADDED other than right after a negation."""
+    return any(
+        not re.search(rf' {NEGATION} $', padded[: match.start() + 1])
+        for match in re.finditer(rf'(?= {re.escape(term)} )', padded)
+    )
 
 
 def canonical(source, url):
@@ -557,9 +698,16 @@ def query_text(source, search):
         query += f'\nsection:{category}'
     if place:
         query += '\naround:{}:{}'.format(*place)
+    if search.get('category') == 'autos' and not category:
+        query += '\ncars'  # titles may leave out the make (without_make), so the shared result differs
     filters = search.get('filters') or {}
     if source == 'kleinanzeigen' and category == '216' and (filters.get('year_from') or filters.get('km_to')):
         query += f'\nvehicle:{filters.get("year_from") or ""}:{filters.get("km_to") or ""}'
+    if source == 'kleinanzeigen' and category:
+        # Fuel, gearbox and kind of bike narrow Kleinanzeigen's answer; eBay's E-Bike section is in "section".
+        for name in ('fuel', 'gearbox', 'bike_type'):
+            if filters.get(name):
+                query += f'\n{name}:{filters[name]}'
     # VB offers are dropped while parsing at every provider, so the shared result depends on it everywhere.
     if search.get('negotiable'):
         query += '\nnegotiable'

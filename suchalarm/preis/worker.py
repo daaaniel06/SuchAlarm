@@ -13,7 +13,10 @@ from ..status import source_ok, started
 from . import delivery, learning, sources
 from . import mail as mail  # the kind's mail presentation (kinds.py)
 from .domain import (
+    BIKE_TYPES,
     CATEGORIES,
+    FUELS,
+    GEARBOXES,
     PICKUP_SOURCES,
     PLATFORMS,
     RADII,
@@ -41,6 +44,9 @@ EMPTY_IS_SUSPICIOUS = False  # an empty product result is ordinary; a changed la
 CHOICES = {
     'categories': {key: {k: v for k, v in value.items() if k != 'portal'} for key, value in CATEGORIES.items()},
     'platforms': PLATFORMS,
+    'fuels': FUELS,
+    'gearboxes': GEARBOXES,
+    'bike_types': BIKE_TYPES,
     'radii': RADII,
     'pickup_sources': PICKUP_SOURCES,
 }
