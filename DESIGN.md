@@ -172,7 +172,9 @@ Pills tragen Aktionen, Filter und Quellenoptionen. Listenzeilen sind weich gerun
 
 Primäre Buttons invertieren Tinte und Grundfläche; sekundäre Buttons nutzen neutrale Füllung. Beide haben eine Mindesthöhe (44px), wechseln beim Hover den Tonwert und reagieren beim Drücken mit einer kleinen Skalierung (.98). Deaktivierte Aktionen sind halbtransparent und zeigen einen Wartecursor.
 
-Feldgruppen nutzen Innenabstand und Haarlinien zwischen den Zeilen statt einzelner Eingaberahmen. Labels bleiben sichtbar. Eingaben verwenden mindestens (16px) Schriftgröße. Ein globaler Fokus mit (2px) Kontur und (4px) Abstand hält interaktive Elemente erkennbar.
+Ein Icon steht rechts vom Text, nur wo es das Ziel zeigt: ↗ für eine fremde Seite („Inserat öffnen“, „Kopieren & öffnen“), zwei Blätter für die Zwischenablage. Kurze Aktionen innerhalb einer Zeile (Hinzufügen, Testmail, Entfernen) sind runde Icon-Buttons; ihr Name steht in `aria-label` und `title`.
+
+Feldgruppen nutzen Innenabstand und Haarlinien zwischen den Zeilen statt einzelner Eingaberahmen. Zeilen, die an einem Schalter hängen (Rhythmus, Treffer pro Mail), folgen ihm eingerückt und ohne Haarlinie; was dasselbe Ziel betrifft, steht in einer Gruppe, etwa Mailserver und Empfänger. Labels bleiben sichtbar. Eingaben verwenden mindestens (16px) Schriftgröße. Ein globaler Fokus mit (2px) Kontur und (4px) Abstand hält interaktive Elemente erkennbar.
 
 **The One Primary Rule.** Genau ein primärer Button pro Ansicht („Speichern“, „Kopieren & öffnen“); alles andere ist sekundär oder ein Textbutton darunter.
 
