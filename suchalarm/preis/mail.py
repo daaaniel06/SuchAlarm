@@ -10,7 +10,7 @@ WORDS = {
     'one': 'neues Angebot',
     'many': 'neue Angebote',
     'tagline': 'unter deinem Höchstpreis',
-    'button': 'Angebot öffnen',
+    'button': 'Angebot öffnen ↗',
     'footer': 'Preise und Verfügbarkeit beim Anbieter prüfen.',
     'footer_plain': 'Preise und Verfügbarkeit beim Anbieter prüfen.',
 }
@@ -69,19 +69,28 @@ def subject(entries, title):
     return f'Preisalarm: {title} ' + ('zu verschenken' if value == 0 else f'für {amount(value)}')
 
 
-def card(search, offer, photo_src):
-    """Title and price, facts and shipping, why it fits, the search, one button."""
+def card(search, offer, photo_src, links):
+    """A row like in the app: picture, title and price, provider and facts, why it fits, the search, buttons."""
     why = reason(offer)
     why_row = (
-        f'<tr><td colspan="2" style="padding-top:8px;font-size:13px;font-weight:600;color:#0b8043">{escape(why)}</td></tr>'
+        f'<tr><td colspan="2" style="padding-top:8px;font-size:13px;font-weight:600;color:{mailhtml.GREEN}">{escape(why)}</td></tr>'
         if why
         else ''
     )
-    return mailhtml.card(f"""{mailhtml.photo(offer['url'], photo_src, 160, colspan=2)}<tr>
-<td style="vertical-align:top;font-size:17px;font-weight:700;letter-spacing:-0.01em;color:#0a0a0a">{escape(offer['title'])}</td>
-<td align="right" style="vertical-align:top;white-space:nowrap;padding-left:12px;font-size:22px;font-weight:700;letter-spacing:-0.03em;color:#0a0a0a">{escape(price_text(search, offer))}</td>
+    provider = SOURCES[offer['source']].split(' · ')[0]  # first and green, as in the app's row foot
+    foot = ' · '.join([mailhtml.source(provider), *(escape(part) for part in facts(offer)[:-1])])
+    text = f"""<table {mailhtml.TABLE}><tr>
+<td style="vertical-align:top;font-size:15px;font-weight:600;line-height:1.35;letter-spacing:-0.01em;color:{mailhtml.INK}">{escape(offer['title'])}</td>
+<td align="right" style="vertical-align:top;white-space:nowrap;padding-left:12px;font-size:20px;font-weight:700;letter-spacing:-0.03em;color:{mailhtml.INK}">{escape(price_text(search, offer))}</td>
 </tr><tr>
-<td style="padding-top:4px;font-size:13px;color:#707077">{escape(' · '.join(facts(offer)))}</td>
-<td align="right" style="padding-top:4px;white-space:nowrap;font-size:13px;color:#707077">{escape(note(search, offer))}</td>
-</tr>{why_row}<tr><td colspan="2" style="padding-top:8px;font-size:13px;font-weight:600;color:#636369">{escape(search['query'])} · {escape(price_range(search))}</td></tr>
-<tr><td colspan="2" style="padding-top:16px">{mailhtml.button(offer['url'], WORDS['button'])}</td></tr>""")
+<td style="padding-top:6px;font-size:13px;color:{mailhtml.MUTED}">{foot}</td>
+<td align="right" style="padding-top:6px;padding-left:12px;white-space:nowrap;font-size:13px;color:{mailhtml.MUTED}">{escape(note(search, offer))}</td>
+</tr></table>"""
+    head = (
+        f'<td width="72" style="vertical-align:top;width:72px;padding-right:14px">{mailhtml.image(offer["url"], photo_src, 72, fixed=True)}</td><td style="vertical-align:top">{text}</td>'
+        if photo_src
+        else f'<td colspan="2">{text}</td>'
+    )
+    return mailhtml.card(f"""<tr>{head}</tr>{why_row}
+<tr><td colspan="2" style="padding-top:10px;font-size:13px;color:{mailhtml.SECONDARY}">{escape(search['query'])} · {escape(price_range(search))}</td></tr>
+<tr><td colspan="2" style="padding-top:16px">{mailhtml.button(offer['url'], WORDS['button'])}{mailhtml.actions(links)}</td></tr>""")

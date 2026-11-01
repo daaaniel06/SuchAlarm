@@ -1,7 +1,7 @@
 // The page: loads the state, switches areas and views, renders everything after each refresh and
 // handles the clicks and keys that are not part of one area (editors, settings and rows have their own).
 
-import { AREAS, areaUnit, kindOf } from './logic.js';
+import { AREAS, areaUnit, kindOf, mailTarget } from './logic.js';
 import { $, fits, pages, pool } from './ui.js';
 import {
   api,
@@ -38,7 +38,7 @@ import { renderSearches } from './searches.js';
 import { details, loadDetails, openDetails, renderMailStatus, renderSettings } from './settings.js';
 import { openEditor } from './editor.js';
 import { openFlatEditor } from './flat-editor.js';
-import { renderSheet } from './sheet.js';
+import { openSheet, renderSheet } from './sheet.js';
 
 const EDITORS = { wohnung: openFlatEditor, preis: openEditor }; // the search editor of each area
 
@@ -253,8 +253,23 @@ document.addEventListener('keydown', e => {
   if (next) switchArea(next);
 });
 
+// A hit's link in the mail (#treffer=search:url) shows its search's hits; a flat opens its sheet.
+async function openFromMail() {
+  const target = mailTarget(location.hash);
+  if (target) history.replaceState(null, '', location.pathname + location.search);
+  await refresh();
+  const search = target && state?.searches.find(s => s.id === target.searchId);
+  if (!search) return;
+  switchArea(kindOf(search));
+  setFilter(String(search.id));
+  pages.offers = 0;
+  render();
+  const known = state.listings?.some(o => o.url === target.url) || state.saved.some(o => o.url === target.url);
+  if (kindOf(search) === 'wohnung' && known) openSheet({ search_id: search.id, url: target.url });
+}
+
 selectView('offers');
-refresh();
+openFromMail();
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) refresh();
 });
