@@ -272,3 +272,14 @@ export function afterSwing(events) {
   const sure = run.length >= SWING_EVENTS && run.at(-1).t - run[0].t >= SWING_SURE_MS; // same at 60 and 120 Hz
   return sure && first >= 3 && steady && fade >= 0.8 && fade <= 0.99 ? i : -1;
 }
+
+// The hit a link in the mail points to: "#treffer=12:https%3A…" -> { searchId: 12, url }, else null.
+export function mailTarget(hash) {
+  const match = /^#treffer=(\d+):(.+)$/.exec(hash || '');
+  if (!match) return null;
+  try {
+    return { searchId: Number(match[1]), url: decodeURIComponent(match[2]) };
+  } catch {
+    return null;
+  }
+}

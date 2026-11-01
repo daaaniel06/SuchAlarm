@@ -9,15 +9,16 @@ import json
 import time
 import uuid
 from contextlib import asynccontextmanager, suppress
+from html import escape
 from pathlib import Path
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import mailer, scheduler, store, worker
+from . import actions, mailer, maillinks, scheduler, store, worker
 from .core import cadence, images
 from .kinds import KINDS, ROUTERS
 from .models import AnySearch, Applied, Bookmark, Hide, MailServer, MailSettings, Preferences, Template
@@ -72,10 +73,17 @@ async def invalid(request: Request, exc: RequestValidationError):
     return JSONResponse({'detail': text}, status_code=422)
 
 
+@app.exception_handler(actions.Gone)
+async def gone(request: Request, exc: actions.Gone):
+    return JSONResponse({'detail': str(exc)}, status_code=404)
+
+
 def _refuse(request):
     """Why a writing request is refused, or None. Blocks cross-origin writes and oversized bodies."""
     origin = request.headers.get('origin')
-    if origin and urlparse(origin).netloc != request.headers.get('host'):
+    # A mail link's form (it sends "Origin: null") or a one-click unsubscribe: the signed token is the check.
+    link = request.url.path.startswith('/m/')
+    if origin and not link and urlparse(origin).netloc != request.headers.get('host'):
         return 403, 'Fremder Ursprung abgewiesen.'
     if 'transfer-encoding' in request.headers:
         return 411, 'Länge der Anfrage fehlt.'  # a chunked body would bypass the size limit
@@ -88,6 +96,7 @@ def _refuse(request):
     if (
         request.method in ('POST', 'PUT')
         and request.headers.get('content-type', '').split(';')[0] != 'application/json'
+        and not link
     ):
         return 415, 'JSON erforderlich.'  # also forces a CORS preflight for any cross-site form
     return None
@@ -288,13 +297,7 @@ async def source_details(source: str):
 @app.post('/api/hidden')
 async def hide(payload: Hide):
     """A swipe to the left: gone from the hits and from mails; "Rückgängig" or the settings bring it back."""
-    if payload.hidden:
-        existing(payload.search_id)
-    with store.db() as conn:
-        if payload.hidden:
-            store.hide(conn, payload.search_id, payload.url, time.time())
-        else:
-            store.unhide(conn, payload.search_id, payload.url)
+    actions.set_hidden(payload.search_id, payload.url, payload.hidden)
     return {'ok': True}
 
 
@@ -316,13 +319,7 @@ async def clear_offers():
 
 @app.post('/api/saved')
 async def bookmark(payload: Bookmark):
-    with store.db() as conn:
-        if not payload.saved:
-            store.unsave(conn, payload.url)
-            return {'ok': True}
-        search = store.search(payload.search_id)
-        if not search or not KINDS[search['kind']].bookmark(conn, search, payload.url):
-            raise HTTPException(404, 'Treffer nicht mehr vorhanden.')
+    actions.set_saved(payload.search_id, payload.url, payload.saved)
     return {'ok': True}
 
 
@@ -330,10 +327,8 @@ async def bookmark(payload: Bookmark):
 async def applied(payload: Applied):
     """Marking a flat as applied for keeps it on the watch list ("Beworben"); unmarking keeps it saved."""
     with store.db() as conn:
-        if payload.applied and not store.is_saved(conn, payload.url):
-            search = store.search(payload.search_id)
-            if not search or not KINDS[search['kind']].bookmark(conn, search, payload.url):
-                raise HTTPException(404, 'Treffer nicht mehr vorhanden.')
+        if payload.applied:
+            actions.bookmark(conn, payload.search_id, payload.url)
         store.mark_applied(conn, payload.url, time.time() if payload.applied else None)
     return {'ok': True}
 
@@ -412,6 +407,57 @@ async def mail_test():
     if refused:
         raise HTTPException(502, mailer.refusal(refused))
     return {'ok': True}
+
+
+# Links in the mail (maillinks.py): opening one asks, its button does it.
+
+
+def _link_page(title, text, form=None, status=200):
+    """The small page a mail link opens; FORM: (target relative to this page, button label, primary)."""
+    button = ''
+    if form:
+        target, label, primary = form
+        style = 'primary' if primary else 'secondary'
+        button = (
+            f'<form method="post" action="{escape(target)}"><button class="{style}">{escape(label)}</button></form>'
+        )
+    return HTMLResponse(
+        f"""<!doctype html><html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>{escape(title)} · Suchalarm</title><link rel="icon" href="data:,"><link rel="stylesheet" href="../static/link.css"></head>
+<body><main><p class="brand">suchalarm</p><h1>{escape(title)}</h1><p class="what">{escape(text)}</p>
+<div class="actions">{button}<a href="../">In der App öffnen</a></div></main></body></html>""",
+        status_code=status,
+    )
+
+
+def _mail_link(token, act):
+    """Ask before (ACT False), or do it and offer to take it back, as a page."""
+    data = maillinks.read(token)
+    if data is None:
+        return _link_page('Link ungültig', 'Dieser Link ist beschädigt oder stammt nicht aus deinen Mails.', status=404)
+    action = maillinks.ACTIONS[data['a']]
+    try:
+        about = maillinks.describe(data)
+        if not act:
+            return _link_page(action.question, about, ('', action.button, True))
+        changed = action.run(data)
+    except actions.Gone as gone:
+        return _link_page('Nicht mehr da', str(gone), status=410)
+    if not changed:
+        return _link_page(action.done, f'{about} – das war schon so.')
+    return _link_page(action.done, about, (maillinks.opposite(data), 'Rückgängig', False))
+
+
+@app.get('/m/{token}', response_class=HTMLResponse)
+async def mail_link(token: str):
+    return _mail_link(token, act=False)
+
+
+@app.post('/m/{token}', response_class=HTMLResponse)
+async def mail_action(token: str):
+    """The button of a link page, or a mail client's one-click unsubscribe (RFC 8058)."""
+    return _mail_link(token, act=True)
 
 
 @app.get('/')

@@ -387,11 +387,10 @@ def is_saved(conn, url):
 
 
 def unsave(conn, url=None):
-    """Take one hit off the watch list, or all without URL."""
+    """Take one hit off the watch list, or all without URL; returns how many."""
     if url is None:
-        conn.execute('DELETE FROM saved')
-    else:
-        conn.execute('DELETE FROM saved WHERE url=?', (url,))
+        return conn.execute('DELETE FROM saved').rowcount
+    return conn.execute('DELETE FROM saved WHERE url=?', (url,)).rowcount
 
 
 def mark_applied(conn, url, when):

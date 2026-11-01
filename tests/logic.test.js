@@ -191,3 +191,11 @@ test('the mail server is typed as host and optional port', () => {
   assert.equal(logic.serverText({ host: 'smtp.gmail.com', port: 587 }), 'smtp.gmail.com:587');
   assert.equal(logic.serverText({ host: '', port: 587 }), '');
 });
+
+test('a link from the mail names its search and hit', () => {
+  const url = 'https://www.ebay.de/itm/1?x=1&y=ä';
+  assert.deepEqual(logic.mailTarget(`#treffer=12:${encodeURIComponent(url)}`), { searchId: 12, url });
+  assert.equal(logic.mailTarget(''), null);
+  assert.equal(logic.mailTarget('#treffer=x:abc'), null);
+  assert.equal(logic.mailTarget('#treffer=1:%E0%A4%A'), null);
+});

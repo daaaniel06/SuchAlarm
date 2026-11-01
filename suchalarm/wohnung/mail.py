@@ -11,7 +11,7 @@ WORDS = {
     'one': 'neue Wohnung',
     'many': 'neue Wohnungen',
     'tagline': 'passend zu deiner Wohnungssuche',
-    'button': 'Inserat öffnen',
+    'button': 'Inserat öffnen ↗',
     'footer': 'Miete, Lage und Verfügbarkeit im Inserat prüfen; eine geschätzte Warmmiete ist Kaltmiete plus etwa 3 € je m².',
     'footer_plain': 'Miete, Lage und Verfügbarkeit im Inserat prüfen.',
 }
@@ -108,12 +108,12 @@ def _buttons(offer):
     if not twins:
         return mailhtml.button(offer['url'], WORDS['button'])
     return ''.join(
-        mailhtml.button(x['url'], f'Bei {SOURCES.get(x["source"], x["source"])} öffnen', primary=index == 0)
+        mailhtml.button(x['url'], f'Bei {SOURCES.get(x["source"], x["source"])} öffnen ↗', primary=index == 0)
         for index, x in enumerate([offer, *twins])
     )
 
 
-def card(search, offer, photo_src):
+def card(search, offer, photo_src, links):
     """The flat card: wide photo, district and rent, address, title, facts, a button per portal."""
     name, address = place_name(offer)
     estimated = bool(offer.get('price') and offer.get('estimated'))
@@ -129,4 +129,4 @@ def card(search, offer, photo_src):
 </tr></table></td></tr>
 <tr><td style="padding-top:10px;font-size:14px;line-height:1.45;color:#636369">{escape(offer.get('title') or '')}</td></tr>
 <tr><td style="padding-top:6px;font-size:13px;font-weight:600;color:#0a0a0a">{escape(' · '.join(_card_facts(offer)))}</td></tr>
-<tr><td style="padding-top:16px">{_buttons(offer)}</td></tr>""")
+<tr><td style="padding-top:16px">{_buttons(offer)}{mailhtml.actions(links, detail=True)}</td></tr>""")

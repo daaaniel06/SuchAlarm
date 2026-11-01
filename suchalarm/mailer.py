@@ -17,7 +17,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from . import kinds, store
+from . import kinds, mailhtml, maillinks, store
 
 log = logging.getLogger('suchalarm')
 
@@ -168,12 +168,6 @@ def entry_price(entry):
     return _mail(entry[0]).price_text(*entry)
 
 
-def app_url():
-    """Link to the app in mails; without APP_URL (set by the infrastructure repo) mails have no link."""
-    url = os.environ.get('APP_URL', '').strip()
-    return url if url.startswith(('http://', 'https://')) else ''
-
-
 def shipping_text(entry):
     """The note under the price: shipping for products, what the rent is for flats."""
     return _mail(entry[0]).note(*entry)
@@ -193,6 +187,7 @@ def reason(entry):
 
 def plain_entry(entry):
     search, offer = entry
+    links = maillinks.offer_links(search, offer)
     lines = [
         offer['title'],
         f'{entry_price(entry)} · {shipping_text(entry)} · ' + ' · '.join(facts(entry)),
@@ -200,33 +195,67 @@ def plain_entry(entry):
         f'Suche: {search["query"]} · {price_range(search)}',
         offer['url'],
         *(f'Auch bei {twin["name"]}: {twin["url"]}' for twin in offer.get('twins') or []),
+        *(f'{label}: {links[key]}' for key, label in (('save', 'Merken'), ('hide', 'Ausblenden')) if key in links),
     ]
     return '\n'.join(line for line in lines if line)
 
 
 def _card(entry, photo_src=None):
-    return _mail(entry[0]).card(*entry, photo_src)
+    return _mail(entry[0]).card(*entry, photo_src, maillinks.offer_links(*entry))
+
+
+def _kind_name(entries):
+    return (entries[0][0].get('kind') if entries else None) or kinds.DEFAULT
+
+
+def _footer(entries, words):
+    """The way into the app, a pause link per search in this mail, and the unsubscribe link."""
+    base = maillinks.app_url()
+    link = f'color:{mailhtml.INK};font-weight:600'
+    lines = [escape(words['footer'])]
+    if base:
+        searches = {search['id']: search for search, _ in entries if search.get('id') is not None}
+        pauses = ' · '.join(
+            f'Suche „{escape(search["query"])}“ <a href="{escape(maillinks.link("pause", s=sid))}" style="{link}">pausieren</a>'
+            for sid, search in searches.items()
+        )
+        lines += [
+            f'<a href="{escape(base)}/" style="{link}">In der App öffnen</a> · '
+            f'<a href="{escape(maillinks.link("mute", k=_kind_name(entries)))}" style="{link}">Mails abbestellen</a>',
+            *([pauses] if pauses else []),
+        ]
+    lines.append('Rhythmus und Empfänger stellst du in der App unter „Einstellungen“ ein.')
+    return ''.join(f'<p style="margin:0 0 8px">{line}</p>' for line in lines)
+
+
+def _preheader(entries):
+    """The line inbox lists show under the subject; hidden in the mail itself."""
+    if not entries:
+        return ''
+    first = entries[0]
+    text = f'{" ".join(first[1]["title"].split())[:90]} · {entry_price(first)}'
+    if len(entries) > 1:
+        text += f' und {len(entries) - 1} weitere'
+    return f'<div style="display:none;max-height:0;overflow:hidden;mso-hide:all">{escape(text)}</div>'
 
 
 def digest_html(entries, photos=None):
     count = len(entries)
     words = _mail(entries[0][0] if entries else {}).WORDS  # one mail is one kind (worker._send_kind)
-    noun, tagline, footer = words['one' if count == 1 else 'many'], words['tagline'], words['footer']
-    link = (
-        f'<a href="{escape(app_url())}" style="color:#0a0a0a;font-weight:600">In der App ansehen</a> · '
-        if app_url()
-        else ''
-    )
-    return f"""<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="color-scheme" content="light"></head>
-<body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#0a0a0a">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#f4f4f5"><tr><td align="center" style="padding:24px 12px">
+    noun, tagline = words['one' if count == 1 else 'many'], words['tagline']
+    cards = ''.join(_card(entry, photo) for entry, photo in zip(entries, photos or [None] * count, strict=True))
+    return f"""<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"></head>
+<body style="margin:0;padding:0;background:{mailhtml.FILL};font-family:Geist,-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:{mailhtml.INK};-webkit-text-size-adjust:100%">
+{_preheader(entries)}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:{mailhtml.FILL}"><tr><td align="center" style="padding:24px 12px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;max-width:568px;background:#ffffff;border-radius:24px">
-<tr><td style="padding:28px 24px 4px;font-size:13px;font-weight:700;color:#0a0a0a">suchalarm</td></tr>
-<tr><td style="padding:12px 24px 0"><span style="font-size:52px;font-weight:700;letter-spacing:-0.045em;line-height:1">{count}</span>
-<span style="font-size:22px;font-weight:600;letter-spacing:-0.02em"> {noun}</span></td></tr>
-<tr><td style="padding:6px 24px 0;font-size:14px;font-weight:600;color:#0b8043">{tagline}</td></tr>
-<tr><td style="padding:4px 24px 8px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">{''.join(_card(entry, photo) for entry, photo in zip(entries, photos or [None] * len(entries), strict=True))}</table></td></tr>
-<tr><td style="padding:8px 24px 28px;font-size:12px;line-height:1.5;color:#707077">{link}{footer} Rhythmus und Empfänger stellst du in der App unter „Einstellungen“ ein.</td></tr>
+<tr><td style="padding:24px 24px 0;font-size:13px;font-weight:700;letter-spacing:-0.01em;color:{mailhtml.INK}">suchalarm</td></tr>
+<tr><td style="padding:24px 24px 0;line-height:1"><span style="font-size:56px;font-weight:700;letter-spacing:-0.045em">{count}</span><span style="font-size:22px;font-weight:600;letter-spacing:-0.02em">&nbsp;{noun}</span></td></tr>
+<tr><td style="padding:10px 24px 16px;font-size:14px;font-weight:600;color:{mailhtml.GREEN}">{tagline}</td></tr>
+<tr><td style="padding:0 24px 4px"><table {mailhtml.TABLE}>{cards}</table></td></tr>
+</table>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;max-width:568px">
+<tr><td style="padding:20px 24px 8px;font-size:12px;line-height:1.55;color:{mailhtml.MUTED}">{_footer(entries, words)}</td></tr>
 </table></td></tr></table></body></html>"""
 
 
@@ -238,8 +267,11 @@ def compose_digest(entries, recipients, batch):
     title = ' '.join(entries[0][1]['title'].split())[:80]  # headers may not contain line breaks
     message['Subject'] = kind.subject(entries, title)
     message['Message-ID'] = f'<{batch}@suchalarm.local>'
+    if unsubscribe := maillinks.link('mute', k=_kind_name(entries)):
+        message['List-Unsubscribe'] = f'<{unsubscribe}>'
+        message['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click'  # RFC 8058: the client POSTs to it
     lines = '\n\n'.join(plain_entry(entry) for entry in entries)
-    message.set_content(f'{lines}\n\n{kind.WORDS["footer_plain"]}\n{app_url()}'.strip())
+    message.set_content(f'{lines}\n\n{kind.WORDS["footer_plain"]}\n{maillinks.app_url()}'.strip())
     attached: list[tuple[bytes, str]] = []
     sources: list[str | None] = []
     for _, offer in entries:
