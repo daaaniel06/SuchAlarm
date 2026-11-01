@@ -332,9 +332,6 @@ main {
   max-width: 720px;
   margin-inline: auto;
 }
-.page {
-  max-width: 640px;
-}
 
 /* Depot head */
 .hero {
@@ -1654,14 +1651,23 @@ main {
     margin: 0;
   }
   .top-row .area-switch button {
-    flex: 1;
+    flex: 1 1 auto;
+    padding: 0 12px;
+    white-space: nowrap;
   }
-  /* A disturbed source has a long reason: its buttons move below it. */
+  /* "3 neu" takes the place of the icon, so the pill stays on one line. */
+  .top-row .area-switch button:has(.area-new:not(:empty)) svg {
+    display: none;
+  }
+  /* A disturbed source has a long reason: its buttons move below it, right-aligned like in the other rows. */
   .source-field.failed {
     flex-wrap: wrap;
   }
   .source-field.failed > span:first-child {
     flex-basis: 100%;
+  }
+  .source-field.failed .confirm-actions {
+    margin-left: auto;
   }
   .asset-row {
     padding-inline: 4px;
@@ -2050,8 +2056,8 @@ body {
   grid-template-columns: repeat(3, 1fr);
   width: 100%;
 }
-.segment.delivery + .group-note {
-  margin: 8px 0 10px;
+.segment.delivery {
+  margin-bottom: 12px;
 }
 .source-picker {
   display: flex;

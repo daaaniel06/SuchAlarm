@@ -75,9 +75,8 @@ export function renderSettings(checking) {
     .forEach(b => b.setAttribute('aria-pressed', String(b.dataset.settingsTab === tab)));
 
   $('auto').checked = !state.paused;
-  $('auto-text').textContent = state.paused
-    ? 'Pausiert · „Jetzt prüfen“ geht weiterhin'
-    : 'Anbieter werden automatisch mit Abstand abgefragt';
+  $('auto-text').textContent = state.paused ? 'Pausiert · „Jetzt prüfen“ geht weiterhin' : '';
+  $('auto-text').hidden = !state.paused;
   let failedAll = 0;
   $('source-list').innerHTML = AREAS.map((kind, i) => {
     const steps = sourceSteps(checking, true).filter(x => kindOfSource(x.source) === kind),

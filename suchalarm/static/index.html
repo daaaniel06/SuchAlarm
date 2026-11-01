@@ -41,7 +41,7 @@
 <div class="field choice" data-mail="batch-field"><span>Treffer pro Mail<small data-mail="batch-text"></small></span><div class="segment" role="group" aria-label="Treffer pro Mail"><button type="button" data-batch="1">1</button><button type="button" data-batch="2">2</button><button type="button" data-batch="3">3</button></div></div>
 </div>
 <div class="mail-area" data-mail-area="preis">
-<label class="field"><span><b>Mails zu Preisen</b><small>Nur Angebote unter deinem Höchstpreis</small></span><input class="switch" type="checkbox" data-mail="enabled" aria-label="Mails für Preise"></label>
+<label class="field"><span><b>Mails zu Preisen</b></span><input class="switch" type="checkbox" data-mail="enabled" aria-label="Mails für Preise"></label>
 <label class="field" data-mail="frequency-field"><span>Rhythmus</span><span class="unit-input"><select data-mail="frequency"><option>Sofort</option><option>Alle 30 Minuten</option><option>Täglich</option></select><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span></label>
 <div class="field choice" data-mail="batch-field"><span>Treffer pro Mail<small data-mail="batch-text"></small></span><div class="segment" role="group" aria-label="Treffer pro Mail"><button type="button" data-batch="1">1</button><button type="button" data-batch="2">2</button><button type="button" data-batch="3">3</button></div></div>
 </div>
@@ -101,13 +101,12 @@
 <label class="field" data-filter="platform"><span><b>Plattform</b><small>Bei Kleinanzeigen muss sie im Titel stehen</small></span><span class="unit-input"><select id="platform"></select><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span></label>
 </div>
 <div class="group form-group">
-<div class="field"><span><b>Preis</b><small>von – bis</small></span><span class="range-input"><input id="min-price" type="number" inputmode="decimal" min="0" max="1000000" step="0.01" placeholder="0" aria-label="Mindestpreis in Euro"><em>–</em><input id="max-price" type="number" inputmode="decimal" min="0.01" max="1000000" step="0.01" required placeholder="35" aria-label="Höchstpreis in Euro"><em>€</em></span></div>
-<label class="field"><span><b>Auch VB-Angebote</b><small>„150 € VB“ zählt dann als 150 €</small></span><input id="negotiable" class="switch" type="checkbox"></label>
-<label class="field"><span><b>Zu verschenken</b><small>Gratis bei Kleinanzeigen</small></span><input id="free" class="switch" type="checkbox"></label>
+<div class="field"><span><b>Preis</b></span><span class="range-input"><input id="min-price" type="number" inputmode="decimal" min="0" max="1000000" step="0.01" placeholder="0" aria-label="Mindestpreis in Euro"><em>–</em><input id="max-price" type="number" inputmode="decimal" min="0.01" max="1000000" step="0.01" required placeholder="35" aria-label="Höchstpreis in Euro"><em>€</em></span></div>
+<label class="field"><span><b>Auch VB-Angebote</b></span><input id="negotiable" class="switch" type="checkbox"></label>
+<label class="field"><span><b>Zu verschenken</b></span><input id="free" class="switch" type="checkbox"></label>
 </div>
 <div class="segment delivery" role="group" aria-label="Lieferart"><button type="button" data-delivery="versand">Versand</button><button type="button" data-delivery="abholung">Abholung</button><button type="button" data-delivery="beides">Beides</button></div>
-<p class="group-note" id="delivery-hint"></p>
-<div class="group form-group" id="shipping-field"><label class="field"><span><b>Versand einrechnen</b><small id="shipping-hint"></small></span><input id="include-shipping" class="switch" type="checkbox" checked></label></div>
+<div class="group form-group" id="shipping-field"><label class="field"><span><b>Versand einrechnen</b></span><input id="include-shipping" class="switch" type="checkbox" checked></label></div>
 <div class="group form-group" data-pickup>
 <div class="field"><span><b>Umkreis</b></span><span class="area-input"><span class="unit-input"><select id="radius" aria-label="Umkreis"></select><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span><em>um</em><input id="plz" inputmode="numeric" autocomplete="postal-code" maxlength="5" pattern="[0-9]{5}" placeholder="PLZ" aria-label="Postleitzahl"></span></div>
 </div>
@@ -131,7 +130,7 @@
 </div>
 <div class="group form-group">
 <label class="field" id="fee-field"><span><b>Käuferschutz einrechnen</b><small>Vinted: 5 % + 0,70 € pro Kauf</small></span><input id="include-fee" class="switch" type="checkbox" checked></label>
-<label class="field"><span><b>Suche aktiv</b><small>Pausierte Suchen verschicken keine Mails</small></span><input id="active" class="switch" type="checkbox" checked></label>
+<label class="field"><span><b>Suche aktiv</b></span><input id="active" class="switch" type="checkbox" checked></label>
 </div>
 <fieldset class="chip-set"><legend>Angebote mit diesen Wörtern ausblenden</legend><span id="word-chips" class="chips"></span><span class="chip-add"><input id="word" maxlength="60" placeholder="z. B. defekt" aria-label="Wort hinzufügen"><button type="button" class="round-button" id="add-word" aria-label="Hinzufügen" title="Hinzufügen" disabled><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></span></fieldset>
 <fieldset class="chip-set" id="learned-set" hidden><legend>Aus ausgeblendeten Angeboten gelernt, gilt für die ganze Kategorie</legend><span id="learned-chips" class="chips"></span></fieldset>
@@ -165,7 +164,7 @@
 <div class="group form-group">
 <label class="field"><span><b>Frei ab frühestens</b></span><span class="unit-input"><input id="flat-from" type="date"></span></label>
 <label class="field"><span><b>Frei spätestens ab</b></span><span class="unit-input"><input id="flat-by" type="date"></span></label>
-<label class="field"><span><b>Suche aktiv</b><small>Pausierte Suchen verschicken keine Mails</small></span><input id="flat-active" class="switch" type="checkbox" checked></label>
+<label class="field"><span><b>Suche aktiv</b></span><input id="flat-active" class="switch" type="checkbox" checked></label>
 </div>
 </details>
 <p id="flat-error" class="group-note down" role="alert" hidden></p>

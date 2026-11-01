@@ -42,11 +42,6 @@ const deliveryText = s =>
         : 'ohne Versand';
 // Searches with pickup show postcode and radius; "beides" also takes shipped offers from all of Germany.
 export const PICKUP = ['abholung', 'beides'];
-export const DELIVERY_HINTS = {
-  versand: 'Deutschlandweit mit Versand',
-  abholung: 'Nur Angebote im Umkreis deiner PLZ',
-  beides: 'Im Umkreis abholen oder deutschlandweit mit Versand',
-};
 // What sets a search apart besides price and delivery, as small tags.
 function searchTags(s) {
   const f = s.filters || {},

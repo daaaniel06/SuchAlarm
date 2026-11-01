@@ -3,7 +3,7 @@
 import { escapeHtml, priceInput, splitWords } from './logic.js';
 import { $ } from './ui.js';
 import { api, message, refresh, state } from './page.js';
-import { DELIVERY_HINTS, PICKUP, PLACEHOLDERS, categoryIcon, categoryOf } from './searches.js';
+import { PICKUP, PLACEHOLDERS, categoryIcon, categoryOf } from './searches.js';
 
 let words = [],
   deleteArmed = false;
@@ -37,11 +37,6 @@ function addWord() {
   $('word').value = '';
   $('add-word').disabled = true;
   renderWords();
-}
-function shippingHint() {
-  $('shipping-hint').textContent = $('include-shipping').checked
-    ? 'Artikel + Versand unter dem Höchstpreis'
-    : 'Nur der Artikelpreis zählt';
 }
 // The category chips on top preset the form; everything stays editable.
 let draft = { category: 'sonstiges', delivery: 'versand' };
@@ -90,7 +85,6 @@ function applyDelivery() {
     .forEach(b => b.setAttribute('aria-pressed', String(b.dataset.delivery === draft.delivery)));
   document.querySelectorAll('[data-pickup]').forEach(el => (el.hidden = !nearby));
   $('shipping-field').hidden = nearby; // picked-up offers have no shipping: all compare by item price
-  $('delivery-hint').textContent = DELIVERY_HINTS[draft.delivery];
   sourceBoxes().forEach(el => {
     const possible = !pickup || state.choices.pickup_sources.includes(el.value);
     el.disabled = !possible;
@@ -168,7 +162,6 @@ export function openEditor(id) {
   $('delete-search').textContent = 'Suche löschen';
   deleteArmed = false;
   $('form-error').hidden = true;
-  shippingHint();
   draft = { category: search ? categoryOf(search) : 'sonstiges', delivery: search?.delivery || 'versand' };
   chooseCategory(draft.category, !search);
   renderWords();
@@ -196,7 +189,6 @@ function formError(text) {
   $('form-error').hidden = false;
 }
 
-$('include-shipping').addEventListener('change', shippingHint);
 $('include-fee').addEventListener('change', moreSummary);
 $('active').addEventListener('change', moreSummary);
 $('alternatives').addEventListener('input', moreSummary);

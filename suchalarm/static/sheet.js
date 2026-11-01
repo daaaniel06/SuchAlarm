@@ -59,8 +59,8 @@ export function renderSheet() {
 
 function rentLine(o) {
   if (!o.price) return ['–', 'Miete nicht angegeben'];
-  if (o.estimated || o.note === 'geschätzt') return [euro(o.price), 'Geschätzt: Kaltmiete + ca. 3 €/m²'];
-  return [euro(o.price), 'Warmmiete pro Monat'];
+  if (o.estimated || o.note === 'geschätzt') return [euro(o.price), 'Warmmiete geschätzt'];
+  return [euro(o.price), 'Warmmiete'];
 }
 
 function detailHtml({ o, saved, live }) {
