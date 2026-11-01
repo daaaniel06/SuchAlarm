@@ -68,6 +68,21 @@ class DomainTests(unittest.TestCase):
         self.assertFalse(matches('iPhone 13 Pro Max', 'iphone 13', 'pro max'))
         self.assertFalse(matches('Switch OLED ohne Spiel', 'switch', 'ohne spiel'))
 
+    def test_an_excluded_word_after_a_negation_keeps_the_offer(self):
+        self.assertTrue(matches('Rennrad nicht defekt', 'rennrad', 'defekt'))
+        self.assertTrue(matches('Spiel PS5 ohne Hülle', 'spiel ps5', 'Hülle'))
+        self.assertFalse(matches('Rennrad defekt', 'rennrad', 'defekt'))
+        self.assertFalse(matches('Rennrad kein Licht, defekt', 'rennrad', 'defekt'))
+        self.assertFalse(matches('Switch OLED ohne Spiel', 'switch', 'ohne spiel'))  # the negation is the phrase
+
+    def test_words_sellers_write_either_way(self):
+        self.assertTrue(matches('Final Fantasy VII Remake', 'final fantasy 7'))
+        self.assertTrue(matches('Volkswagen Golf', 'vw golf'))
+        self.assertTrue(matches('Cube Pedelec', 'cube e-bike'))
+        self.assertTrue(matches('Xbox Series X 1TB', 'xbox series x'))
+        self.assertFalse(matches('Xbox Series 10', 'xbox series x'))  # I, V and X stay letters
+        self.assertFalse(matches('iPhone 9', 'iphone x'))
+
     def test_two_words_written_as_one_still_match(self):
         self.assertTrue(matches("Marvel's Spiderman 2 PS5", 'spider-man 2'))
         self.assertTrue(matches('Marvel Spider-Man 2', 'spiderman 2'))
