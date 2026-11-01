@@ -76,7 +76,8 @@ def token(action, **data):
 def read(value):
     """The action of a token, or None if it is broken or forged."""
     body, _, signature = value.partition('.')
-    if not hmac.compare_digest(signature, _sign(body)):
+    # As bytes: compare_digest refuses str with non-ASCII characters, and a typed-in link may carry some.
+    if not hmac.compare_digest(signature.encode(), _sign(body).encode()):
         return None
     try:
         data = json.loads(base64.urlsafe_b64decode(body + '=' * (-len(body) % 4)))

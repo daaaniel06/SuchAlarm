@@ -20,6 +20,7 @@
   },
   "eslintConfig": {
     "root": true,
+    "extends": "eslint:recommended",
     "env": {
       "browser": true,
       "es2022": true
@@ -32,6 +33,12 @@
       "no-undef": "error",
       "no-redeclare": "error",
       "no-import-assign": "error",
+      "no-empty": [
+        "error",
+        {
+          "allowEmptyCatch": true
+        }
+      ],
       "no-unused-vars": "warn",
       "no-shadow": "warn"
     },

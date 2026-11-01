@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const logic = require('../suchalarm/static/logic.js');
 
-const plain = text => text.replace(/ /g, ' ');
+const plain = text => text.replace(/\u00a0/g, ' ');
 
 test('euro and thousands use German formatting', () => {
   assert.equal(plain(logic.euro(123456)), '1.234,56 €');
@@ -152,6 +152,8 @@ test('move-in reads like the mail and a past day means free now', () => {
   assert.equal(logic.moveIn('2026-12-01', '2026-10-25'), 'frei ab 01.12.2026');
   assert.equal(logic.moveIn('2026-10-01', '2026-10-25'), 'sofort frei');
   assert.equal(logic.moveIn(null), '');
+  // Half past midnight local time is still the previous day in UTC; today counts by the local day.
+  assert.equal(logic.localDay(new Date(2026, 10, 2, 0, 30)), '2026-11-02');
   assert.equal(logic.dateText(Date.UTC(2026, 9, 25, 12) / 1000), '25.10.2026');
 });
 

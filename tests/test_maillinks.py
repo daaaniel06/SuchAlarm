@@ -36,10 +36,11 @@ class MailLinkTests(unittest.TestCase):
         token = maillinks.token('hide', s=self.sid, u=URL)
         body, signature = token.split('.')
         forged = maillinks.token('pause', s=self.sid).split('.')[0] + '.' + signature
-        for bad in (forged, body, 'x.y', ''):
+        for bad in (forged, body, 'x.y', '', f'{body}.äöü', 'äöü.x'):
             self.assertIsNone(maillinks.read(bad), bad)
         self.assertEqual(self.client.post(f'/m/{forged}').status_code, 404)
         self.assertEqual(self.client.get('/m/kaputt').status_code, 404)
+        self.assertEqual(self.client.get(f'/m/{body}.%C3%A4').status_code, 404)  # not a server error
 
     def test_opening_asks_and_only_the_button_hides_with_undo(self):
         path = self.path(maillinks.link('hide', s=self.sid, u=URL))
