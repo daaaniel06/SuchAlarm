@@ -327,13 +327,11 @@ main {
 .area-new:empty {
   display: none;
 }
+/* Every view uses the same column, so headings and the area switch share one left edge. */
 .depot,
 .page {
   max-width: 720px;
   margin-inline: auto;
-}
-.page {
-  max-width: 640px;
 }
 
 /* Depot head */
@@ -350,12 +348,12 @@ main {
   letter-spacing: -0.045em;
   font-variant-numeric: tabular-nums;
 }
+/* The status line and its "Jetzt prüfen" (or the progress in its place) read as one unit. */
 .depot-status {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
+  gap: 8px 10px;
 }
 #summary {
   margin: 0;
@@ -1654,14 +1652,23 @@ main {
     margin: 0;
   }
   .top-row .area-switch button {
-    flex: 1;
+    flex: 1 1 auto;
+    padding: 0 12px;
+    white-space: nowrap;
   }
-  /* A disturbed source has a long reason: its buttons move below it. */
+  /* "3 neu" takes the place of the icon, so the pill stays on one line. */
+  .top-row .area-switch button:has(.area-new:not(:empty)) svg {
+    display: none;
+  }
+  /* A disturbed source has a long reason: its buttons move below it, right-aligned like in the other rows. */
   .source-field.failed {
     flex-wrap: wrap;
   }
   .source-field.failed > span:first-child {
     flex-basis: 100%;
+  }
+  .source-field.failed .confirm-actions {
+    margin-left: auto;
   }
   .asset-row {
     padding-inline: 4px;
@@ -1933,16 +1940,14 @@ body {
 #progress[hidden] {
   display: none;
 }
-.filters .round-button {
-  width: 36px;
-  height: 36px;
-}
+/* "Jetzt prüfen" sits in the status line it refreshes, not among the list's view controls. */
 #check-all:disabled {
   opacity: 0.45;
   cursor: default;
 }
 
-/* Tabs and both menus share one row; the menus are round icon buttons opening the native picker */
+/* Tabs and both menus share one row. On desktop the menus say what they hold ("Alle Suchen", "Neueste");
+   on phones they are round icon buttons opening the native picker. */
 .list-tools {
   flex-wrap: nowrap;
 }
@@ -1951,41 +1956,31 @@ body {
   flex: none;
 }
 .sort-select {
-  justify-content: center;
-  width: 36px;
   height: 36px;
-  border-radius: 50%;
+  border-radius: 999px;
   background: var(--fill);
-  color: var(--ink);
+  color: var(--ink-2);
   transition: background-color 0.15s;
 }
 .sort-select:hover {
   background: var(--fill-2);
 }
 .sort-select select {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  width: 100%;
-  max-width: none;
-  height: 100%;
-  padding: 0;
-  opacity: 0;
+  max-width: 220px;
+  height: 36px;
+  padding: 0 32px 0 36px;
+  color: inherit;
 }
-.sort-select svg {
-  display: none;
+.sort-select select:hover {
+  background: transparent;
 }
 .sort-select .sel-icon {
-  display: block;
-  position: static;
-  width: 18px;
-  height: 18px;
-  min-width: 18px;
+  left: 12px;
+  right: auto;
   color: currentColor;
 }
 .sort-select.active {
-  background: var(--ink);
-  color: var(--bg);
+  color: var(--ink);
 }
 .sort-select::after {
   inset: -4px;
@@ -1993,6 +1988,37 @@ body {
 .sort-select:focus-within {
   outline: 2px solid var(--ink);
   outline-offset: 2px;
+}
+@media (max-width: 820px) {
+  .sort-select {
+    justify-content: center;
+    width: 36px;
+    border-radius: 50%;
+    color: var(--ink);
+  }
+  .sort-select select {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    padding: 0;
+    opacity: 0;
+  }
+  .sort-select svg {
+    display: none;
+  }
+  .sort-select .sel-icon {
+    display: block;
+    position: static;
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
+  }
+  .sort-select.active {
+    background: var(--ink);
+    color: var(--bg);
+  }
 }
 
 /* Search editor: category chips on top, compact rows, rarely changed options folded away */
@@ -2179,25 +2205,6 @@ body {
   font-weight: 500;
   white-space: nowrap;
   text-overflow: ellipsis;
-}
-.sheet-tools {
-  display: flex;
-  gap: 8px;
-  margin-left: auto;
-}
-.sheet-top .sheet-tools .round-button {
-  margin-left: 0;
-}
-.round-button.tool.on {
-  background: var(--ink);
-  color: var(--bg);
-}
-.round-button.tool.on svg {
-  fill: currentColor;
-}
-.round-button.tool .mark {
-  width: 18px;
-  height: 18px;
 }
 #detail h2 {
   margin: 4px 0 2px;

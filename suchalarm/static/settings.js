@@ -22,7 +22,7 @@ export function renderMailStatus() {
     renderMail();
   }
   renderServerRow();
-  $('test-mail').disabled = !state.mail.configured || !state.mail.recipients.length;
+  $('test-mail').hidden = !state.mail.configured || !state.mail.recipients.length; // only where it can work
   $('server-test').disabled = !state.mail.configured;
   const mailError = state.mail.configured ? state.mail.error : '';
   $('mail-error').hidden = !mailError;

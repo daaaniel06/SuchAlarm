@@ -395,9 +395,9 @@ class AreaInterfaceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await page.locator('#offer-unit').inner_text(), 'Angebot')
             self.assertEqual(await page.locator('[data-area="preis"]').get_attribute('aria-pressed'), 'true')
             await page.locator('[data-view="searches"]').first.click()
-            self.assertEqual(await page.locator('#new-search').get_attribute('aria-label'), 'Neue Preissuche')
+            self.assertEqual(await page.locator('#new-search').text_content(), 'Neue Preissuche')
             await page.keyboard.press('1')
-            self.assertEqual(await page.locator('#new-search').get_attribute('aria-label'), 'Neue Wohnungssuche')
+            self.assertEqual(await page.locator('#new-search').text_content(), 'Neue Wohnungssuche')
             await page.locator('#new-search').click()
             self.assertTrue(await page.locator('#flat-editor').evaluate('dialog => dialog.open'))
             await page.keyboard.press('2')  # a key in an open dialog never switches the area

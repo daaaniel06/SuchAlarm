@@ -90,8 +90,7 @@ function flatTags(s) {
 // One group per category, in the fixed category order; flat searches are one group.
 export function renderSearches(searches) {
   const label = `Neue ${AREA_TEXT[area].search}`;
-  $('new-search').setAttribute('aria-label', label);
-  $('new-search').title = label;
+  $('new-search').textContent = label;
   if (area === 'wohnung') {
     $('search-list').innerHTML = searches.length
       ? `<section class="search-group"><ul class="group">${searches.map(searchItem).join('')}</ul></section>`
