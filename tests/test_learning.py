@@ -109,3 +109,21 @@ class LearningTests(unittest.TestCase):
         with store.db() as conn:
             store.unhide(conn)
         self.assertEqual(learning.learned({'category': 'videospiele'}), [])
+
+    def test_a_word_taken_back_no_longer_filters_its_category(self):
+        games, lamps = self.search(GAME, 'videospiele'), self.search('Lampe', 'elektronik')
+        self.offers(games, POSTERS, hidden=True)
+        self.offers(lamps, [f'Lampe encadrée {n}' for n in range(2)], hidden=True)
+        learning.forget('videospiele', 'affiche')
+        self.assertEqual(learning.learned({'category': 'videospiele'}), ['encadree'])
+        self.assertEqual(learning.learned({'category': 'elektronik'}), ['encadree'])  # other categories keep it
+        self.offers(self.search(GAME, 'videospiele'), [f'Affiche {GAME} {n}' for n in range(3)], hidden=True)
+        self.assertEqual(learning.learned({'category': 'videospiele'}), ['encadree'])  # never learned again
+
+    def test_the_editor_sees_freshly_hidden_offers_without_writing(self):
+        games = self.search(GAME, 'videospiele')
+        self.offers(games, POSTERS, hidden=True)
+        searches = [{'category': 'videospiele'}, {'category': None}]
+        self.assertEqual(learning.by_category(searches), {'sonstiges': [], 'videospiele': ['affiche', 'encadree']})
+        with store.db() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM hidden_titles').fetchone()[0], 0)

@@ -318,8 +318,8 @@ def search_url(source, search):
 
 
 def extras(searches):
-    """Product searches add nothing of their own to /api/state."""
-    return {}
+    """The words hiding taught each category, shown in the editor to take back."""
+    return {'learned': learning.by_category(searches)}
 
 
 def hits(searches, hidden):

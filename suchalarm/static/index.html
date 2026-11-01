@@ -129,6 +129,7 @@
 <label class="field"><span><b>Suche aktiv</b><small>Pausierte Suchen verschicken keine Mails</small></span><input id="active" class="switch" type="checkbox" checked></label>
 </div>
 <fieldset class="chip-set"><legend>Angebote mit diesen Wörtern ausblenden</legend><span id="word-chips" class="chips"></span><span class="chip-add"><input id="word" maxlength="60" placeholder="z. B. defekt" aria-label="Wort hinzufügen"><button type="button" class="round-button" id="add-word" aria-label="Hinzufügen" title="Hinzufügen" disabled><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></span></fieldset>
+<fieldset class="chip-set" id="learned-set" hidden><legend>Aus ausgeblendeten Angeboten gelernt, gilt für die ganze Kategorie</legend><span id="learned-chips" class="chips"></span></fieldset>
 </details>
 <p id="form-error" class="group-note down" role="alert" hidden></p>
 <div class="sheet-actions"><button type="submit" class="pill primary" id="save-search">Speichern</button><button type="button" class="pill" id="cancel-editor">Abbrechen</button></div>

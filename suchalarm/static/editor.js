@@ -17,6 +17,19 @@ function renderWords() {
     )
     .join('');
 }
+// Words hiding taught the category (preis/learning.py); a tap takes one back for the whole category.
+const learnedWords = () => state.learned?.[draft.category] || [];
+function renderLearned() {
+  const learned = learnedWords();
+  $('learned-set').hidden = !learned.length;
+  $('learned-chips').innerHTML = learned
+    .map(
+      w =>
+        `<button type="button" class="chip" aria-pressed="true" data-learned="${escapeHtml(w)}" aria-label="${escapeHtml(w)} zurücknehmen">${escapeHtml(w)}<svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button>`,
+    )
+    .join('');
+  moreSummary();
+}
 function addWord() {
   const word = $('word').value.replace(/,/g, ' ').trim();
   if (word && !words.some(w => w.toLowerCase() === word.toLowerCase()) && [...words, word].join(', ').length <= 400)
@@ -61,6 +74,7 @@ function chooseCategory(key, presets) {
   }
   draft.category = key;
   renderCategoryChips();
+  renderLearned();
   [$('query').placeholder, $('max-price').placeholder] = PLACEHOLDERS[key] || ['', ''];
   document.querySelector('[data-filter=platform]').hidden = !c.filters.includes('platform');
   document.querySelector('[data-filter=vehicle]').hidden = !c.filters.includes('year_from');
@@ -101,6 +115,8 @@ function moreSummary() {
     spellings = splitWords($('alternatives').value).length;
   if (spellings) parts.push(spellings === 1 ? '1 andere Schreibweise' : `${spellings} andere Schreibweisen`);
   if (words.length) parts.push(words.length === 1 ? '1 Wort ausgeblendet' : `${words.length} Wörter ausgeblendet`);
+  const learned = learnedWords().length;
+  if (learned) parts.push(learned === 1 ? '1 Wort gelernt' : `${learned} Wörter gelernt`);
   if (!$('fee-field').hidden && !$('include-fee').checked) parts.push('ohne Käuferschutz');
   if (!$('active').checked) parts.push('pausiert');
   $('more-summary').textContent = parts.join(' · ');
@@ -214,6 +230,23 @@ $('word-chips').addEventListener('click', e => {
   if (chip) {
     words.splice(Number(chip.dataset.word), 1);
     renderWords();
+  }
+});
+$('learned-chips').addEventListener('click', async e => {
+  const chip = e.target.closest('[data-learned]');
+  if (!chip) return;
+  chip.disabled = true;
+  try {
+    await api('learned/forget', {
+      method: 'POST',
+      body: JSON.stringify({ category: draft.category, word: chip.dataset.learned }),
+    });
+    await refresh();
+    renderLearned();
+    message(`„${chip.dataset.learned}“ blendet nichts mehr aus.`);
+  } catch (err) {
+    chip.disabled = false;
+    formError(err.message);
   }
 });
 

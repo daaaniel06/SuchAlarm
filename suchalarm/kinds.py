@@ -9,9 +9,10 @@ A kind's module offers:
 - hits, bookmark, samples, clear, reset (after an edit), search_url, extras: the API
 - MODEL (the pydantic search body) and CHOICES (what its editor offers): models.py and /api/state
 
-A kind's own endpoints (wohnung/api.py) are an APIRouter in ROUTERS.
+A kind's own endpoints (preis/api.py, wohnung/api.py) are an APIRouter in ROUTERS.
 """
 
+from .preis import api as preis_api
 from .preis import worker as preis
 from .wohnung import api as wohnung_api
 from .wohnung import worker as wohnung
@@ -47,7 +48,7 @@ MAIL = ('WORDS', 'price', 'price_text', 'note', 'facts', 'price_range', 'reason'
 
 KINDS = {'preis': preis, 'wohnung': wohnung}
 DEFAULT = 'preis'  # a search without kind is a product search, as before flats existed
-ROUTERS = (wohnung_api.ROUTER,)
+ROUTERS = (preis_api.ROUTER, wohnung_api.ROUTER)
 
 
 def of(search):

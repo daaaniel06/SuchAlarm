@@ -156,3 +156,15 @@ class Search(BaseModel):
         allowed = CATEGORIES[self.category]['filters']
         self.filters = Filters(**{key: value for key, value in self.filters.model_dump().items() if key in allowed})
         return self
+
+
+class Forget(BaseModel):
+    category: str = Field(max_length=40)
+    word: str = Field(min_length=1, max_length=60)
+
+    @field_validator('category')
+    @classmethod
+    def known_category(cls, value):
+        if value not in CATEGORIES:
+            raise ValueError('Unbekannte Kategorie.')
+        return value
