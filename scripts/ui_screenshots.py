@@ -1,9 +1,11 @@
 """Screenshots of every view of the page with sample data, for comparing layouts before and after a change.
 
-    .venv/bin/python scripts/ui_screenshots.py --ref origin/main docs/ui/vorher
-    .venv/bin/python scripts/ui_screenshots.py docs/ui/nachher
-    .venv/bin/python scripts/ui_screenshots.py --compare docs/ui/vorher docs/ui/nachher docs/ui/index.html \
-        --notes docs/ui/notizen.json
+    .venv/bin/python scripts/ui_screenshots.py --ref origin/main ui-screenshots/vorher
+    .venv/bin/python scripts/ui_screenshots.py ui-screenshots/nachher
+    .venv/bin/python scripts/ui_screenshots.py --compare ui-screenshots/vorher ui-screenshots/nachher \
+        ui-screenshots/index.html --notes ui-screenshots/notizen.json
+
+ui-screenshots/ is ignored by git: the pictures are for looking, not for the repository.
 
 Starts the app on its own DATA_DIR (a temporary folder) without worker and image downloads, fills in
 searches, hits, watch list, source states and mail history, and photographs both areas on a phone (375 px)
