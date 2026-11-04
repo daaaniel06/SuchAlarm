@@ -18,10 +18,10 @@ from .domain import (
     beyond_radius,
     distance_km,
     home_area,
-    is_wanted_ad,
     outside_home,
     place_query,
     profile,
+    wanted_ad,
 )
 
 log = logging.getLogger('suchalarm')
@@ -446,7 +446,7 @@ def select(listings, search):
     p, middle = profile(search), centre(search)
     kept = []
     for listing in listings:
-        if is_wanted_ad(listing.title) or beyond_radius(listing, p, middle) is not None:
+        if wanted_ad(listing) or beyond_radius(listing, p, middle) is not None:
             continue
         if listing.source in ('bauverein', 'nhw') and p['radius']:
             spot = (listing.lat, listing.lon) if listing.lat is not None else None

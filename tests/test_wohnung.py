@@ -7,6 +7,7 @@ import re
 import tempfile
 import time
 import unittest
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -115,6 +116,19 @@ class TextTests(unittest.TestCase):
         ):
             self.assertIs(domain.is_wanted_ad(title), wanted, title)
 
+    def test_only_kleinanzeigen_mixes_wanted_ads_among_offers(self):
+        """The other portals list offers only: a landlord's playful title stays ("Wohnung gesucht, Haus gefunden",
+        ImmoScout24 04.11.2026)."""
+        title = 'Wohnung gesucht, Haus gefunden'
+        self.assertEqual(match(flat(title=title), PROFILE)[0], 'matched')
+        with patch.object(sources, 'centre', return_value=None):  # no place lookup
+            self.assertEqual(len(sources.select([flat(title=title)], search(query='Berlin'))), 1)  # LISTING lies there
+            seeker = flat(source='kleinanzeigen-wohnung', title='Suche 2-Zimmer-Wohnung in Darmstadt')
+            self.assertEqual(sources.select([seeker], search(query='Berlin')), [])
+        offer = {'type': 'EXPOSE_RESULT', 'item': {'id': '171321247', 'title': title, 'attributes': []}}
+        self.assertEqual(len(portals.immoscout_parse({'resultListItems': [offer]})), 1)
+        self.assertEqual(match(seeker, PROFILE)[0], 'excluded')
+
 
 class FilterTests(unittest.TestCase):
     def test_excluded_districts_only_match_whole_names_in_the_location(self):
@@ -153,7 +167,7 @@ class FilterTests(unittest.TestCase):
             ({'traits': ['WBS']}, 'excluded'),
             ({'traits': ['Befristet']}, 'matched'),
             ({'exclusions_known': False}, 'unclear'),
-            ({'title': 'Paar sucht Wohnung'}, 'excluded'),
+            ({'source': 'kleinanzeigen-wohnung', 'title': 'Paar sucht Wohnung'}, 'excluded'),
         ):
             self.assertEqual(match(flat(**changes), PROFILE)[0], expected, changes)
 
@@ -181,7 +195,7 @@ class FilterTests(unittest.TestCase):
         self.assertFalse(could(flat(rent=1400), PROFILE))
         self.assertFalse(could(flat(area=40), PROFILE))
         self.assertFalse(could(flat(traits=['WBS']), PROFILE))
-        self.assertFalse(could(flat(title='Paar sucht Wohnung'), PROFILE))
+        self.assertFalse(could(flat(source='kleinanzeigen-wohnung', title='Paar sucht Wohnung'), PROFILE))
         self.assertFalse(could(flat(title='Möbliert auf Zeit'), {**PROFILE, 'excludeWords': ['möbliert']}))
         self.assertFalse(could(flat(available_from='2027-03-01'), {**PROFILE, 'moveInBy': '2026-12-31'}))
 
@@ -569,6 +583,8 @@ class ParserTests(unittest.TestCase):
             (eberstadt['place'], eberstadt['area'], eberstadt['traits']),
             ('64297 Darmstadt (Eberstadt)', 100.5, ['WBS']),
         )
+        lettered = fixture('ohne-makler', 'list.html').replace('href="/immobilie/100001/"', 'href="/immobilie/23pe4c/"')
+        self.assertEqual(portals.om_parse(lettered)[0]['url'], 'https://www.ohne-makler.net/immobilie/23pe4c/')
         nothing = fixture('ohne-makler', 'list.html').replace(
             'Hier listen wir 2 Angebote für Wohnungen zur Miete in Darmstadt auf.', ''
         )
@@ -682,6 +698,14 @@ class ParserTests(unittest.TestCase):
             'https://www.wg-gesucht.de/wohnungen-in-Darmstadt.23.1+2.1.0.html?rMax=700&limit=100&exc=2'
             '&offer_filter=1&city_id=23&categories%5B%5D=1&categories%5B%5D=2&rent_types%5B%5D=2',
         )
+        # A list without flats (live 04.11.2026): no offer, not an unreadable page.
+        empty = '<h1>1-Zimmer-Wohnungen, Mietwohnungen in Darmstadt</h1>\n<h2 class="mb10">\n 0 Angebote in allen Kategorien in Darmstadt\n</h2>'
+        self.assertEqual(
+            portals.wg_parse(empty + '<a href="/wohnungen-in-Erzhausen.473.1+2.1.0.html">1 Angebot in Erzhausen</a>'),
+            [],
+        )
+        with self.assertRaises(Unreadable):
+            portals.wg_parse('<h2>3 Angebote in allen Kategorien in Darmstadt</h2>')  # cards there, but none read
         cards = portals.wg_parse(WG_LIST)
         self.assertEqual(
             [(c['rent'], c['area'], c['rooms'], c['availableFrom'], c['traits']) for c in cards],
@@ -1354,6 +1378,21 @@ class WorkerTests(TempData):
             status = conn.execute('SELECT error, count FROM source_status').fetchone()
         self.assertIn('plötzlich keine Angebote', status['error'])
         self.assertEqual(len(catalog.listings(flat_search)), 6)  # the stock stays visible
+
+    def test_a_portal_that_stays_empty_stays_disturbed(self):
+        """Also after a failure in between; a landlord's stock is not let because of an empty page."""
+        flat_search = self.stored_search(query='Darmstadt', sources=['nhw'])
+        self.run_check(
+            [replace(self.card(n), source='nhw', url=f'https://www.nhw.de/w/{n}') for n in range(6)], flat_search
+        )
+        with patch.object(flats.sources, 'fetch', new=AsyncMock(side_effect=RuntimeError('Anbieter weg.'))):
+            asyncio.run(worker.check(flat_search))
+        for _ in range(2):
+            self.run_check([], flat_search)
+        with store.db() as conn:
+            status = conn.execute('SELECT error FROM source_status').fetchone()
+        self.assertIn('plötzlich keine Angebote', status['error'])
+        self.assertEqual(len(catalog.listings(flat_search)), 6)
 
     def test_flat_searches_go_through_the_shared_worker_and_scheduler(self):
         from suchalarm import scheduler, worker

@@ -12,7 +12,6 @@ from ..domain import (
     clip,
     coordinate_pair,
     detect_traits,
-    is_wanted_ad,
     line,
     money,
     number,
@@ -102,11 +101,11 @@ def immoscout_parse(data):
 
 
 def _immoscout_listing(entry):
-    """One flat of the result list, or None for ads, wanted ads and entries without an ID."""
+    """One flat of the result list, or None for ads and entries without an ID. ImmoScout24 lists offers only."""
     item = entry.get('item') or {}
     identifier = str(item.get('id', ''))
     title = line(item.get('title')) or 'Wohnung'
-    if entry.get('type') != 'EXPOSE_RESULT' or not identifier.isdigit() or is_wanted_ad(title):
+    if entry.get('type') != 'EXPOSE_RESULT' or not identifier.isdigit():
         return None
     values = [str(attr.get('value') or '') for attr in item.get('attributes') or [] if isinstance(attr, dict)]
     address = item.get('address') or {}

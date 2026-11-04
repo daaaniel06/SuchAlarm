@@ -27,13 +27,15 @@ def learned(search, remember=True):
     with store.db() as conn:
         if remember:
             _remember_hidden(conn)
+        # One title per hidden offer: the kept one, else (not remembered yet) the offer's current title.
         hidden = [
             (r['title'], wanted[r['search_id']])
             for r in conn.execute(
-                f'SELECT t.search_id, t.url, t.title FROM hidden_titles t JOIN hidden h '
-                f'ON h.search_id=t.search_id AND h.url=t.url WHERE t.search_id IN ({marks}) UNION '
-                f'SELECT o.search_id, o.url, o.title FROM offers o JOIN hidden h '
-                f'ON h.search_id=o.search_id AND h.url=o.url WHERE o.search_id IN ({marks})',
+                f'SELECT t.search_id, t.title FROM hidden_titles t JOIN hidden h '
+                f'ON h.search_id=t.search_id AND h.url=t.url WHERE t.search_id IN ({marks}) UNION ALL '
+                f'SELECT o.search_id, o.title FROM offers o JOIN hidden h '
+                f'ON h.search_id=o.search_id AND h.url=o.url WHERE o.search_id IN ({marks}) AND NOT EXISTS '
+                '(SELECT 1 FROM hidden_titles t WHERE t.search_id=o.search_id AND t.url=o.url)',
                 ids + ids,
             )
         ]
