@@ -7,6 +7,7 @@ import json
 import os
 import random
 import sqlite3
+import threading
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
@@ -128,11 +129,11 @@ SCHEMA = """
 _ready_paths: set[Path] = set()
 
 
-def connect(path, setup):
+def connect(path, setup, timeout=20):
     """Open a database file; SETUP (schema and migrations) runs once per process and file, not on every call."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fresh = path not in _ready_paths or not path.exists()
-    conn = sqlite3.connect(path, timeout=20)
+    conn = sqlite3.connect(path, timeout=timeout)
     conn.row_factory = sqlite3.Row
     if fresh:
         try:
@@ -161,10 +162,19 @@ def data_dir():
     return Path(os.environ.get('DATA_DIR', '/data'))
 
 
+# Files with a transaction open in this thread. Every transaction here takes the write lock at once (BEGIN
+# IMMEDIATE), so a second one on the same file in the same thread could only wait for itself: it fails at once
+# instead of standing the event loop still for the 20 s timeout (store.db() keeps the same rule).
+_open = threading.local()
+
+
 @contextmanager
 def transaction(path, setup):
     """One immediate transaction on a database file of DATA_DIR; SETUP creates its tables."""
-    conn = connect(data_dir() / path, setup)
+    file = data_dir() / path
+    open_here = _open.__dict__.setdefault('files', [])
+    conn = connect(file, setup, timeout=0 if file in open_here else 20)
+    open_here.append(file)
     try:
         conn.execute('BEGIN IMMEDIATE')
         yield conn
@@ -173,6 +183,7 @@ def transaction(path, setup):
         conn.rollback()
         raise
     finally:
+        open_here.remove(file)
         conn.close()
 
 

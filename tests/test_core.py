@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import smtplib
+import sqlite3
 import tempfile
 import time
 import unittest
@@ -1045,3 +1046,46 @@ class DeliveryOutcomeTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class NestedConnectionTests(unittest.TestCase):
+    """A second connection that would wait for the first one's write lock in the same thread fails at once:
+    waiting can never end there, and it would stand the whole app still (the event loop) for 20 seconds."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.env = patch.dict(os.environ, {'DATA_DIR': self.tmp.name})
+        self.env.start()
+        store.init()
+
+    def tearDown(self):
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def test_a_second_writer_inside_a_writing_transaction_fails_at_once(self):
+        start = time.monotonic()
+        with store.db() as outer:
+            store.put_setting(outer, 'a', '1')
+            self.assertEqual(store.settings().get('paused'), None)  # reading through a second connection is fine
+            with self.assertRaises(sqlite3.OperationalError), store.db() as inner:
+                store.put_setting(inner, 'b', '2')
+        self.assertLess(time.monotonic() - start, 2)
+        with store.db() as conn:  # afterwards everything works as before
+            store.put_setting(conn, 'b', '2')
+        self.assertEqual((store.settings()['a'], store.settings()['b']), ('1', '2'))
+
+    def test_a_writer_inside_a_reading_transaction_may_wait_as_usual(self):
+        with store.db() as outer:
+            store.settings()
+            outer.execute('SELECT 1')
+            with store.db() as inner:
+                store.put_setting(inner, 'c', '3')
+        self.assertEqual(store.settings()['c'], '3')
+
+    def test_a_second_cadence_transaction_on_the_same_file_fails_at_once(self):
+        start = time.monotonic()
+        with cadence.db(), self.assertRaises(sqlite3.OperationalError), cadence.db():
+            pass
+        self.assertLess(time.monotonic() - start, 2)
+        with cadence.db(), images.db():  # another file is its own lock
+            pass
