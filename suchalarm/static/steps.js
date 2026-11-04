@@ -46,7 +46,11 @@ export function sourceStep(search, source) {
   const hits = pool(kindOf(search)).filter(
     o => o.search_id === search.id && o.source === source && fits(o, search),
   ).length;
-  return { step: 'done', ...doneText(status.count, hits, status.checked_at) };
+  return withUnread({ step: 'done', ...doneText(status.count, hits, status.checked_at) }, status.unread);
+}
+// Offers the portal counts but the parser could not read: a changed card layout, shown beside the result.
+function withUnread(step, unread) {
+  return unread ? { ...step, unread, text: `${step.text} · ${unread} nicht lesbar` } : step;
 }
 // Across searches: a source is only fine if it is fine for every search that uses it.
 // When every search is done, the counts add up and the oldest check is shown.
@@ -62,7 +66,9 @@ export function sourceSteps(searches, all = false) {
     const done = steps.filter(x => x.step === 'done');
     if (worst.step !== 'done' || done.length === 1) return [{ source, ...(done[0] || worst) }];
     const sum = key => done.reduce((total, x) => total + x[key], 0);
-    return [{ source, step: 'done', ...doneText(sum('found'), sum('hits'), Math.min(...done.map(x => x.checked))) }];
+    const checked = Math.min(...done.map(x => x.checked)),
+      unread = Math.max(0, ...done.map(x => x.unread || 0));
+    return [{ source, ...withUnread({ step: 'done', ...doneText(sum('found'), sum('hits'), checked) }, unread) }];
   });
 }
 export const pill = ({ source, step, text }, label = sourceName(source)) =>

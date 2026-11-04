@@ -67,6 +67,12 @@ def kleinanzeigen_url(profile, location_id, page=1):
     return KLEINANZEIGEN + quote(path, safe='/:+') + f'?pageSize={PAGE_SIZE}'
 
 
+def kleinanzeigen_total(text):
+    """How many ads the result list counts for the query ("1 - 100 von 108 Mietwohnungen …"), or None."""
+    found = re.search(r'\b\d+\s*-\s*\d+\s+von\s+([\d.]+)', text or '')
+    return int(found.group(1).replace('.', '')) if found else None
+
+
 def kleinanzeigen_parse(html):
     articles = re.findall(r'<article\b[^>]*data-adid="(\d+)"[^>]*data-href="([^"]+)"[^>]*>(.*?)</article>', html, re.S)
     if not articles:

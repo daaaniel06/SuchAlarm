@@ -108,6 +108,12 @@ EMPTY_COUNT = re.compile(r'<h2\b[^>]*>\s*0\s+Angebote\b')
 WG_CARD = re.compile(r'<a\b[^>]*\boffer_list_item\b[^>]*>', re.S)
 
 
+def wg_total(html):
+    """How many flats the list counts ("53 Einzimmerwohnungen, Wohnungen | 221 Angebote …"; 0 when empty), or None."""
+    found = re.search(r'<h2\b[^>]*>\s*([\d.]+)\s', html)
+    return int(found.group(1).replace('.', '')) if found else None
+
+
 def wg_parse(html):
     """The result list (layout of 10/2026: each offer is an <a class="wgg-list-card offer_list_item">)."""
     tags = list(WG_CARD.finditer(html))

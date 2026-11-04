@@ -41,6 +41,7 @@ from .immobiliende import (  # noqa: F401
     id_detail,
     id_parse,
     id_places_url,
+    id_total,
     id_town,
     id_url,
 )
@@ -54,6 +55,7 @@ from .immoscout import (  # noqa: F401
     immoscout_parse,
     immoscout_places,
     immoscout_region,
+    immoscout_total,
     immoscout_url,
 )
 from .immowelt import (  # noqa: F401
@@ -72,6 +74,7 @@ from .kleinanzeigen import (  # noqa: F401
     kleinanzeigen_location,
     kleinanzeigen_locations_url,
     kleinanzeigen_parse,
+    kleinanzeigen_total,
     kleinanzeigen_url,
 )
 from .nhw import NHW, NHW_LIST, nhw_detail, nhw_parse, nhw_url  # noqa: F401
@@ -81,6 +84,7 @@ from .ohnemakler import (  # noqa: F401
     om_parse,
     om_path,
     om_places_url,
+    om_total,
     om_town,
     om_url,
 )
@@ -92,6 +96,7 @@ from .wg import (  # noqa: F401
     wg_parse,
     wg_place,
     wg_slug,
+    wg_total,
     wg_town,
     wg_url,
 )

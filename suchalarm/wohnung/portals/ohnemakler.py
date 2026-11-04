@@ -66,6 +66,18 @@ _COUNT = re.compile(r'<p class="md:text-lg[^"]*empty:hidden">(.*?)</p>', re.S)
 _CARD = re.compile(r'(?=<div\b[^>]*\bid="bookmark_\d+")')
 
 
+PAGE_SIZE = 24  # offers per result page (checked live on 04.11.2026)
+
+
+def om_total(html):
+    """How many offers the count line names ("Hier listen wir 10 Angebote …"; empty when none fit), or None."""
+    count = _COUNT.search(html)
+    if count is None:
+        return None
+    found = re.search(r'([\d.]+)\s+Angebot', plain(count.group(1)))
+    return int(found.group(1).replace('.', '')) if found else 0
+
+
 def om_parse(html):
     """The offers of a result page: only the cards before the site's "similar offers" block. An empty
     count line means no offer matched; the cards shown then are only similar ones."""

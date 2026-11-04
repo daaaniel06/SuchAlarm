@@ -11,7 +11,7 @@ from dataclasses import asdict
 
 from .. import store
 from ..core import cadence
-from ..status import source_ok, started
+from ..status import more_unread, source_ok, started
 from . import sources
 from .details import FETCH_TIMEOUT, read_again
 from .domain import WHOLE_STOCK, Listing, cheaper, could_match, other_rent, profile
@@ -28,8 +28,16 @@ STOCK_PAGES = 50  # a new search takes in the whole stock; this only stops a por
 MORE_TRIES = 2
 
 
+def _counts(counts, listings):
+    """(listed, unread) of a fetch's COUNTS (sources.fetch); a plain number is how many the page listed."""
+    if isinstance(counts, dict):
+        return counts.get('listed', len(listings)), counts.get('unread')
+    return counts, None
+
+
 def save_result(search, source, listings, listed, now):
-    """Store a successful result (LISTED: how many offers the portal's page held before select()); queue
+    """Store a successful result (LISTED: the fetch's counts, or how many offers the portal's page held before
+    select()); queue
     detail pages for new listings.
 
     bauverein and NHW list their whole stock, so a flat missing there is let: it goes. The other portals
@@ -37,7 +45,7 @@ def save_result(search, source, listings, listed, now):
     missing there may just have moved down, so it stays until cleanup() finds it unseen for KEEP_LISTINGS.
     The first result, and a page 1 that read_stock_again() asked for, is starting stock.
     Returns the URLs of genuinely new listings (not the starting stock)."""
-    sid = search['id']
+    sid, (listed, unread) = search['id'], _counts(listed, listings)
     with store.db() as conn:
         job = _job(conn, sid, source)
         reading_stock = job is not None and bool(job['stock'])
@@ -45,7 +53,7 @@ def save_result(search, source, listings, listed, now):
         unseen = _save_page(conn, search, source, listings, now, stock)
         if source in WHOLE_STOCK:
             _drop_let(conn, sid, source, listings)
-        source_ok(conn, sid, source, now, len(listings))
+        source_ok(conn, sid, source, now, len(listings), unread)
         if stock or not reading_stock:  # the reading of the stock goes on behind a regular check
             _queue_next(conn, sid, source, 1, listings, listed, unseen, stock)
     return set() if stock else unseen
@@ -55,10 +63,11 @@ def save_more(search, job, listings, listed, now):
     """Store the further result page that JOB (a more_pages row) asked for. Its unseen flats are starting
     stock while a search takes in the stock, otherwise they count like any new ones. Returns the URLs of
     new ones."""
-    sid, source = search['id'], job['source']
+    sid, source, (listed, unread) = search['id'], job['source'], _counts(listed, listings)
     with store.db() as conn:
         if not _current(conn, job):
             return set()  # a regular check or an edit decided anew while the page loaded
+        more_unread(conn, sid, source, unread)
         stock = bool(job['stock'])
         unseen = _save_page(conn, search, source, listings, now, stock)
         _queue_next(conn, sid, source, job['page'], listings, listed, unseen, stock)

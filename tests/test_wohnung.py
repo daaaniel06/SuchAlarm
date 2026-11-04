@@ -1091,6 +1091,54 @@ class BauvereinDetailTests(unittest.TestCase):
         self.assertIsNone(self.rent())
 
 
+class UnreadTests(TempData):
+    """The portals' own counts (live 04.11.2026) tell how many cards a page should hold; what the parser
+    misses shows beside the source's result."""
+
+    def test_each_portal_names_its_count(self):
+        self.assertEqual(portals.immoscout_total({'totalResults': 153, 'resultListItems': []}), 153)
+        self.assertIsNone(portals.immoscout_total({'resultListItems': []}))
+        self.assertEqual(portals.kleinanzeigen_total('Mietwohnung 1 - 100 von 1.108 Mietwohnungen in Darmstadt'), 1108)
+        self.assertIsNone(portals.kleinanzeigen_total('Leider keine Ergebnisse'))
+        self.assertEqual(
+            portals.wg_total('<h2 class="mb10">\n 53 Einzimmerwohnungen, Wohnungen | 221 Angebote</h2>'), 53
+        )
+        self.assertEqual(portals.wg_total('<h2 class="mb10">\n 0 Angebote in allen Kategorien in Darmstadt</h2>'), 0)
+        self.assertEqual(portals.om_total(fixture('ohne-makler', 'list.html')), 2)
+        self.assertEqual(portals.id_total('<h1>Wohnung mieten in Darmstadt: 6 aktuelle Angebote</h1>'), 6)
+        self.assertIsNone(portals.id_total(fixture('immobilien-de', 'list.html')))
+
+    def test_a_page_should_hold_a_full_page_or_the_rest(self):
+        cards = lambda n, total: sources.Page([{}] * n, total)  # noqa: E731
+        self.assertEqual(sources.unread('immoscout24', 1, cards(99, 153)), 1)  # 100 on page one
+        self.assertEqual(sources.unread('immoscout24', 2, cards(53, 153)), 0)  # the rest on page two
+        self.assertEqual(sources.unread('ohne-makler', 1, cards(9, 10)), 1)
+        self.assertEqual(sources.unread('wg-gesucht', 2, cards(0, 53)), 0)  # past the end nothing is due
+        self.assertIsNone(sources.unread('immoscout24', 1, cards(5, None)))  # no count: no judgement
+        self.assertIsNone(sources.unread('nhw', 1, cards(5, 7)))  # a landlord's whole stock has no page size
+
+    def test_the_source_shows_what_it_could_not_read_until_a_clean_result(self):
+        flat_search = self.stored_search()
+        found = [
+            Listing.from_card('immoscout24', {'url': f'https://www.immobilienscout24.de/expose/{n}'}) for n in range(3)
+        ]
+
+        def check(unread):
+            with patch.object(
+                flats.sources, 'fetch', new=AsyncMock(return_value=(found, {'listed': 3, 'unread': unread}))
+            ):
+                asyncio.run(worker.check(flat_search))
+            with store.db() as conn:
+                return status.of(conn, flat_search['id'], 'immoscout24')['unread']
+
+        self.assertEqual(check(1), 1)
+        self.assertEqual(check(0), 0)
+        self.assertIsNone(check(None))
+        with store.db() as conn:  # a stock page adds what it missed
+            pages.more_unread(conn, flat_search['id'], 'immoscout24', 2)
+            self.assertEqual(status.of(conn, flat_search['id'], 'immoscout24')['unread'], 2)
+
+
 class ConnectionTests(TempData):
     def test_readers_given_a_connection_use_it(self):
         """A second connection inside an open transaction waits for its write lock (database is locked) and does

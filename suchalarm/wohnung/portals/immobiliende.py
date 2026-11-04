@@ -76,6 +76,15 @@ def _typed(node, kind):
     return kind in (types if isinstance(types, list) else [types])
 
 
+PAGE_SIZE = 24  # offers per result page (checked live on 04.11.2026)
+
+
+def id_total(html):
+    """How many offers the heading names ("Wohnung mieten in Darmstadt: 6 aktuelle Angebote"), or None."""
+    found = re.search(r'<h1[^>]*>[^<]*?([\d.]+)\s+aktuelle', html)
+    return int(found.group(1).replace('.', '')) if found else None
+
+
 def id_parse(html):
     """The offers of a result page from its ItemList; a page without hits has none at all."""
     lists = [node for node in _graph(html) if _typed(node, 'ItemList')]
