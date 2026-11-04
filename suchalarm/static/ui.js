@@ -1,7 +1,7 @@
 // Small shared pieces of the page: element lookup, icons, links, source names, new-since-last-visit and
 // list pages. Read-only use of the app state (app.js).
 
-import { DEFAULT_KIND, HITS, escapeHtml, flatPasses, isFresh, kindOf, match } from './logic.js';
+import { DEFAULT_KIND, HITS, escapeHtml, flatPasses, isFresh, kindOf } from './logic.js';
 import { render, state } from './page.js';
 
 export const $ = id => document.getElementById(id);
@@ -49,8 +49,8 @@ window.addEventListener('pagehide', () => saveVisit(Date.now() / 1000));
 export const isNew = o => isFresh(o, visit.since, visit.opened); // a new search's first result is no news
 
 export const isFlat = s => kindOf(s) === 'wohnung';
-// A hit fits its search: flats as the server judged them, offers by the price rules.
-export const fits = (o, s) => (isFlat(s) ? flatPasses(o) : match(o, s));
+// A hit fits its search as the server judged it: flats by their verdict, offers by their price (fits).
+export const fits = (o, s) => (isFlat(s) ? flatPasses(o) : Boolean(o.fits));
 // A flat on several portals shows once, through its leading listing ("auch bei …").
 export const pool = kind => state[HITS[kind]].filter(o => !o.same_as);
 // The area of a source; a source the server does not list any more counts as a product source.

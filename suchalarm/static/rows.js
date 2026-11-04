@@ -1,6 +1,6 @@
 // One row for hits and the watch list, both kinds: picture, title, details, price; saving and hiding.
 
-import { ago, comparison, escapeHtml, euro, flatDetails, moveIn, withShipping } from './logic.js';
+import { ago, escapeHtml, euro, flatDetails, moveIn } from './logic.js';
 import { bookmarkIcon, fits, isFlat, isNew, safeImage, safeLink, short, sourceName } from './ui.js';
 import { api, message, refresh, render, state } from './page.js';
 
@@ -28,7 +28,7 @@ document.addEventListener(
   },
   true,
 );
-function note(o, s) {
+function note(o) {
   if (o.price === 0) return 'Zu verschenken';
   return o.shipping === null
     ? 'Versand unbekannt'
@@ -36,7 +36,7 @@ function note(o, s) {
       ? `Versand ab ${euro(o.shipping)}`
       : o.shipping === 0
         ? 'Versand frei'
-        : withShipping(o, s)
+        : o.with_shipping
           ? `inkl. ${euro(o.shipping)} Versand`
           : `+ ${euro(o.shipping)} Versand`;
 }
@@ -58,7 +58,7 @@ export function offerRow(o, s, gone = false, list = 'offers') {
   // The same offer can sit in both lists; each list keeps its own key so a swipe acts on the list it happened in.
   const flat = isFlat(s),
     key = `${list}|${o.search_id}|${o.url}`,
-    value = flat ? o.price : comparison(o, s),
+    value = flat ? o.price : o.compared,
     snapshot = state.saved.find(x => x.url === o.url),
     saved = Boolean(snapshot);
   rows.set(key, { o, s, gone, saved, list });
@@ -105,7 +105,7 @@ export function offerRow(o, s, gone = false, list = 'offers') {
   const mark = applied ? '<span class="badge applied">Beworben</span>' : saved ? bookmarkIcon : '';
   const right = saved ? 'Entfernen' : 'Merken',
     left = list === 'saved' ? 'Entfernen' : 'Ausblenden';
-  return `<li class="swipe${saved ? ' saved' : ''}${list === 'saved' ? ' in-list' : ''}"><span class="swipe-action save" aria-hidden="true">${bookmarkIcon}<span>${right}</span></span><span class="swipe-action hide" aria-hidden="true"><span>${left}</span>${list === 'saved' ? bookmarkIcon : eyeOff}</span><a class="asset-row" href="${safeLink(o.url)}" rel="noopener noreferrer" draggable="false" data-offer="${escapeHtml(key)}">${thumb(o, applied)}<span class="asset-main"><strong>${dot}<span class="name">${escapeHtml(o.title)}</span>${mark}</strong><span>${escapeHtml(detail || sourceName(o.source))}</span></span><span class="asset-value${!gone && fits(o, s) ? '' : ' over'}"><strong${flat && estimated(o) ? ' class="estimate"' : ''}>${price}</strong><span>${flat ? flatNote(o) : note(o, s)}</span></span>${foot}</a></li>`;
+  return `<li class="swipe${saved ? ' saved' : ''}${list === 'saved' ? ' in-list' : ''}"><span class="swipe-action save" aria-hidden="true">${bookmarkIcon}<span>${right}</span></span><span class="swipe-action hide" aria-hidden="true"><span>${left}</span>${list === 'saved' ? bookmarkIcon : eyeOff}</span><a class="asset-row" href="${safeLink(o.url)}" rel="noopener noreferrer" draggable="false" data-offer="${escapeHtml(key)}">${thumb(o, applied)}<span class="asset-main"><strong>${dot}<span class="name">${escapeHtml(o.title)}</span>${mark}</strong><span>${escapeHtml(detail || sourceName(o.source))}</span></span><span class="asset-value${!gone && fits(o, s) ? '' : ' over'}"><strong${flat && estimated(o) ? ' class="estimate"' : ''}>${price}</strong><span>${flat ? flatNote(o) : note(o)}</span></span>${foot}</a></li>`;
 }
 async function setSaved(o, saved) {
   try {

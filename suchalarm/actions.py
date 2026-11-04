@@ -24,7 +24,7 @@ def bookmark(conn, search_id, url):
     """Put a hit on the watch list; a saved one stays as it is (with its "Beworben")."""
     if store.is_saved(conn, url):
         return False
-    search = store.search(search_id)
+    search = store.read_search(conn, search_id)
     if not search or not kinds.of(search).bookmark(conn, search, url):
         raise Gone('Treffer nicht mehr vorhanden.')
     return True

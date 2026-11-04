@@ -12,10 +12,10 @@ import uuid
 from contextlib import suppress
 from dataclasses import dataclass
 
-from . import mailer, scheduler, store
+from . import mailer, scheduler, status, store
 from .core import cadence, images
 from .kinds import KINDS
-from .status import deferred, empty_after_stock, failed, rest, source_error
+from .status import deferred, empty_after_stock, failed, rest
 
 log = logging.getLogger('suchalarm')
 
@@ -219,10 +219,6 @@ async def _send_kind(kind, now):
 async def _serve_followers(job, completed):
     """Other searches sharing the job's query get the same result: from the fresh cache, or the same error."""
     first, source = job['searches'][0], job['source']
-    with store.db() as conn:
-        first_status = conn.execute(
-            'SELECT * FROM source_status WHERE search_id=? AND source=?', (first['id'], source)
-        ).fetchone()
     for follower in job['searches'][1:]:
         search = store.search(follower['id'])  # it may have changed while the first one was checked
         if not search or source not in search['sources'] or cadence.query_key(source, search) != job['key']:
@@ -230,8 +226,7 @@ async def _serve_followers(job, completed):
         if not search['active'] and search['id'] not in scheduler.queued_ids():
             continue
         state = cadence.query_state(source, search)
-        if first_status and first_status['error']:
-            source_error(search, source, first_status['checked_at'], first_status['error'], first_status['failures'])
+        if status.share_error(first['id'], search, source):
             done = completed
         elif state and state['state'] == 'ok' and state['next_at'] > time.time():
             done = await check(search, [source])

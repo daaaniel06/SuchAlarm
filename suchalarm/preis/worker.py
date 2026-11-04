@@ -7,7 +7,7 @@ then take_pending and explain for the mail, idle, queue_mails and cleanup for th
 import json
 import time
 
-from .. import store
+from .. import status, store
 from ..core import images
 from ..status import source_ok, started
 from . import delivery, learning, sources
@@ -59,6 +59,23 @@ def compared(offer, search):
         offer['shipping'],
         with_shipping(offer['source'], search),
         search_fee(offer['source'], offer['price'], search),
+    )
+
+
+# A snapshot on the watch list whose search is gone: shown with shipping and fee, within no limit.
+ANY_SEARCH = {'include_shipping': 1, 'include_fee': 1, 'min_price': 0, 'max_price': float('inf')}
+
+
+def judged(row, search):
+    """ROW (an offer or watch-list snapshot) with what the page shows and filters by, so the price rules live
+    here only: COMPARED (None with unknown shipping that counts), FITS the search, WITH_SHIPPING for the note."""
+    search = search or ANY_SEARCH
+    price = compared(row, search)
+    return dict(
+        row,
+        compared=price,
+        fits=in_range(price, search, free(row['price'], search)),
+        with_shipping=with_shipping(row['source'], search),
     )
 
 
@@ -156,15 +173,9 @@ def enqueue(search, found, baseline):
             if offer.url in reported and price >= reported[offer.url]:
                 continue  # already reported at this price or cheaper
             if offer.url in baseline or not mailing:
-                conn.execute('INSERT OR REPLACE INTO notifications VALUES (?,?,?,?)', (sid, offer.url, price, now))
-                continue
-            # A waiting entry only follows a further drop; one already being sent stays as it is.
-            conn.execute(
-                'INSERT INTO outbox(search_id,url,price,created_at) VALUES (?,?,?,?) '
-                'ON CONFLICT(search_id,url) DO UPDATE SET price=excluded.price '
-                'WHERE outbox.batch IS NULL AND excluded.price < outbox.price',
-                (sid, offer.url, price, now),
-            )
+                store.remember_reported(conn, sid, offer.url, price, now)
+            else:
+                store.queue(conn, sid, offer.url, price, now)
 
 
 # Mail
@@ -173,7 +184,7 @@ def enqueue(search, found, baseline):
 def take_pending(conn):
     """Outbox rows still worth a mail, as (search, offer, price), oldest first. Rows that are not
     (search gone or paused, offer gone, hidden, out of range, already reported) are deleted."""
-    searches = {s['id']: s for s in store.searches('preis')}
+    searches = {s['id']: s for s in store.read_searches(conn, 'preis')}
     entries, dropped = [], []
     rows = conn.execute(
         'SELECT x.search_id AS outbox_search, x.url AS outbox_url, x.created_at AS queued, o.*, '
@@ -203,7 +214,7 @@ def take_pending(conn):
             entries.append((search, offer, price))
         else:
             dropped.append((row['outbox_search'], row['outbox_url']))
-    conn.executemany('DELETE FROM outbox WHERE search_id=? AND url=?', dropped)
+    store.drop_queued(conn, dropped)
     return entries
 
 
@@ -304,13 +315,12 @@ def reset(conn, search_id, old, payload):
         or old['include_fee'] != payload.include_fee
         or all_terms(old) != payload.terms()
     ):
-        conn.execute('DELETE FROM notifications WHERE search_id=?', (search_id,))
-        conn.execute('DELETE FROM outbox WHERE search_id=?', (search_id,))
+        store.forget_reports(conn, search_id)
     conn.executemany('DELETE FROM offers WHERE search_id=? AND source=?', [(search_id, source) for source in dropped])
     if changed:
         store.keep_waiting_only(conn, 'offers', search_id)
     removed = old['sources'] if changed else dropped
-    conn.executemany('DELETE FROM source_status WHERE search_id=? AND source=?', [(search_id, s) for s in removed])
+    status.forget(conn, search_id, removed)
     if 'idealo' in removed:
         conn.execute('DELETE FROM idealo_references WHERE search_id=?', (search_id,))
 
@@ -342,10 +352,16 @@ def hits(searches, hidden):
             key = (row['search_id'], row['url'])
             search = by_id.get(row['search_id'])
             if search and key not in hidden and not too_cheap(Offer.from_row(row), search):
-                offers.append(dict(row, start=key in start))
+                offers.append(judged(dict(row, start=key in start), search))
     for search in searches:
         search.setdefault('reference', None)
     return images.enrich(offers)
+
+
+def saved(rows, searches):
+    """The kind's watch-list snapshots as the page shows them, judged by their search like hits."""
+    by_id = {s['id']: s for s in searches}
+    return [judged(row, by_id.get(row['search_id'])) for row in rows]
 
 
 def bookmark(conn, search, url):

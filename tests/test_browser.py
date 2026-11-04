@@ -10,6 +10,7 @@ from playwright.async_api import async_playwright
 from suchalarm.app import CHOICES
 from suchalarm.preis.domain import SOURCES
 from suchalarm.preis.sources import EXTRACT, parse_rows, search_url
+from suchalarm.preis.worker import judged
 from suchalarm.wohnung import portals
 from suchalarm.wohnung import sources as flat_sources
 
@@ -291,34 +292,40 @@ class QueueInterfaceTests(unittest.IsolatedAsyncioTestCase):
             # matching item when shipping is disabled.
             search.update(min_price=2000, max_price=4500, include_shipping=0)
             state['statuses'][0]['error'] = 'Pause bis 14:45'
-            state['offers'] = [
-                dict(
-                    search_id=1,
-                    source='ebay',
-                    url='https://www.ebay.de/itm/198728514130',
-                    title='Capcom Resident Evil Requiem PS5',
-                    price=4066,
-                    shipping=None,
-                    seller='',
-                    condition='',
-                    first_seen=now - 3600,
-                    last_seen=now - 3600,
-                )
-            ]
+            offer = dict(
+                search_id=1,
+                source='ebay',
+                url='https://www.ebay.de/itm/198728514130',
+                title='Capcom Resident Evil Requiem PS5',
+                price=4066,
+                shipping=None,
+                seller='',
+                condition='',
+                first_seen=now - 3600,
+                last_seen=now - 3600,
+            )
+
+            def judge():  # the server judges each offer by its search (preis/worker.judged)
+                state['offers'] = [judged(offer, search)]
+
+            judge()
             await page.locator('[data-view="offers"]').first.click()
             await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
             await page.wait_for_timeout(300)
             self.assertEqual(await page.locator('#offer-list .asset-row').count(), 1)
             self.assertEqual(await page.locator('#offer-list .asset-value.over').count(), 0)
             search['include_shipping'] = 1
+            judge()
             await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
             await page.wait_for_timeout(300)
             self.assertEqual(await page.locator('#offer-list .asset-row').count(), 0)
-            state['offers'][0]['shipping'] = 818
+            offer['shipping'] = 818
+            judge()
             await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
             await page.wait_for_timeout(300)
             self.assertEqual(await page.locator('#offer-list .asset-row').count(), 0)  # 48.84 exceeds 45
             search['max_price'] = 5000
+            judge()
             await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
             await page.wait_for_timeout(300)
             self.assertEqual(await page.locator('#offer-list .asset-row').count(), 1)
@@ -348,7 +355,8 @@ class AreaInterfaceTests(unittest.IsolatedAsyncioTestCase):
         state = dict(
             searches=[product, flat_search],
             offers=[dict(search_id=2, source='ebay', url='https://www.ebay.de/itm/1', title='Spiel PS5', price=2999,
-                         shipping=0, seller='', condition='Gebraucht', first_seen=now, last_seen=now, start=False)],
+                         shipping=0, seller='', condition='Gebraucht', first_seen=now, last_seen=now, start=False,
+                         compared=2999, fits=True, with_shipping=True)],
             listings=[dict(search_id=1, kind='wohnung', source='immoscout24', url='https://www.immobilienscout24.de/expose/1',
                            title='Helle Wohnung', place='Karlstraße 22, 64283 Darmstadt, Kapellplatzviertel', price=101500,
                            estimated=True, area=55, rooms=2, status='matched', reasons=['Alle Filter erfüllt'],

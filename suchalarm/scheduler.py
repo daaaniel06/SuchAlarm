@@ -4,7 +4,7 @@ import asyncio
 import time
 from dataclasses import dataclass
 
-from . import store
+from . import status, store
 from .core import cadence
 
 MANUAL_RUN_TTL = 600  # a click older than this no longer counts as running
@@ -177,7 +177,7 @@ def plan(searches, paused, now=None):
     """
     now = time.time() if now is None else now
     with store.db() as conn:
-        statuses = {(r['search_id'], r['source']): dict(r) for r in conn.execute('SELECT * FROM source_status')}
+        statuses = status.by_search_and_source(conn)
     with cadence.db() as conn:
         manual, manual_runs = _sync_manual(conn, {s['id']: s for s in searches}, now)
         consumers = _consumers(searches, paused, manual)
@@ -198,10 +198,8 @@ def finish(job, now=None):
     row = cadence.query_state(job['source'], job['searches'][0])
     # A timeout outside the fetch decorator must not cause an immediate repeated request.
     with store.db() as conn:
-        status = conn.execute(
-            'SELECT error FROM source_status WHERE search_id=? AND source=?', (job['searches'][0]['id'], job['source'])
-        ).fetchone()
-    fallback = now + 180 if not row or row['next_at'] <= now or (status and status['error']) else 0
+        shown = status.of(conn, job['searches'][0]['id'], job['source'])
+    fallback = now + 180 if not row or row['next_at'] <= now or (shown and shown['error']) else 0
     with cadence.db() as conn:
         position = conn.execute('SELECT COALESCE(MAX(position),0)+1 FROM jobs').fetchone()[0]
         conn.execute('UPDATE jobs SET position=?,not_before=? WHERE key=?', (position, fallback, job['key']))

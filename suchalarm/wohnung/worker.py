@@ -9,7 +9,7 @@ else waits, the starting stock that can still fit gets its detail pages too, slo
 import logging
 import time
 
-from .. import store
+from .. import status, store
 from ..core import cadence, images
 from . import details, maps, pages, sources
 from . import mail as mail  # the kind's mail presentation (kinds.py)
@@ -99,8 +99,8 @@ def reset(conn, search_id, old, payload):
     moved = old['query'] != payload.query or old['radius'] != payload.radius
     dropped = [source for source in old['sources'] if source not in payload.sources]
     removed = old['sources'] if moved else dropped
-    for table in ('source_status', 'more_pages'):
-        conn.executemany(f'DELETE FROM {table} WHERE search_id=? AND source=?', [(search_id, s) for s in removed])
+    status.forget(conn, search_id, removed)
+    conn.executemany('DELETE FROM more_pages WHERE search_id=? AND source=?', [(search_id, s) for s in removed])
     conn.executemany('DELETE FROM listings WHERE search_id=? AND source=?', [(search_id, s) for s in dropped])
     if moved:
         store.keep_waiting_only(conn, 'listings', search_id)
@@ -129,10 +129,15 @@ def hits(searches, hidden):
     return images.enrich(rows)
 
 
+def saved(rows, searches):
+    """Watch-list snapshots of flats are shown as saved; the live listing carries its verdict."""
+    return rows
+
+
 def bookmark(conn, search, url):
     """Keep a snapshot on the watch list: price and the detail line stay readable once the portal drops
     the flat. False if the flat is gone."""
-    flat = next((row for row in listings(search) if row['url'] == url), None)
+    flat = next((row for row in listings(search, conn) if row['url'] == url), None)
     if flat is None:
         return False
     conn.execute(
@@ -163,6 +168,6 @@ def clear(conn):
     conn.execute('DELETE FROM listing_details')
     conn.execute('DELETE FROM more_pages')
     conn.execute('DELETE FROM separated')
-    conn.execute("DELETE FROM source_status WHERE search_id IN (SELECT id FROM searches WHERE kind='wohnung')")
+    status.forget_kind(conn, 'wohnung')
     conn.execute("DELETE FROM start_offers WHERE search_id IN (SELECT id FROM searches WHERE kind='wohnung')")
     return count

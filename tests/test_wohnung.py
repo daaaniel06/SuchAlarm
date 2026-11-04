@@ -420,6 +420,19 @@ class ParserTests(unittest.TestCase):
             (1290, 1050, ['WBS'], '2026-11-01'),
         )
 
+    def test_kleinanzeigen_place_is_the_one_the_product_search_picks(self):
+        """Both kinds keep Kleinanzeigen's place IDs under one key, so a postcode must lead to the same place."""
+        answer = {'_0': 'Deutschland', '_3331': '64287 Darmstadt - Mathildenhöhe', '_4888': '64283 Darmstadt'}
+        self.assertEqual(portals.kleinanzeigen_location(answer, '64283'), '4888')
+        self.assertEqual(
+            portals.kleinanzeigen_location({'_0': 'Deutschland', '_4888': 'Darmstadt'}, 'darmstadt'), '4888'
+        )
+        self.assertEqual(
+            portals.kleinanzeigen_location({'_0': 'Deutschland', '_7': 'Darmstadt-Eberstadt'}, 'Darmstadt'), '7'
+        )
+        with self.assertRaises(RuntimeError):
+            portals.kleinanzeigen_location({'_0': 'Deutschland'}, 'Xyz')
+
     def test_kleinanzeigen_search_url(self):
         swaps = {**PROFILE, 'radius': 10, 'minArea': 50, 'minRooms': 2.5, 'exclusions': ['Tauschwohnung']}
         self.assertEqual(
@@ -1076,6 +1089,25 @@ class BauvereinDetailTests(unittest.TestCase):
         self.assertEqual(self.rent(gesamtmiete='850', heizkosten='90', heizkosten_enthalten=True), 850)
         self.assertEqual(self.rent(gesamtmiete='850'), 850)
         self.assertIsNone(self.rent())
+
+
+class ConnectionTests(TempData):
+    def test_readers_given_a_connection_use_it(self):
+        """A second connection inside an open transaction waits for its write lock (database is locked) and does
+        not see what the first one has not committed yet."""
+        flat_search = self.stored_search()
+        url = 'https://www.immobilienscout24.de/expose/1'
+        fits = {'title': 'Wohnung', 'place': 'Darmstadt', 'rent': 900, 'area': 60, 'rooms': 2}
+        body = json.dumps({'source': 'immoscout24', 'url': url, **fits})
+        with store.db() as conn:
+            conn.execute(
+                "INSERT INTO listings(search_id,source,url,body,first_seen,last_seen) VALUES (?,'immoscout24',?,?,1,1)",
+                (flat_search['id'], url, body),
+            )
+            self.assertEqual(len(catalog.listings(flat_search, conn)), 1)
+            self.assertEqual(len(catalog.listings(flat_search)), 0)  # another connection does not see it yet
+            store.queue(conn, flat_search['id'], url, 0, 1)
+            self.assertEqual([s['id'] for s, _, _ in outbox.take_pending(conn)], [flat_search['id']])
 
 
 class WorkerTests(TempData):

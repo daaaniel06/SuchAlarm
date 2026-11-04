@@ -11,6 +11,7 @@ from suchalarm import scheduler, store
 from suchalarm.core import cadence
 from suchalarm.preis.domain import Offer, buyer_fee, eligible, portal_price_bounds
 from suchalarm.preis.sources import ebay_in_germany, parse_rows, search_url
+from suchalarm.preis.worker import judged
 
 
 class PriceFilterTests(unittest.IsolatedAsyncioTestCase):
@@ -168,3 +169,55 @@ class PriceFilterTests(unittest.IsolatedAsyncioTestCase):
         actual.assert_awaited_once()
         self.assertEqual(len(offers), 1)
         self.assertNotEqual(cadence.query_key('ebay', self.search), old_key)
+
+
+class JudgedTests(unittest.TestCase):
+    """What the page shows and filters by comes from the server only (preis/worker.judged); the page has no
+    price rules of its own."""
+
+    def judged(self, search, price, shipping, source='ebay'):
+        return judged({'source': source, 'price': price, 'shipping': shipping}, search)
+
+    def test_unknown_shipping_counts_only_with_the_shipping_switch(self):
+        self.assertEqual(self.judged({'include_shipping': 0, 'max_price': 9000}, 4066, None)['compared'], 4066)
+        self.assertIsNone(self.judged({'include_shipping': 1, 'max_price': 9000}, 4066, None)['compared'])
+        self.assertEqual(self.judged({'include_shipping': 1, 'max_price': 9000}, 4066, 818)['compared'], 4884)
+
+    def test_vinted_counts_its_buyer_protection_when_the_search_includes_it(self):
+        def compared(**search):
+            return self.judged({'max_price': 9000, **search}, 4400, 249, 'vinted')['compared']
+
+        self.assertEqual(compared(include_shipping=0, include_fee=1), 4690)
+        self.assertEqual(compared(include_shipping=1, include_fee=1), 4939)
+        self.assertEqual(compared(include_shipping=0, include_fee=0), 4400)
+        self.assertEqual(self.judged({'include_fee': 1, 'max_price': 9000}, 4400, 249)['compared'], 4400)
+
+    def test_idealo_shops_always_count_with_shipping(self):
+        search = {'include_shipping': 0, 'min_price': 0, 'max_price': 3500}
+        shop = self.judged(search, 3000, 900, 'idealo')
+        self.assertEqual((shop['compared'], shop['fits'], shop['with_shipping']), (3900, False, True))
+        self.assertIsNone(self.judged(search, 3000, None, 'idealo')['compared'])
+        used = self.judged(search, 3000, 900)
+        self.assertEqual((used['compared'], used['fits'], used['with_shipping']), (3000, True, False))
+
+    def test_fits_follows_the_price_range(self):
+        search = {'include_shipping': 1, 'min_price': 2000, 'max_price': 4500}
+        self.assertFalse(self.judged(search, 4066, None)['fits'])  # unknown shipping is never 0
+        self.assertFalse(self.judged(search, 4066, 818)['fits'])  # 48,84 € is over the limit
+        self.assertTrue(self.judged({**search, 'max_price': 5000}, 4066, 818)['fits'])
+        self.assertFalse(self.judged(search, 4500, 0)['fits'])  # strictly below the maximum
+        self.assertFalse(self.judged(search, 300, 0)['fits'])  # junk below the minimum
+
+    def test_given_away_offers_pass_the_minimum_only_when_the_search_wants_them(self):
+        search = {'include_shipping': 0, 'min_price': 2000, 'max_price': 4500}
+        self.assertFalse(self.judged(search, 0, None)['fits'])
+        self.assertTrue(self.judged({**search, 'free': True}, 0, None)['fits'])
+        shipped = {**search, 'include_shipping': 1, 'free': True}
+        self.assertTrue(self.judged(shipped, 0, 450)['fits'])  # only the parcel costs
+        self.assertFalse(self.judged({**shipped, 'max_price': 400}, 0, 450)['fits'])
+        self.assertFalse(self.judged(shipped, 0, None)['fits'])  # unknown shipping is never 0
+
+    def test_a_snapshot_whose_search_is_gone_shows_its_full_price(self):
+        snapshot = self.judged(None, 4400, 249, 'vinted')
+        self.assertEqual((snapshot['compared'], snapshot['fits']), (4939, True))
+        self.assertFalse(self.judged(None, 4400, None, 'vinted')['fits'])

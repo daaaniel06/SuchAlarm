@@ -1,6 +1,6 @@
 // The head of the hit list (count, status line, "Jetzt prüfen"), the hits and the watch list.
 
-import { AREA_TEXT, HITS, ago, comparison, escapeHtml, euro, kindOf, newCount } from './logic.js';
+import { AREA_TEXT, HITS, ago, escapeHtml, euro, kindOf, newCount } from './logic.js';
 import { $, fits, kindOfSource, paged, pool, safeLink, short, sourceName, visit } from './ui.js';
 import { pill, sourceSteps } from './steps.js';
 import { appliedTab, area, checkSubmitting, showAll, sort, state } from './page.js';
@@ -148,7 +148,7 @@ export function renderOffers(searches, selected, offers, passing, byId, busy) {
   $('tab-all').textContent = `Alle ${offers.length}`;
   $('tab-match').setAttribute('aria-pressed', String(!showAll));
   $('tab-all').setAttribute('aria-pressed', String(showAll));
-  const price = o => (area === 'wohnung' ? o.price || Infinity : (comparison(o, byId(o.search_id)) ?? Infinity));
+  const price = o => (area === 'wohnung' ? o.price || Infinity : (o.compared ?? Infinity));
   const shown = (showAll ? offers : passing).sort((a, b) =>
     sort === 'new' ? b.first_seen - a.first_seen : price(a) - price(b),
   );
@@ -190,7 +190,7 @@ export function renderSaved(byId) {
   $('tab-applied').textContent = `Beworben ${applied.length}`;
   $('tab-saved').setAttribute('aria-pressed', String(!appliedTab));
   $('tab-applied').setAttribute('aria-pressed', String(appliedTab));
-  const anySearch = { query: '', kind: area, include_shipping: 1, include_fee: 1, min_price: 0, max_price: Infinity };
+  const anySearch = { query: '', kind: area }; // a snapshot whose search is gone; the server judged its price
   $('saved-count').textContent = all.length ? all.length : '';
   $('saved-list').innerHTML = saved.length
     ? paged('saved', saved)

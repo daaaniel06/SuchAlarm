@@ -18,8 +18,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import actions, mailer, maillinks, scheduler, store, worker
+from . import actions, mailer, maillinks, scheduler, status, store, worker
 from .core import cadence, images
+from .kinds import DEFAULT as DEFAULT_KIND
 from .kinds import KINDS, ROUTERS
 from .models import AnySearch, Applied, Bookmark, Hide, MailServer, MailSettings, Preferences, Template
 
@@ -172,12 +173,23 @@ async def state():
     searches = store.searches()
     with store.db() as conn:
         hidden = store.hidden(conn)
-        statuses = store.statuses(conn)
+        statuses = status.table(conn)
         saved = images.enrich(store.saved(conn))
         logs = store.mail_log(conn, MAIL_LOG_SHOWN)
         pending = {kind: store.pending(conn, kind) for kind in KINDS}
     own = {name: [s for s in searches if s['kind'] == name] for name in KINDS}
     hits = {kind.HITS: kind.hits(own[name], hidden) for name, kind in KINDS.items()}
+    # Each kind shows its own snapshots; one whose search is gone belongs to the kind of its source.
+    kind_of = {s['id']: s['kind'] for s in searches}
+    saved = [
+        row
+        for name, kind in KINDS.items()
+        for row in kind.saved(
+            [x for x in saved if kind_of.get(x['search_id'], SOURCE_KINDS.get(x['source'], DEFAULT_KIND)) == name],
+            own[name],
+        )
+    ]
+    saved.sort(key=lambda x: x['saved_at'], reverse=True)
     extras = {key: value for name, kind in KINDS.items() for key, value in kind.extras(own[name]).items()}
     mail = {
         'recipients': store.mail_settings(settings)['recipients'],
@@ -277,7 +289,7 @@ async def source_details(source: str):
     searches = [s for s in store.searches() if source in s['sources'] and (s['active'] or s['id'] in queued)]
     provider, queries = cadence.diagnose(source, searches)
     with store.db() as conn:
-        statuses = {status['search_id']: status for status in store.statuses(conn, source)}
+        statuses = {row['search_id']: row for row in status.table(conn, source)}
     kind = KINDS[SOURCE_KINDS[source]]
     result = [
         dict(
