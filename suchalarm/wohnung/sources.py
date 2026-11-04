@@ -48,6 +48,36 @@ EXTRACT_PAGE = """() => ({ title: document.title, text: document.body ? document
   rows: [], html: document.documentElement.outerHTML })"""
 
 
+class Page(list):
+    """The cards of one result page, and TOTAL: how many offers the portal says the whole query has (None where
+    it does not say). The count lets the app notice cards its parser could not read (unread)."""
+
+    def __init__(self, cards, total=None):
+        super().__init__(cards)
+        self.total = total
+
+
+# Offers per result page of each paged portal (the portal modules name how they were checked).
+PAGE_SIZES = {
+    'immoscout24': portals.immoscout.PAGE_SIZE,
+    'kleinanzeigen-wohnung': portals.kleinanzeigen.PAGE_SIZE,
+    'wg-gesucht': portals.wg.PAGE_SIZE,
+    'immowelt': portals.immowelt.IMMOWELT_PAGE_SIZE,
+    'ohne-makler': portals.ohnemakler.PAGE_SIZE,
+    'immobilien-de': portals.immobiliende.PAGE_SIZE,
+}
+
+
+def unread(source, page, cards):
+    """How many offers PAGE should hold by the portal's own count but the parser did not read; None where the
+    portal names no count. A page holds a full page size, the last one the rest."""
+    total, size = getattr(cards, 'total', None), PAGE_SIZES.get(source)
+    if total is None or size is None:
+        return None
+    expected = min(size, max(0, total - (page - 1) * size))
+    return max(0, expected - len(cards))
+
+
 # --- Places ------------------------------------------------------------------------------
 
 
@@ -219,7 +249,10 @@ async def _kleinanzeigen(p, number=1):
             extract=_extract_cards(KLEINANZEIGEN_CARDS),
             readable=_kleinanzeigen_readable,
         )
-    return portals.kleinanzeigen_parse(data['html']) if data['rows'] else []  # an empty page passed on its text
+    # An empty page passed on its text.
+    return Page(
+        portals.kleinanzeigen_parse(data['html']) if data['rows'] else [], portals.kleinanzeigen_total(data['text'])
+    )
 
 
 def _immowelt_list(request):
@@ -275,7 +308,7 @@ async def _immowelt(p, number=1):
             extract=_immowelt_list(request),
             readable=lambda data, follow: data['total'] is not None,
         )
-    return portals.immowelt_cards(data['rows'])
+    return Page(portals.immowelt_cards(data['rows']), data['total'])
 
 
 async def _wg_gesucht(p, page=1):
@@ -289,7 +322,7 @@ async def _wg_gesucht(p, page=1):
     if city == UNKNOWN_PLACE:
         raise RuntimeError(f'WG-Gesucht kennt den Ort „{place}“ nicht.')
     html = await http.get_html(source, portals.wg_url(json.loads(city), p, page), follow=looked_up)
-    return portals.wg_parse(html)
+    return Page(portals.wg_parse(html), portals.wg_total(html))
 
 
 async def _listed_place(source, p, resolve):
@@ -321,7 +354,7 @@ async def _ohne_makler(p, page=1):
     else:
         place, looked_up = await _listed_place(source, p, lambda: _om_path(p))
     html = await _result_page(source, portals.om_url(place, p, page), page, looked_up)
-    return portals.om_parse(html) if html else []
+    return Page(portals.om_parse(html), portals.om_total(html)) if html else []
 
 
 async def _om_path(p):
@@ -337,7 +370,7 @@ async def _immobilien_de(p, page=1):
     source = 'immobilien-de'
     slug, looked_up = await _listed_place(source, p, lambda: _id_slug(p))
     html = await _result_page(source, portals.id_url(slug, p, page), page, looked_up)
-    return portals.id_parse(html) if html else []
+    return Page(portals.id_parse(html), portals.id_total(html)) if html else []
 
 
 async def _id_slug(p):
@@ -385,7 +418,8 @@ PAGED = (
 
 
 async def _immoscout_cards(p, page):
-    return portals.immoscout_parse(await _immoscout(p, page))
+    data = await _immoscout(p, page)
+    return Page(portals.immoscout_parse(data), portals.immoscout_total(data))
 
 
 async def _bauverein_cards(p, page):
@@ -416,23 +450,27 @@ async def cards(source, search, page=1):
 
 @cadence.shared_search(cache_version=2)
 async def fetch(source, search):
-    """(listings, how many the page held) of one portal query; the decorator shares, caches and times it,
-    select() filters per search. The count tells pages.py whether the portal's page was full."""
-    listings = await _page(source, search)
-    return listings, len(listings)
+    """(listings, counts) of one portal query; the decorator shares, caches and times it, select() filters per
+    search. COUNTS: how many the page held ('listed', tells pages.py whether it was full) and how many of the
+    portal's own count the parser missed ('unread', None where the portal names none)."""
+    return await _page(source, search)
 
 
 async def more(source, search, page):
-    """(listings of this search, how many the page held) of a further result page, while a search takes
-    in its stock or after a burst of new flats: not shared or cached, only booked."""
-    listings = await _page(source, search, page)
-    return select(listings, search), len(listings)
+    """(listings of this search, counts as fetch()) of a further result page, while a search takes in its stock
+    or after a burst of new flats: not shared or cached, only booked."""
+    listings, counts = await _page(source, search, page)
+    return select(listings, search), counts
 
 
 async def _page(source, search, page=1):
-    listings = [Listing.from_card(source, card) for card in await cards(source, search, page)]
+    found = await cards(source, search, page)
+    listings = [Listing.from_card(source, card) for card in found]
     images.remember(source, {listing.url: listing.image for listing in listings if listing.image})
-    return listings
+    missed = unread(source, page, found)
+    if missed:
+        log.warning('%s: page %s lists %s offers the parser could not read', source, page, missed)
+    return listings, {'listed': len(listings), 'unread': missed}
 
 
 def select(listings, search):

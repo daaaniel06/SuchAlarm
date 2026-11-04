@@ -247,6 +247,13 @@ def _add_status_started(conn):
         conn.execute('UPDATE source_status SET started=1 WHERE error IS NULL AND note IS NULL')
 
 
+def _add_status_unread(conn):
+    """How many offers of the portal's own count the parser could not read on the source's last page; NULL where
+    the portal names no count."""
+    if 'unread' not in {r[1] for r in conn.execute('PRAGMA table_info(source_status)')}:
+        conn.execute('ALTER TABLE source_status ADD COLUMN unread INTEGER')
+
+
 # Each entry runs once; PRAGMA user_version counts the applied ones. Only ever append.
 MIGRATIONS = (
     _migrate_legacy,
@@ -263,6 +270,7 @@ MIGRATIONS = (
     _add_fee,
     _add_alternatives,
     _add_status_started,
+    _add_status_unread,
 )
 
 

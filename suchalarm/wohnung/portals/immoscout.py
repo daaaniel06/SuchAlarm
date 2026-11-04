@@ -93,6 +93,12 @@ def immoscout_url(profile, region, coords, page=1):
     return IMMOSCOUT_LIST + urlencode(params)
 
 
+def immoscout_total(data):
+    """How many offers ImmoScout24 has for the whole query (all pages), or None."""
+    total = data.get('totalResults') if isinstance(data, dict) else None
+    return total if isinstance(total, int) else None
+
+
 def immoscout_parse(data):
     if not isinstance(data, dict) or not isinstance(data.get('resultListItems'), list):
         raise Unreadable('ImmoScout24-Ergebnisse haben ein unbekanntes Format.')
