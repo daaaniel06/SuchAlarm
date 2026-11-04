@@ -9,6 +9,7 @@ import json
 import os
 import secrets
 import sqlite3
+import threading
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
@@ -114,11 +115,21 @@ def db_path(name='suchalarm'):
     return Path(os.environ.get('DATA_DIR', '/data')) / f'{name}.db'
 
 
+# Connections db() holds open in this thread. The app's handlers and its worker share one thread (the event
+# loop), so a second connection opened while the first has already written can never get the write lock: the
+# first waits for the second, and the whole app stood still for the 20 s timeout ("database is locked" at the
+# first mail, #36). Such a second connection gets no wait instead and fails at once, where the code is wrong.
+_held = threading.local()
+
+
 @contextmanager
 def db(follow=True):
     """One transaction over suchalarm.db and every kind's file. FOLLOW: delete a search's rows in the kinds'
-    files along with it (off only while init() creates the searches table)."""
-    connection = sqlite3.connect(db_path(), timeout=20)
+    files along with it (off only while init() creates the searches table). A function given a connection
+    reads and writes through it (reading()); a second one may read, but not write while the first does."""
+    open_here = _held.__dict__.setdefault('connections', [])
+    writing = any(other.in_transaction for other in open_here)
+    connection = sqlite3.connect(db_path(), timeout=0 if writing else 20)
     connection.row_factory = sqlite3.Row
     connection.execute('PRAGMA foreign_keys=ON')
     for name, part in PARTS.items():
@@ -127,6 +138,7 @@ def db(follow=True):
             # Only a TEMP trigger may reach into another file (by plain table name); it lasts as long as the connection.
             deletes = ' '.join(f'DELETE FROM {table} WHERE search_id=old.id;' for table in part.per_search)
             connection.execute(f'CREATE TEMP TRIGGER {name}_follows AFTER DELETE ON main.searches BEGIN {deletes} END')
+    open_here.append(connection)
     try:
         yield connection
         connection.commit()
@@ -134,6 +146,7 @@ def db(follow=True):
         connection.rollback()
         raise
     finally:
+        open_here.remove(connection)
         connection.close()
 
 
