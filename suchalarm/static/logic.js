@@ -9,6 +9,28 @@ export const escapeHtml = text =>
     /[&<>"']/g,
     c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
   );
+// Markup from a template: html`<b>${title}</b>` escapes every value, so text from the portals can never become
+// markup by a forgotten escapeHtml. Markup itself (another html`…`, or raw() for the page's own icons and
+// markup) is put in as it is, a list joined; false, null and undefined leave nothing.
+class Markup {
+  constructor(text) {
+    this.text = text;
+  }
+  toString() {
+    return this.text;
+  }
+}
+export const raw = text => new Markup(String(text));
+const markupOf = value =>
+  value instanceof Markup
+    ? value.text
+    : Array.isArray(value)
+      ? value.map(markupOf).join('')
+      : value === false || value === null || value === undefined
+        ? ''
+        : escapeHtml(value);
+export const html = (strings, ...values) =>
+  new Markup(strings.reduce((out, text, i) => out + text + (i < values.length ? markupOf(values[i]) : ''), ''));
 export const thousands = n => new Intl.NumberFormat('de-DE').format(n);
 export function ago(ts) {
   const m = Math.max(0, Math.round((Date.now() / 1000 - ts) / 60));

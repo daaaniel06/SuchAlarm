@@ -6,6 +6,19 @@ const logic = require('../suchalarm/static/logic.js');
 
 const plain = text => text.replace(/\u00a0/g, ' ');
 
+test('html escapes every value and keeps markup, lists and nothing', () => {
+  const title = '<img src=x onerror=alert(1)> & "Mario"';
+  assert.equal(
+    String(logic.html`<b>${title}</b>`),
+    '<b>&lt;img src=x onerror=alert(1)&gt; &amp; &quot;Mario&quot;</b>',
+  );
+  const item = logic.html`<i>${'a<b'}</i>`;
+  assert.equal(String(logic.html`<li>${item}</li>`), '<li><i>a&lt;b</i></li>'); // markup is not escaped twice
+  assert.equal(String(logic.html`${['x', logic.raw('<br>'), 2]}`), 'x<br>2');
+  assert.equal(String(logic.html`${false}${null}${undefined}${0}`), '0');
+  assert.equal(`${logic.html`<p>${'&'}</p>`}`, '<p>&amp;</p>'); // plain templates take it as text too
+});
+
 test('euro and thousands use German formatting', () => {
   assert.equal(plain(logic.euro(123456)), '1.234,56 €');
   assert.equal(plain(logic.euro(0)), '0,00 €');

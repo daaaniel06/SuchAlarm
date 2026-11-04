@@ -1,7 +1,7 @@
 // The head of the hit list (count, status line, "Jetzt prüfen"), the hits and the watch list.
 
 import { AREA_TEXT, HITS, ago, escapeHtml, euro, kindOf, newCount } from './logic.js';
-import { $, fits, kindOfSource, paged, pool, safeLink, short, sourceName, visit } from './ui.js';
+import { $, fits, kindOfSource, paged, pool, safeLink, setHtml, short, sourceName, visit } from './ui.js';
 import { pill, sourceSteps } from './steps.js';
 import { appliedTab, area, checkSubmitting, showAll, sort, state } from './page.js';
 import { offerRow } from './rows.js';
@@ -102,7 +102,7 @@ export function renderHead(searches, selected, passing) {
             : !checked.length
               ? ' · erster Abruf gleich'
               : ` · geprüft ${ago(Math.max(...checked))}`;
-  $('summary').innerHTML = (fresh ? `<b class="up">+${fresh} heute</b>` : '<b>Heute nichts Neues</b>') + detail;
+  setHtml($('summary'), (fresh ? `<b class="up">+${fresh} heute</b>` : '<b>Heute nichts Neues</b>') + detail);
   // The sources' progress replaces the "Jetzt prüfen" icon, below the summary.
   // With a search chosen in the filter, the icon checks only that one (even if paused).
   const targets = filter ? selected : active,
@@ -126,7 +126,7 @@ export function renderHead(searches, selected, passing) {
     });
   $('progress').hidden = !(manual || finished) || !manualSteps.length;
   $('progress').classList.toggle('complete', finished);
-  $('progress').innerHTML = manualSteps.map(x => pill(x, short[x.source])).join(''); // badge labels keep it on the heading row
+  setHtml($('progress'), manualSteps.map(x => pill(x, short[x.source])).join('')); // badge labels keep it on the heading row
   $('progress').setAttribute(
     'aria-label',
     finished
@@ -141,9 +141,12 @@ export function renderOffers(searches, selected, offers, passing, byId, busy) {
   // The idealo new price as the yardstick, right above the offers.
   // Only when it is clear which search it belongs to: one search, or the list filtered to one.
   const ref = area === 'preis' && selected.length === 1 ? selected[0].reference : null;
-  $('references').innerHTML = ref
-    ? `<a class="reference" href="${safeLink(ref.url)}" rel="noopener noreferrer">idealo-Neupreis ${ref.shipping_included ? '' : 'ab '}<b>${euro(ref.price)}</b>${ref.shipping_included ? ' inkl. Versand' : ''} <span aria-hidden="true">↗</span></a>`
-    : '';
+  setHtml(
+    $('references'),
+    ref
+      ? `<a class="reference" href="${safeLink(ref.url)}" rel="noopener noreferrer">idealo-Neupreis ${ref.shipping_included ? '' : 'ab '}<b>${euro(ref.price)}</b>${ref.shipping_included ? ' inkl. Versand' : ''} <span aria-hidden="true">↗</span></a>`
+      : '',
+  );
   $('tab-match').textContent = `Passend ${passing.length}`;
   $('tab-all').textContent = `Alle ${offers.length}`;
   $('tab-match').setAttribute('aria-pressed', String(!showAll));
@@ -152,11 +155,12 @@ export function renderOffers(searches, selected, offers, passing, byId, busy) {
   const shown = (showAll ? offers : passing).sort((a, b) =>
     sort === 'new' ? b.first_seen - a.first_seen : price(a) - price(b),
   );
-  $('offer-list').innerHTML = shown.length
-    ? paged('offers', shown)
-        .map(o => offerRow(o, byId(o.search_id)))
-        .join('')
-    : emptyOffers(searches.length > 0, busy, offers.length > 0);
+  setHtml(
+    $('offer-list'),
+    shown.length
+      ? paged('offers', shown).map(o => offerRow(o, byId(o.search_id)))
+      : emptyOffers(searches.length > 0, busy, offers.length > 0),
+  );
   if (!shown.length) paged('offers', []);
 }
 
@@ -192,18 +196,21 @@ export function renderSaved(byId) {
   $('tab-applied').setAttribute('aria-pressed', String(appliedTab));
   const anySearch = { query: '', kind: area }; // a snapshot whose search is gone; the server judged its price
   $('saved-count').textContent = all.length ? all.length : '';
-  $('saved-list').innerHTML = saved.length
-    ? paged('saved', saved)
-        .map(x => {
-          const live = state[HITS[area]].find(o => o.url === x.url && o.search_id === x.search_id);
-          return offerRow(
-            live || { ...x, first_seen: x.saved_at, last_seen: 0 },
-            byId(x.search_id) || anySearch,
-            !live,
-            'saved',
-          );
-        })
-        .join('')
-    : (paged('saved', []),
-      `<li class="asset-empty"><p>${flats && appliedTab ? 'Noch keine Bewerbungen markiert.' : 'Noch nichts gemerkt.'}</p><button class="text-button" data-view="offers">Zu den Treffern</button></li>`);
+  setHtml(
+    $('saved-list'),
+    saved.length
+      ? paged('saved', saved)
+          .map(x => {
+            const live = state[HITS[area]].find(o => o.url === x.url && o.search_id === x.search_id);
+            return offerRow(
+              live || { ...x, first_seen: x.saved_at, last_seen: 0 },
+              byId(x.search_id) || anySearch,
+              !live,
+              'saved',
+            );
+          })
+          .join('')
+      : (paged('saved', []),
+        `<li class="asset-empty"><p>${flats && appliedTab ? 'Noch keine Bewerbungen markiert.' : 'Noch nichts gemerkt.'}</p><button class="text-button" data-view="offers">Zu den Treffern</button></li>`),
+  );
 }
