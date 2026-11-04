@@ -31,10 +31,22 @@ def kleinanzeigen_locations_url(query):
 
 
 def kleinanzeigen_location(result, city):
-    ids = [key.lstrip('_') for key in (result or {}) if key != '_0' and key.lstrip('_').isdigit()]
-    if not ids:
+    """The place ID among Kleinanzeigen's suggestions ({"_0": "Deutschland", "_9668": "10115 Mitte", …}): the first
+    whose name starts with CITY, else the first. The product search keeps its postcodes under the same key
+    (preis/sources.find_location, which takes the first starting with the postcode), so both pick alike."""
+    places = [
+        (key.lstrip('_'), str(label))
+        for key, label in (result or {}).items()
+        if key != '_0' and key.lstrip('_').isdigit()
+    ]
+    if not places:
         raise RuntimeError(f'Kleinanzeigen kennt den Ort „{city}“ nicht.')
-    return ids[0]
+    named = (
+        place
+        for place, label in places
+        if label.casefold().startswith(city.casefold() + ' ') or label.casefold() == city.casefold()
+    )
+    return next(named, places[0][0])
 
 
 def kleinanzeigen_url(profile, location_id, page=1):

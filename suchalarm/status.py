@@ -1,4 +1,11 @@
-"""How a source of a search is shown: its result, a failure or a pause. Shared by every search kind."""
+"""How a source of a search is shown: its result, a failure or a pause. Shared by every search kind.
+
+This module is the only one that touches the source_status table (suchalarm.db): one row per search and
+source, what the app shows. The state of the provider query behind it (cadence.db: when it ran, its cached
+result, retries, pauses) is the core's and is shared by every search with the same query; the functions here
+turn it into what each search shows. Only preis/worker.py reads the table besides, in two joins that find
+recent successful results.
+"""
 
 import logging
 import time
@@ -50,9 +57,44 @@ def source_error(search, source, now, reason, failures=None):
 
 
 def _row(conn, search, source):
-    return conn.execute(
-        'SELECT count, failures FROM source_status WHERE search_id=? AND source=?', (search['id'], source)
-    ).fetchone()
+    return of(conn, search['id'], source)
+
+
+def of(conn, search_id, source):
+    """The row a search shows for a source, or None before its first check (or after an edit dropped it)."""
+    row = conn.execute('SELECT * FROM source_status WHERE search_id=? AND source=?', (search_id, source)).fetchone()
+    return dict(row) if row else None
+
+
+def table(conn, source=None):
+    """Every search's row, of one SOURCE or all, as the API shows them."""
+    rows = conn.execute('SELECT * FROM source_status WHERE ?1 IS NULL OR source=?1', (source,))
+    return [dict(r) for r in rows]
+
+
+def by_search_and_source(conn):
+    """{(search id, source): row}, for the scheduler."""
+    return {(row['search_id'], row['source']): row for row in table(conn)}
+
+
+def forget(conn, search_id, sources):
+    """An edit makes these sources' results invalid: their next result is a new starting stock (started())."""
+    conn.executemany('DELETE FROM source_status WHERE search_id=? AND source=?', [(search_id, s) for s in sources])
+
+
+def forget_kind(conn, kind):
+    """Every row of one search kind's searches (the kind's offers were all deleted)."""
+    conn.execute('DELETE FROM source_status WHERE search_id IN (SELECT id FROM searches WHERE kind=?)', (kind,))
+
+
+def share_error(first_id, follower, source):
+    """A search sharing the query of FIRST_ID shows the same failure. Returns whether there was one."""
+    with store.db() as conn:
+        first = of(conn, first_id, source)
+    if not first or not first['error']:
+        return False
+    source_error(follower, source, first['checked_at'], first['error'], first['failures'])
+    return True
 
 
 def _failures(conn, search, source):

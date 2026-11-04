@@ -20,50 +20,6 @@ test('escapeHtml neutralises markup in offer titles', () => {
   assert.equal(logic.escapeHtml(null), '');
 });
 
-test('comparison counts unknown shipping only without the shipping switch', () => {
-  const offer = { price: 4066, shipping: null };
-  assert.equal(logic.comparison(offer, { include_shipping: 0 }), 4066);
-  assert.equal(logic.comparison(offer, { include_shipping: 1 }), null);
-  assert.equal(logic.comparison({ price: 4066, shipping: 818 }, { include_shipping: 1 }), 4884);
-});
-
-test('Vinted counts its buyer protection when the search includes it', () => {
-  const offer = { source: 'vinted', price: 4400, shipping: 249 };
-  assert.equal(logic.buyerFee(offer), 290);
-  assert.equal(logic.comparison(offer, { include_shipping: 0, include_fee: 1 }), 4690);
-  assert.equal(logic.comparison(offer, { include_shipping: 1, include_fee: 1 }), 4939);
-  assert.equal(logic.comparison(offer, { include_shipping: 0, include_fee: 0 }), 4400);
-  assert.equal(logic.comparison({ ...offer, source: 'ebay' }, { include_shipping: 0, include_fee: 1 }), 4400);
-});
-
-test('idealo shops always count with shipping', () => {
-  const search = { include_shipping: 0, min_price: 0, max_price: 3500 };
-  assert.equal(logic.comparison({ source: 'idealo', price: 3000, shipping: 900 }, search), 3900);
-  assert.equal(logic.comparison({ source: 'idealo', price: 3000, shipping: null }, search), null);
-  assert.equal(logic.comparison({ source: 'ebay', price: 3000, shipping: 900 }, search), 3000);
-  assert.equal(logic.match({ source: 'idealo', price: 3000, shipping: 900 }, search), false);
-  assert.equal(logic.withShipping({ source: 'idealo' }, search), true);
-});
-
-test('match follows the price range of a search', () => {
-  const search = { include_shipping: 1, min_price: 2000, max_price: 4500 };
-  assert.equal(logic.match({ price: 4066, shipping: null }, search), false); // unknown shipping is never 0
-  assert.equal(logic.match({ price: 4066, shipping: 818 }, search), false); // 48,84 € is over the limit
-  assert.equal(logic.match({ price: 4066, shipping: 818 }, { ...search, max_price: 5000 }), true);
-  assert.equal(logic.match({ price: 4500, shipping: 0 }, search), false); // strictly below the maximum
-  assert.equal(logic.match({ price: 300, shipping: 0 }, search), false); // junk below the minimum
-});
-
-test('given-away offers pass the minimum only when the search wants them', () => {
-  const search = { include_shipping: 0, min_price: 2000, max_price: 4500 };
-  assert.equal(logic.match({ price: 0, shipping: null }, search), false);
-  assert.equal(logic.match({ price: 0, shipping: null }, { ...search, free: true }), true);
-  const shipped = { ...search, include_shipping: 1, free: true };
-  assert.equal(logic.match({ price: 0, shipping: 450 }, shipped), true); // only the parcel costs
-  assert.equal(logic.match({ price: 0, shipping: 450 }, { ...shipped, max_price: 400 }), false);
-  assert.equal(logic.match({ price: 0, shipping: null }, shipped), false); // unknown shipping is never 0
-});
-
 test('priceRange and priceInput', () => {
   assert.equal(plain(logic.priceRange({ min_price: 0, max_price: 3500 })), 'Unter 35,00 €');
   assert.equal(plain(logic.priceRange({ min_price: 2000, max_price: 3500 })), '20,00 € – 35,00 €');

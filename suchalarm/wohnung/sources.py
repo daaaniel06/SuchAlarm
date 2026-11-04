@@ -33,16 +33,6 @@ BROWSER_HOSTS = {
     'immowelt': {'www.immowelt.de', 'immowelt.de'},
 }
 KLEINANZEIGEN_CARDS = 'article[data-adid]'
-DETAILS = (
-    'immoscout24',
-    'kleinanzeigen-wohnung',
-    'wg-gesucht',
-    'immowelt',
-    'ohne-makler',
-    'immobilien-de',
-    'bauverein',
-    'nhw',
-)
 
 
 def _extract_cards(selector):
@@ -394,26 +384,34 @@ PAGED = (
 )  # the others list everything on one page
 
 
+async def _immoscout_cards(p, page):
+    return portals.immoscout_parse(await _immoscout(p, page))
+
+
+async def _bauverein_cards(p, page):
+    return await _bauverein()
+
+
+async def _nhw_cards(p, page):
+    return portals.nhw_parse(await http.get_html('nhw', portals.NHW_LIST))
+
+
+# How each portal's result list is read: (search profile, page) -> cards.
+LISTS = {
+    'immoscout24': _immoscout_cards,
+    'kleinanzeigen-wohnung': _kleinanzeigen,
+    'immowelt': _immowelt,
+    'wg-gesucht': _wg_gesucht,
+    'ohne-makler': _ohne_makler,
+    'immobilien-de': _immobilien_de,
+    'bauverein': _bauverein_cards,
+    'nhw': _nhw_cards,
+}
+
+
 async def cards(source, search, page=1):
     """The cards of one portal query, newest first; PAGE counts only on the PAGED portals."""
-    p = profile(search)
-    if source == 'immoscout24':
-        return portals.immoscout_parse(await _immoscout(p, page))
-    if source == 'kleinanzeigen-wohnung':
-        return await _kleinanzeigen(p, page)
-    if source == 'immowelt':
-        return await _immowelt(p, page)
-    if source == 'wg-gesucht':
-        return await _wg_gesucht(p, page)
-    if source == 'ohne-makler':
-        return await _ohne_makler(p, page)
-    if source == 'immobilien-de':
-        return await _immobilien_de(p, page)
-    if source == 'bauverein':
-        return await _bauverein()
-    if source == 'nhw':
-        return portals.nhw_parse(await http.get_html(source, portals.NHW_LIST))
-    raise LookupError(source)
+    return await LISTS[source](profile(search), page)
 
 
 @cadence.shared_search(cache_version=2)
@@ -482,24 +480,40 @@ async def _immowelt_detail(url):
     return portals.immowelt_detail(html)
 
 
+async def _immoscout_detail(url):
+    data = await http.get_json('immoscout24', portals.immoscout_detail_url(url), {'User-Agent': portals.IMMOSCOUT_UA})
+    return portals.immoscout_detail(data)
+
+
+async def _kleinanzeigen_detail(url):
+    return portals.kleinanzeigen_detail(await _browser_page('kleinanzeigen-wohnung', url))
+
+
+async def _bauverein_detail(url):
+    endpoint, payload = portals.polyestate('object-details', {'id': portals.bauverein_identifier(url)})
+    return portals.bauverein_detail(await http.get_json('bauverein', endpoint, portals.BAUVEREIN_HEADERS, payload))
+
+
+# Portals whose detail page is plain HTML: its parser.
+HTML_DETAILS = {
+    'wg-gesucht': portals.wg_detail,
+    'ohne-makler': portals.om_detail,
+    'immobilien-de': portals.id_detail,
+    'nhw': portals.nhw_detail,
+}
+DETAIL_PAGES = {
+    'immoscout24': _immoscout_detail,
+    'kleinanzeigen-wohnung': _kleinanzeigen_detail,
+    'immowelt': _immowelt_detail,
+    'bauverein': _bauverein_detail,
+}
+
+
+DETAILS = (*HTML_DETAILS, *DETAIL_PAGES)  # the portals with a detail page to read
+
+
 async def detail(source, url):
     """What the detail page of a listing adds (camelCase keys); one booked visit."""
-    if source == 'immoscout24':
-        data = await http.get_json(source, portals.immoscout_detail_url(url), {'User-Agent': portals.IMMOSCOUT_UA})
-        return portals.immoscout_detail(data)
-    if source == 'kleinanzeigen-wohnung':
-        return portals.kleinanzeigen_detail(await _browser_page(source, url))
-    if source == 'immowelt':
-        return await _immowelt_detail(url)
-    if source == 'wg-gesucht':
-        return portals.wg_detail(await http.get_html(source, url))
-    if source == 'ohne-makler':
-        return portals.om_detail(await http.get_html(source, url))
-    if source == 'immobilien-de':
-        return portals.id_detail(await http.get_html(source, url))
-    if source == 'bauverein':
-        endpoint, payload = portals.polyestate('object-details', {'id': portals.bauverein_identifier(url)})
-        return portals.bauverein_detail(await http.get_json(source, endpoint, portals.BAUVEREIN_HEADERS, payload))
-    if source == 'nhw':
-        return portals.nhw_detail(await http.get_html(source, url))
-    raise LookupError(source)
+    if source in HTML_DETAILS:
+        return HTML_DETAILS[source](await http.get_html(source, url))
+    return await DETAIL_PAGES[source](url)

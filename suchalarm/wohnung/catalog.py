@@ -40,19 +40,21 @@ def mailable(item, verdict, detail_state):
     return verdict == 'unclear' and (item.source not in sources.DETAILS or detail_state == 'failed')
 
 
-def listings(search):
-    """The stored listings of a flat search, completed by their detail pages, each with its verdict.
+def listings(search, conn=None):
+    """The stored listings of a flat search, completed by their detail pages, each with its verdict. CONN: the
+    caller's open connection (store.reading).
 
     Returns dicts: the listing's fields plus status, reasons, first_seen, last_seen and start."""
     wanted, middle = profile(search), sources.centre(search)
-    with store.db() as conn:
-        rows = conn.execute(
+    with store.reading(conn) as reader:
+        rows = reader.execute(
             'SELECT l.*, d.body AS detail, d.state AS detail_state, d.created_at AS asked_at, s.url AS start '
             'FROM listings l LEFT JOIN listing_details d ON d.url=l.url '
             'LEFT JOIN start_offers s ON s.search_id=l.search_id AND s.url=l.url '
             'WHERE l.search_id=? ORDER BY l.first_seen DESC',
             (search['id'],),
         ).fetchall()
+        separated = apart(search['id'], reader)
     result, now = [], time.time()
     for row in rows:
         item = Listing(**json.loads(row['body']))
@@ -73,7 +75,7 @@ def listings(search):
     photos = images.fingerprints([row['url'] for row in result])
     for row in result:
         row['photo_hash'] = photos.get(row['url'])
-    firsts = duplicates.groups(result, apart(search['id']))
+    firsts = duplicates.groups(result, separated)
     members: dict[str, list[dict]] = {}
     for row in result:
         if row['url'] in firsts:
@@ -121,17 +123,17 @@ def twins_by_url(rows):
     }
 
 
-def apart(search_id):
+def apart(search_id, conn=None):
     """Pairs of listings the user called "Nicht dieselbe Wohnung", as frozensets of two URLs."""
-    with store.db() as conn:
-        rows = conn.execute('SELECT url, other FROM separated WHERE search_id=?', (search_id,)).fetchall()
+    with store.reading(conn) as reader:
+        rows = reader.execute('SELECT url, other FROM separated WHERE search_id=?', (search_id,)).fetchall()
     return {frozenset((row['url'], row['other'])) for row in rows}
 
 
 def separate(conn, search_id, url):
     """ "Nicht dieselbe Wohnung": the listing leaves its group for good. False if the search does not list it."""
-    search = store.search(search_id)
-    rows = listings(search) if search and search['kind'] == 'wohnung' else []
+    search = store.read_search(conn, search_id)
+    rows = listings(search, conn) if search and search['kind'] == 'wohnung' else []
     flat = next((row for row in rows if row['url'] == url), None)
     if flat is None:
         return False

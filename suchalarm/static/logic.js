@@ -1,4 +1,5 @@
-// Pure helpers without DOM or app state: formatting, the price rules of a search and the swipe maths.
+// Pure helpers without DOM or app state: formatting, areas, the map and the swipe maths. The price rules live on
+// the server only: each offer comes with compared, fits and with_shipping (preis/worker.judged).
 // An ES module: the page's modules and the Node tests import it.
 
 // Formatting
@@ -33,23 +34,6 @@ export const splitWords = text =>
     .map(w => w.trim())
     .filter(Boolean);
 
-// The price rules, as on the server (domain.with_shipping, compared_price, in_range).
-// idealo shops always count with shipping; other offers as the search says.
-export const withShipping = (offer, search) => offer.source === 'idealo' || Boolean(search.include_shipping);
-// Vinted's buyer protection: 5 % of the item price plus 0,70 €, as on the server (preis/domain.py).
-export const buyerFee = offer =>
-  offer.source === 'vinted' && offer.price > 0 ? Math.floor((offer.price * 5 + 50) / 100) + 70 : 0;
-export function comparison(offer, search) {
-  const item = offer.price + (search.include_fee ? buyerFee(offer) : 0);
-  if (!withShipping(offer, search)) return item;
-  return offer.shipping === null ? null : item + offer.shipping;
-}
-// Given away (item price 0) counts for a search that wants it, whatever its minimum price; shipping may apply.
-const given = (price, search) => price === 0 && Boolean(search.free);
-export function match(offer, search) {
-  const value = comparison(offer, search);
-  return value !== null && (given(offer.price, search) || value >= (search.min_price || 0)) && value < search.max_price;
-}
 export const priceRange = s =>
   s.min_price ? `${euro(s.min_price)} – ${euro(s.max_price)}` : `Unter ${euro(s.max_price)}`;
 

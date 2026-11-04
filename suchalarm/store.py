@@ -321,11 +321,27 @@ def _search(row) -> Search:
     return Search(**search)
 
 
+@contextmanager
+def reading(conn=None):
+    """CONN when the caller already holds one, else a connection of its own. A function given a connection must
+    never open a second one: once the first writes, the second waits for its lock until it times out."""
+    if conn is not None:
+        yield conn
+        return
+    with db() as own:
+        yield own
+
+
 def searches(kind=None) -> list[Search]:
     """All searches, newest first; KIND ('preis' or 'wohnung') limits them to one search kind."""
     with db() as conn:
-        rows = conn.execute('SELECT * FROM searches WHERE ?1 IS NULL OR kind=?1 ORDER BY id DESC', (kind,))
-        return [_search(r) for r in rows]
+        return read_searches(conn, kind)
+
+
+def read_searches(conn, kind=None) -> list[Search]:
+    """searches() as CONN sees them."""
+    rows = conn.execute('SELECT * FROM searches WHERE ?1 IS NULL OR kind=?1 ORDER BY id DESC', (kind,))
+    return [_search(r) for r in rows]
 
 
 def search(search_id) -> Search | None:
@@ -381,12 +397,6 @@ def unhide(conn, search_id=None, url=None):
     return conn.execute('DELETE FROM hidden WHERE search_id=? AND url=?', (search_id, url)).rowcount
 
 
-def statuses(conn, source=None):
-    """The last result per search and source, of one SOURCE or all."""
-    rows = conn.execute('SELECT * FROM source_status WHERE ?1 IS NULL OR source=?1', (source,))
-    return [dict(r) for r in rows]
-
-
 def saved(conn):
     """The watch list, newest first: snapshots, so a hit stays listed after the provider drops it."""
     return [dict(r) for r in conn.execute('SELECT * FROM saved ORDER BY saved_at DESC')]
@@ -425,6 +435,34 @@ def keep_waiting_only(conn, table, search_id):
         '(SELECT url FROM outbox WHERE search_id=?1 AND batch IS NULL)',
         (search_id,),
     )
+
+
+def remember_reported(conn, search_id, url, price, when):
+    """A hit counts as reported at PRICE: mailed, starting stock, or found while its mails were off. Only a
+    lower price mails it again."""
+    conn.execute('INSERT OR REPLACE INTO notifications VALUES (?,?,?,?)', (search_id, url, price, when))
+
+
+def queue(conn, search_id, url, price, when):
+    """A hit waits in the outbox for its mail. One already waiting only follows a further drop of its price;
+    one being sent stays as it is."""
+    conn.execute(
+        'INSERT INTO outbox(search_id,url,price,created_at) VALUES (?,?,?,?) '
+        'ON CONFLICT(search_id,url) DO UPDATE SET price=excluded.price '
+        'WHERE outbox.batch IS NULL AND excluded.price < outbox.price',
+        (search_id, url, price, when),
+    )
+
+
+def forget_reports(conn, search_id):
+    """A search changed what it compares: its earlier reports and waiting hits no longer say anything."""
+    conn.execute('DELETE FROM notifications WHERE search_id=?', (search_id,))
+    conn.execute('DELETE FROM outbox WHERE search_id=?', (search_id,))
+
+
+def drop_queued(conn, pairs):
+    """Take waiting hits, (search id, url) PAIRS, out of the outbox: no longer worth a mail."""
+    conn.executemany('DELETE FROM outbox WHERE search_id=? AND url=?', pairs)
 
 
 def pending(conn, kind):

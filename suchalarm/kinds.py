@@ -6,7 +6,7 @@ A kind's module offers:
 - prepare, rests, fetch, save, finish, EMPTY_IS_SUSPICIOUS: one check (worker.check)
 - take_pending, explain, mail (presentation, see preis/mail.py): the digest
 - idle, queue_mails, cleanup: the loop
-- hits, bookmark, samples, clear, reset (after an edit), search_url, extras: the API
+- hits, saved (watch-list snapshots), bookmark, samples, clear, reset (after an edit), search_url, extras: the API
 - MODEL (the pydantic search body) and CHOICES (what its editor offers): models.py and /api/state
 
 A kind's own endpoints (preis/api.py, wohnung/api.py) are an APIRouter in ROUTERS.
@@ -36,6 +36,7 @@ INTERFACE = (
     'queue_mails',
     'cleanup',
     'hits',
+    'saved',
     'bookmark',
     'samples',
     'clear',
