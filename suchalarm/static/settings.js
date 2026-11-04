@@ -1,6 +1,8 @@
 // Settings: automatic search on top, below it the tabs Mails, Quellen (with details) and Daten.
 
-import { AREAS, AREA_TEXT, ago, escapeHtml, mailProvider, parseServer, serverText } from './logic.js';
+import { AREAS, AREA_TEXT, ago, html, mailProvider, parseServer, raw, serverText } from './logic.js';
+
+const removeIcon = raw('<svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>');
 import { $, clock, kindOfSource, safeLink, setHtml } from './ui.js';
 import { STEP_LABEL, nextFetch, pill, sourceSteps } from './steps.js';
 import { api, clearAsking, message, refresh, render, state } from './page.js';
@@ -34,23 +36,26 @@ export function renderMailStatus() {
   const outcome = log =>
     log.status === 'sent'
       ? log.error
-        ? `${ago(log.sent_at)} · <span class="down">${escapeHtml(log.error)}</span>`
+        ? html`${ago(log.sent_at)} · <span class="down">${log.error}</span>`
         : ago(log.sent_at)
       : log.status === 'failed'
-        ? `<span class="down">Fehlgeschlagen · ${escapeHtml(log.error || '')}</span>`
+        ? html`<span class="down">Fehlgeschlagen · ${log.error || ''}</span>`
         : log.status === 'unknown'
-          ? `<span class="down">Unklar, ob angekommen · ${ago(log.created_at)}</span>`
+          ? html`<span class="down">Unklar, ob angekommen · ${ago(log.created_at)}</span>`
           : 'Wird gesendet …';
   setHtml(
     $('mail-log'),
     state.mail_log.length
-      ? state.mail_log
-          .map(
-            log =>
-              `<li class="field"><span><b>${escapeHtml(log.subject)}</b><small>${outcome(log)}</small></span><span class="count">${log.count}</span></li>`,
-          )
-          .join('')
-      : '<li class="field"><span><small>Noch keine Mails verschickt.</small></span></li>',
+      ? state.mail_log.map(
+          log =>
+            html`<li class="field">
+              <span><b>${log.subject}</b><small>${outcome(log)}</small></span
+              ><span class="count">${log.count}</span>
+            </li>`,
+        )
+      : html`<li class="field">
+          <span><small>Noch keine Mails verschickt.</small></span>
+        </li>`,
   );
 }
 
@@ -84,9 +89,11 @@ export function renderSettings(checking) {
   const groups = AREAS.map((kind, i) => {
     const steps = sourceSteps(checking, true).filter(x => kindOfSource(x.source) === kind),
       failed = steps.filter(x => x.step === 'failed').length,
-      count = `${steps.length} ${steps.length === 1 ? 'Quelle' : 'Quellen'}${failed ? ` · <span class="down">${failed} gestört</span>` : ''}`;
+      count = html`${steps.length}
+      ${steps.length === 1 ? 'Quelle' : 'Quellen'}${failed > 0 && html` · <span class="down">${failed} gestört</span>`}`;
     failedAll += failed;
-    return `<h2 class="group-title${i ? '' : ' first'}">${AREA_TEXT[kind].title}<small>${count}</small></h2><div class="group form-group">${steps.map(sourceField).join('')}</div>`;
+    return html`<h2 class="group-title${i ? '' : ' first'}">${AREA_TEXT[kind].title}<small>${count}</small></h2>
+      <div class="group form-group">${steps.map(sourceField)}</div>`;
   });
   setHtml($('source-list'), groups.join(''));
   // A disturbed source shows on its tab, so it is not missed while another tab is open.
@@ -128,18 +135,26 @@ function sourceField(x) {
   const queued = (state.queued_jobs || []).some(job => job.source === x.source),
     action =
       x.step === 'failed'
-        ? `<button class="pill compact" data-retry="${x.source}" ${queued ? 'disabled' : ''}>${queued ? 'Eingereiht' : 'Neu versuchen'}</button>`
+        ? html`<button class="pill compact" data-retry="${x.source}" ${queued ? 'disabled' : ''}>
+            ${queued ? 'Eingereiht' : 'Neu versuchen'}
+          </button>`
         : pill(x, STEP_LABEL[x.step]);
   const open = openDetails.has(x.source),
-    toggle = `<button class="text-button" data-details="${x.source}" aria-expanded="${open}">${open ? 'Weniger' : 'Details'}</button>`;
-  return `<div class="field source-field ${x.step}"><span><b>${escapeHtml(state.sources[x.source])}</b><small>${escapeHtml(text)}</small></span><span class="confirm-actions">${toggle}${action}</span></div>${open ? detailsPanel(x.source) : ''}`;
+    toggle = html`<button class="text-button" data-details="${x.source}" aria-expanded="${open}">
+      ${open ? 'Weniger' : 'Details'}
+    </button>`;
+  return html`<div class="field source-field ${x.step}">
+      <span><b>${state.sources[x.source]}</b><small>${text}</small></span
+      ><span class="confirm-actions">${toggle}${action}</span>
+    </div>
+    ${open && detailsPanel(x.source)}`;
 }
 
 // Why a source fails, so it can be checked without opening the server: the provider's pause and
 // budget, and per search the last attempts, the error and what the page showed at that moment.
 function detailsPanel(source) {
   const d = details[source];
-  if (!d) return '<div class="source-details"><p>Lädt …</p></div>';
+  if (!d) return html`<div class="source-details"><p>Lädt …</p></div>`;
   const now = Date.now() / 1000,
     p = d.provider;
   const provider = [
@@ -163,9 +178,12 @@ function detailsPanel(source) {
       q?.at ? `letzter Erfolg ${ago(q.at)}` : 'noch kein erfolgreicher Abruf',
       q?.next_at > now ? `nächster Versuch ${clock(q.next_at)}` : '',
     ].filter(Boolean);
-    let html = `<h4>${escapeHtml(search ? searchName(search) : 'Suche')}</h4><p>${escapeHtml(facts.join(' · '))}</p>`;
+    const parts = [
+      html`<h4>${search ? searchName(search) : 'Suche'}</h4>
+        <p>${facts.join(' · ')}</p>`,
+    ];
     if (f) {
-      html += `<p class="down">${escapeHtml(f.error)} (${clock(f.at)})</p>`;
+      parts.push(html`<p class="down">${f.error} (${clock(f.at)})</p>`);
       if (info) {
         const page = [
           info.stage ? `Schritt: ${info.stage}` : '',
@@ -173,17 +191,28 @@ function detailsPanel(source) {
           info.cards != null ? `${info.cards} Angebotskarten erkannt` : '',
           info.error ? `Fehlerart: ${info.error}` : '',
         ].filter(Boolean);
-        html += `<p>${escapeHtml(page.join(' · '))}</p>`;
-        if (info.title) html += `<p>Seitentitel „${escapeHtml(info.title)}“</p>`;
-        if (info.text) html += `<blockquote>${escapeHtml(info.text)}</blockquote>`;
+        parts.push(html`<p>${page.join(' · ')}</p>`);
+        if (info.title) parts.push(html`<p>Seitentitel „${info.title}“</p>`);
+        if (info.text) parts.push(html`<blockquote>${info.text}</blockquote>`);
       }
-    } else html += '<p>Kein Fehler gespeichert.</p>';
+    } else parts.push(html`<p>Kein Fehler gespeichert.</p>`);
     const link = info?.url || entry.url;
     if (link)
-      html += `<a class="text-button" href="${safeLink(link)}" target="_blank" rel="noopener noreferrer">${info?.url ? 'Fehlgeschlagene Seite selbst öffnen' : 'Suchseite selbst öffnen'} ↗</a>`;
-    return `<section>${html}</section>`;
+      parts.push(
+        html`<a class="text-button" href="${safeLink(link)}" target="_blank" rel="noopener noreferrer"
+          >${info?.url ? 'Fehlgeschlagene Seite selbst öffnen' : 'Suchseite selbst öffnen'} ↗</a
+        >`,
+      );
+    return html`<section>${parts}</section>`;
   });
-  return `<div class="source-details"><section><h4>Anbieter</h4><p>${escapeHtml(provider.join(' · '))}</p></section>${searches.join('') || '<p>Keine aktive Suche nutzt diese Quelle.</p>'}</div>`;
+  const none = html`<p>Keine aktive Suche nutzt diese Quelle.</p>`;
+  return html`<div class="source-details">
+    <section>
+      <h4>Anbieter</h4>
+      <p>${provider.join(' · ')}</p>
+    </section>
+    ${searches.length ? searches : none}
+  </div>`;
 }
 export async function loadDetails(source) {
   try {
@@ -214,7 +243,12 @@ function renderMail() {
   $('recipient-items').innerHTML = mail.recipients
     .map(
       (address, i) =>
-        `<div class="field"><span>${escapeHtml(address)}</span><button type="button" class="round-button small" data-remove="${i}" aria-label="${escapeHtml(address)} entfernen"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>`,
+        html`<div class="field">
+          <span>${address}</span
+          ><button type="button" class="round-button small" data-remove="${i}" aria-label="${address} entfernen">
+            ${removeIcon}
+          </button>
+        </div>`,
     )
     .join('');
   $('recipient-add').placeholder = mail.recipients.length ? 'Weitere Mailadresse' : 'Mailadresse hinzufügen';

@@ -93,7 +93,7 @@ function searchItem(s) {
   </button>`;
   return html`<li class="search-item${s.active ? '' : ' paused'}">
     ${main}${check}${tags.length > 0 && html`<span class="search-tags">${tags}</span>`}<span class="search-sources"
-      >${steps.map(step => raw(pill(step)))}</span
+      >${steps.map(step => pill(step))}</span
     >${problems}${searchReference(s)}
   </li>`;
 }

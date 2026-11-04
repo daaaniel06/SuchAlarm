@@ -50,8 +50,9 @@ async def fetch(source, search):
     return await sources.fetch(source, search)
 
 
-def save(search, source, listings, listed, observed):
-    return pages.save_result(search, source, listings, listed, observed)
+def save(search, source, listings, counts, observed):
+    """COUNTS: what sources.fetch counted on the portal's page (listed, unread)."""
+    return pages.save_result(search, source, listings, counts['listed'], observed, counts['unread'])
 
 
 def finish(search, saved):

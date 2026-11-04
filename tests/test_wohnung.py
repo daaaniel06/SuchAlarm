@@ -44,6 +44,11 @@ LISTING = Listing(
 )
 
 
+def counts(listings, unread=None):
+    """What sources.fetch and sources.more count on a page, for their stand-ins."""
+    return {'listed': len(listings), 'unread': unread}
+
+
 def flat(**changes):
     return Listing(**{**LISTING.__dict__, **changes})
 
@@ -1016,7 +1021,7 @@ class ListedPlaceTests(TempData):
             patch.object(sources, 'locate', new=AsyncMock(return_value=(49.87, 8.65, 'Hessen'))),
         ):
             try:
-                return asyncio.run(sources.cards(source, search, page)), get_json
+                return asyncio.run(sources.cards(source, search, page))[0], get_json
             except RuntimeError as exc:
                 return str(exc), get_json
 
@@ -1109,13 +1114,12 @@ class UnreadTests(TempData):
         self.assertIsNone(portals.id_total(fixture('immobilien-de', 'list.html')))
 
     def test_a_page_should_hold_a_full_page_or_the_rest(self):
-        cards = lambda n, total: sources.Page([{}] * n, total)  # noqa: E731
-        self.assertEqual(sources.unread('immoscout24', 1, cards(99, 153)), 1)  # 100 on page one
-        self.assertEqual(sources.unread('immoscout24', 2, cards(53, 153)), 0)  # the rest on page two
-        self.assertEqual(sources.unread('ohne-makler', 1, cards(9, 10)), 1)
-        self.assertEqual(sources.unread('wg-gesucht', 2, cards(0, 53)), 0)  # past the end nothing is due
-        self.assertIsNone(sources.unread('immoscout24', 1, cards(5, None)))  # no count: no judgement
-        self.assertIsNone(sources.unread('nhw', 1, cards(5, 7)))  # a landlord's whole stock has no page size
+        self.assertEqual(sources.unread('immoscout24', 1, 99, 153), 1)  # 100 on page one
+        self.assertEqual(sources.unread('immoscout24', 2, 53, 153), 0)  # the rest on page two
+        self.assertEqual(sources.unread('ohne-makler', 1, 9, 10), 1)
+        self.assertEqual(sources.unread('wg-gesucht', 2, 0, 53), 0)  # past the end nothing is due
+        self.assertIsNone(sources.unread('immoscout24', 1, 5, None))  # no count: no judgement
+        self.assertIsNone(sources.unread('nhw', 1, 5, 7))  # a landlord's whole stock has no page size
 
     def test_the_source_shows_what_it_could_not_read_until_a_clean_result(self):
         flat_search = self.stored_search()
@@ -1167,7 +1171,7 @@ class WorkerTests(TempData):
         )  # fmt: skip
 
     def run_check(self, found, flat_search):
-        with patch.object(flats.sources, 'fetch', new=AsyncMock(return_value=(found, len(found)))):
+        with patch.object(flats.sources, 'fetch', new=AsyncMock(return_value=(found, counts(found)))):
             return asyncio.run(worker.check(flat_search))
 
     def due(self):
@@ -1182,7 +1186,7 @@ class WorkerTests(TempData):
         page = lambda start: [self.card(n) for n in range(start, start + pages.FULL_PAGE)]  # noqa: E731
         self.assertEqual(len(pages.save_result(flat_search, 'immoscout24', page(1), len(page(1)), time.time())), 15)
         self.assertEqual(self.due(), [(2, 0)])
-        with patch.object(flats.sources, 'more', new=AsyncMock(return_value=(page(100), len(page(100))))) as more:
+        with patch.object(flats.sources, 'more', new=AsyncMock(return_value=(page(100), counts(page(100))))) as more:
             asyncio.run(pages.more_step())
             self.assertEqual(more.await_args.args[2], 2)
             self.assertEqual(self.due(), [(3, 0)])
@@ -1205,7 +1209,7 @@ class WorkerTests(TempData):
         page = lambda start, size=pages.FULL_PAGE: [self.card(n) for n in range(start, start + size)]  # noqa: E731
         self.assertEqual(pages.save_result(flat_search, 'immoscout24', page(0), len(page(0)), time.time()), set())
         self.assertEqual(self.due(), [(2, 0)])
-        with patch.object(flats.sources, 'more', new=AsyncMock(return_value=(page(100), len(page(100))))):
+        with patch.object(flats.sources, 'more', new=AsyncMock(return_value=(page(100), counts(page(100))))):
             asyncio.run(pages.more_step())
         self.assertEqual(self.due(), [(3, 0)])
         new = pages.save_result(
@@ -1213,7 +1217,7 @@ class WorkerTests(TempData):
         )
         self.assertEqual(new, {'https://www.immobilienscout24.de/expose/500'})
         self.assertEqual(self.due(), [(3, 0)])  # a regular check does not end the reading of the stock
-        with patch.object(flats.sources, 'more', new=AsyncMock(return_value=(page(200, 3), len(page(200, 3))))):
+        with patch.object(flats.sources, 'more', new=AsyncMock(return_value=(page(200, 3), counts(page(200, 3))))):
             asyncio.run(pages.more_step())
         self.assertEqual(self.due(), [])  # the last page was not full
         rows = catalog.listings(flat_search)
@@ -1230,7 +1234,7 @@ class WorkerTests(TempData):
         first = [self.card(n) for n in range(pages.FULL_PAGE)]
         pages.save_result(flat_search, 'immoscout24', first, len(first), time.time())
         with patch.object(
-            flats.sources, 'more', new=AsyncMock(return_value=(first, len(first)))
+            flats.sources, 'more', new=AsyncMock(return_value=(first, counts(first)))
         ):  # the portal ignores the page
             asyncio.run(pages.more_step())
         self.assertEqual(self.due(), [])
@@ -1244,7 +1248,7 @@ class WorkerTests(TempData):
         async def edited_while_loading(source, search, page):
             with store.db() as conn:  # another limit while page 1 loads: a new job for page 1
                 pages.read_stock_again(conn, flat_search['id'], ['immoscout24'])
-            return [self.card(2)], pages.FULL_PAGE
+            return [self.card(2)], {'listed': pages.FULL_PAGE, 'unread': None}
 
         with patch.object(flats.sources, 'more', new=edited_while_loading):
             asyncio.run(pages.more_step())
@@ -1256,7 +1260,7 @@ class WorkerTests(TempData):
         first = [self.card(n) for n in range(pages.FULL_PAGE)]
         pages.save_result(flat_search, 'immoscout24', first, len(first), time.time())
         self.assertEqual(self.due(), [(2, 0)])
-        more = AsyncMock(return_value=([], 0))
+        more = AsyncMock(return_value=([], counts([])))
         with patch.object(flats.sources, 'more', new=more):
             with store.db() as conn:
                 conn.execute('UPDATE searches SET active=0 WHERE id=?', (flat_search['id'],))
@@ -1273,7 +1277,9 @@ class WorkerTests(TempData):
         here = [self.card(n) for n in range(5)]  # the other ten offers of the page lie elsewhere
         pages.save_result(flat_search, 'immoscout24', here, pages.FULL_PAGE, time.time())
         self.assertEqual(self.due(), [(2, 0)])
-        with patch.object(flats.sources, 'more', new=AsyncMock(return_value=([], pages.FULL_PAGE))):
+        with patch.object(
+            flats.sources, 'more', new=AsyncMock(return_value=([], {'listed': pages.FULL_PAGE, 'unread': None}))
+        ):
             asyncio.run(pages.more_step())
         self.assertEqual(self.due(), [(3, 0)])  # a page of only other places says nothing about the end
         pages.save_result(flat_search, 'immoscout24', here[:1], 1, time.time())
@@ -1478,7 +1484,7 @@ class WorkerTests(TempData):
         from suchalarm import scheduler, worker
 
         flat_search = self.stored_search()
-        with patch.object(flats.sources, 'fetch', new=AsyncMock(return_value=([self.card(1)], 1))):
+        with patch.object(flats.sources, 'fetch', new=AsyncMock(return_value=([self.card(1)], counts([1])))):
             asyncio.run(worker.check(flat_search))
         self.assertEqual(len(catalog.listings(flat_search)), 1)
         self.assertEqual(store.searches('wohnung')[0]['id'], flat_search['id'])
