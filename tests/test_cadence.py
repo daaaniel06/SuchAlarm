@@ -158,6 +158,18 @@ class CadenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(inner.await_args[0][1]['excluded'], '')
         self.assertEqual((len(first), len(second)), (2, 1))
 
+    async def test_a_result_of_an_older_shape_without_a_reparser_is_asked_anew(self):
+        """Raising cache_version means the stored shape changed: without a cached_parser the old one is not served."""
+        search = {'id': 1, 'query': 'x', 'max_price': 1000}
+        old = cadence.shared_search(AsyncMock(return_value=([], 1)), cache_version=1)
+        await old('ebay', search)  # stored as version 1, its interval still running
+        newer = AsyncMock(return_value=([], {'listed': 0}))
+        with patch.object(cadence, 'ready_at', return_value=0):
+            self.assertEqual(await cadence.shared_search(newer, cache_version=2)('ebay', search), ([], {'listed': 0}))
+            newer.assert_awaited_once()
+            await cadence.shared_search(newer, cache_version=2)('ebay', search)  # the new result is served again
+        newer.assert_awaited_once()
+
     async def test_refusal_is_remembered_for_the_query(self):
         inner = AsyncMock(side_effect=cadence.Refused('Anbieter blockiert die Browser-Abfrage (HTTP 403).'))
         fetch = cadence.shared_search(inner)

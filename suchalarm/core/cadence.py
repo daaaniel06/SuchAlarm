@@ -384,9 +384,12 @@ RETRY_SILENTLY_WITHIN = 2700  # a retried query with a result this recent keeps 
 
 
 def _cached_result(source, search, row, cache_version, cached_parser):
-    """The stored result of a query, reparsed from the saved pages when the parser changed since."""
+    """The stored result of a query, reparsed from the saved pages when the parser changed since. None when it
+    was stored in an older shape that no CACHED_PARSER can bring up to date: the query is then asked anew."""
     value = json.loads(row['value'])
-    if value.get('version', 1) != cache_version and cached_parser:
+    if value.get('version', 1) != cache_version:
+        if not cached_parser:
+            return None
         repaired = cached_parser(source, dict(search, excluded=''), value, row['at'])
         if repaired is not None:
             value = dict(repaired, version=cache_version)
@@ -473,8 +476,9 @@ def shared_search(call=None, *, cache_version=1, cached_parser=None):
         if row and row['next_at'] > now and not force:
             if row['state'] != 'ok' or not row['value']:
                 raise Deferred(row['next_at'])
-            offers, reference = _cached_result(source, search, row, cache_version, cached_parser)
-            return PROVIDERS[source].select(offers, search), reference
+            if (cached := _cached_result(source, search, row, cache_version, cached_parser)) is not None:
+                offers, reference = cached
+                return PROVIDERS[source].select(offers, search), reference
         seen = {'stage': 'Abruf vorbereiten'}
         token = LAST_PAGE.set(seen)
         try:

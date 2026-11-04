@@ -1,8 +1,10 @@
 // The flat search editor: place, warm rent, size, what to leave out and the portals.
 
-import { escapeHtml, splitWords } from './logic.js';
+import { html, raw, splitWords } from './logic.js';
 import { $, isFlat } from './ui.js';
 import { api, message, refresh, state } from './page.js';
+
+const removeIcon = raw('<svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>');
 
 // The flat search editor: place, warm rent, size, what to leave out and the portals.
 let flatWords = [],
@@ -25,13 +27,17 @@ function renderFlatChips() {
   $('flat-traits').innerHTML = state.choices.traits
     .map(
       t =>
-        `<button type="button" class="chip" data-trait="${escapeHtml(t)}" aria-pressed="${flatTraits.has(t)}">ohne ${escapeHtml(t)}</button>`,
+        html`<button type="button" class="chip" data-trait="${t}" aria-pressed="${flatTraits.has(t)}">
+          ohne ${t}
+        </button>`,
     )
     .join('');
   $('flat-word-chips').innerHTML = flatWords
     .map(
       (w, i) =>
-        `<button type="button" class="chip" aria-pressed="true" data-flat-word="${i}" aria-label="${escapeHtml(w)} entfernen">${escapeHtml(w)}<svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button>`,
+        html`<button type="button" class="chip" aria-pressed="true" data-flat-word="${i}" aria-label="${w} entfernen">
+          ${w}${removeIcon}
+        </button>`,
     )
     .join('');
   renderFlatDraft();
@@ -59,7 +65,15 @@ function showPlaces(list) {
   $('flat-place-options').innerHTML = list
     .map(
       (o, i) =>
-        `<button type="button" class="field place-option" role="option" aria-selected="${i === highlight}" data-place="${i}"><span>${escapeHtml(o.label)}</span><small>${o.kind === 'plz' ? 'Postleitzahl' : 'Stadt / Kreis'}</small></button>`,
+        html`<button
+          type="button"
+          class="field place-option"
+          role="option"
+          aria-selected="${i === highlight}"
+          data-place="${i}"
+        >
+          <span>${o.label}</span><small>${o.kind === 'plz' ? 'Postleitzahl' : 'Stadt / Kreis'}</small>
+        </button>`,
     )
     .join('');
   $('flat-place-options').hidden = !list.length;

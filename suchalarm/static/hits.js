@@ -1,6 +1,6 @@
 // The head of the hit list (count, status line, "Jetzt prüfen"), the hits and the watch list.
 
-import { AREA_TEXT, HITS, ago, escapeHtml, euro, kindOf, newCount } from './logic.js';
+import { AREA_TEXT, HITS, ago, euro, html, kindOf, newCount } from './logic.js';
 import { $, fits, kindOfSource, paged, pool, safeLink, setHtml, short, sourceName, visit } from './ui.js';
 import { pill, sourceSteps } from './steps.js';
 import { appliedTab, area, checkSubmitting, showAll, sort, state } from './page.js';
@@ -40,7 +40,7 @@ export function renderAreaSwitch(byId) {
 export function renderFilter(searches, byId) {
   if (filter && !byId(Number(filter))) filter = '';
   // Rebuilt only when the searches change: replacing the options closes an open dropdown and drops focus.
-  const option = s => `<option value="${s.id}">${escapeHtml(searchName(s))}</option>`;
+  const option = s => html`<option value="${s.id}">${searchName(s)}</option>`;
   const categories = area === 'preis' ? usedCategories(searches) : [];
   const filterOptions =
     '<option value="">Alle Suchen</option>' +
@@ -48,10 +48,9 @@ export function renderFilter(searches, byId) {
       ? categories
           .map(
             key =>
-              `<optgroup label="${escapeHtml(state.choices.categories[key].label)}">${searches
-                .filter(s => categoryOf(s) === key)
-                .map(option)
-                .join('')}</optgroup>`,
+              html`<optgroup label="${state.choices.categories[key].label}">
+                ${searches.filter(s => categoryOf(s) === key).map(option)}
+              </optgroup>`,
           )
           .join('')
       : searches.map(option).join(''));
@@ -94,7 +93,12 @@ export function renderHead(searches, selected, passing) {
     : busy
       ? ' · wird geprüft'
       : failed.length
-        ? `<span class="down"> · ${failed.length === 1 ? `${escapeHtml(sourceName(failed[0].source))} gestört` : `${failed.length} Quellen gestört`}</span>`
+        ? html`<span class="down">
+            ·
+            ${failed.length === 1
+              ? `${sourceName(failed[0].source)} gestört`
+              : `${failed.length} Quellen gestört`}</span
+          >`
         : state.queued.length
           ? ' · Prüfung startet'
           : state.paused || !active.length

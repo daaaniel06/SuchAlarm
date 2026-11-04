@@ -28,16 +28,9 @@ STOCK_PAGES = 50  # a new search takes in the whole stock; this only stops a por
 MORE_TRIES = 2
 
 
-def _counts(counts, listings):
-    """(listed, unread) of a fetch's COUNTS (sources.fetch); a plain number is how many the page listed."""
-    if isinstance(counts, dict):
-        return counts.get('listed', len(listings)), counts.get('unread')
-    return counts, None
-
-
-def save_result(search, source, listings, listed, now):
-    """Store a successful result (LISTED: the fetch's counts, or how many offers the portal's page held before
-    select()); queue
+def save_result(search, source, listings, listed, now, unread=None):
+    """Store a successful result (LISTED: how many offers the portal's page held before select(); UNREAD: how many
+    of the portal's own count the parser missed, sources.unread); queue
     detail pages for new listings.
 
     bauverein and NHW list their whole stock, so a flat missing there is let: it goes. The other portals
@@ -45,7 +38,7 @@ def save_result(search, source, listings, listed, now):
     missing there may just have moved down, so it stays until cleanup() finds it unseen for KEEP_LISTINGS.
     The first result, and a page 1 that read_stock_again() asked for, is starting stock.
     Returns the URLs of genuinely new listings (not the starting stock)."""
-    sid, (listed, unread) = search['id'], _counts(listed, listings)
+    sid = search['id']
     with store.db() as conn:
         job = _job(conn, sid, source)
         reading_stock = job is not None and bool(job['stock'])
@@ -59,11 +52,11 @@ def save_result(search, source, listings, listed, now):
     return set() if stock else unseen
 
 
-def save_more(search, job, listings, listed, now):
+def save_more(search, job, listings, listed, now, unread=None):
     """Store the further result page that JOB (a more_pages row) asked for. Its unseen flats are starting
     stock while a search takes in the stock, otherwise they count like any new ones. Returns the URLs of
     new ones."""
-    sid, source, (listed, unread) = search['id'], job['source'], _counts(listed, listings)
+    sid, source = search['id'], job['source']
     with store.db() as conn:
         if not _current(conn, job):
             return set()  # a regular check or an edit decided anew while the page loaded
@@ -201,7 +194,7 @@ async def more_step(now=None):
     if not search:
         return None
     try:
-        found, listed = await asyncio.wait_for(sources.more(job['source'], search, job['page']), timeout=FETCH_TIMEOUT)
+        found, counts = await asyncio.wait_for(sources.more(job['source'], search, job['page']), timeout=FETCH_TIMEOUT)
     except cadence.Deferred:
         return None
     except asyncio.CancelledError:
@@ -218,5 +211,5 @@ async def more_step(now=None):
         log.warning('Page %s of %s failed (%s)', job['page'], job['source'], type(exc).__name__)
         return job
     cadence.outcome(job['source'], 'page')
-    save_more(search, job, found, listed, time.time())
+    save_more(search, job, found, counts['listed'], time.time(), counts['unread'])
     return job

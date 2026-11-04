@@ -1,10 +1,10 @@
 // The state of a source for a search (checking, disturbed, waiting, done) and its pill.
 
-import { doneText, escapeHtml, kindOf } from './logic.js';
+import { doneText, html, kindOf, raw } from './logic.js';
 import { clock, fits, pool, sourceName } from './ui.js';
 import { state } from './page.js';
 
-const tick = '<svg viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></svg>';
+const tick = raw('<svg viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></svg>');
 export const STEP_LABEL = { done: 'Aktiv', pending: 'Prüft', failed: 'Gestört', waiting: 'Wartet', inactive: 'Aus' };
 
 // The next request the cadence allows for a source, or 0.
@@ -72,4 +72,6 @@ export function sourceSteps(searches, all = false) {
   });
 }
 export const pill = ({ source, step, text }, label = sourceName(source)) =>
-  `<span class="source-step ${step}" title="${escapeHtml(sourceName(source))}: ${escapeHtml(text)}"><i aria-hidden="true">${step === 'done' ? tick : step === 'failed' ? '!' : ''}</i>${escapeHtml(label)}</span>`;
+  html`<span class="source-step ${step}" title="${sourceName(source)}: ${text}"
+    ><i aria-hidden="true">${step === 'done' ? tick : step === 'failed' ? '!' : ''}</i>${label}</span
+  >`;

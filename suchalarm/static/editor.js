@@ -1,9 +1,11 @@
 // The product search editor (category, price, delivery, sources, words).
 
-import { escapeHtml, priceInput, splitWords } from './logic.js';
+import { html, priceInput, raw, splitWords } from './logic.js';
 import { $ } from './ui.js';
 import { api, message, refresh, state } from './page.js';
 import { PICKUP, PLACEHOLDERS, categoryIcon, categoryOf } from './searches.js';
+
+const removeIcon = raw('<svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>');
 
 let words = [],
   deleteArmed = false;
@@ -13,7 +15,9 @@ function renderWords() {
   $('word-chips').innerHTML = words
     .map(
       (w, i) =>
-        `<button type="button" class="chip" aria-pressed="true" data-word="${i}" aria-label="${escapeHtml(w)} entfernen">${escapeHtml(w)}<svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button>`,
+        html`<button type="button" class="chip" aria-pressed="true" data-word="${i}" aria-label="${w} entfernen">
+          ${w}${removeIcon}
+        </button>`,
     )
     .join('');
 }
@@ -25,7 +29,9 @@ function renderLearned() {
   $('learned-chips').innerHTML = learned
     .map(
       w =>
-        `<button type="button" class="chip" aria-pressed="true" data-learned="${escapeHtml(w)}" aria-label="${escapeHtml(w)} zurücknehmen">${escapeHtml(w)}<svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button>`,
+        html`<button type="button" class="chip" aria-pressed="true" data-learned="${w}" aria-label="${w} zurücknehmen">
+          ${w}${removeIcon}
+        </button>`,
     )
     .join('');
   moreSummary();
@@ -47,7 +53,15 @@ function renderCategoryChips() {
   $('category-chips').innerHTML = Object.entries(state.choices.categories)
     .map(
       ([key, c]) =>
-        `<button type="button" class="chip category-chip" data-category="${key}" aria-pressed="${key === draft.category}" title="${escapeHtml(c.hint)}">${categoryIcon(key)}${escapeHtml(c.label)}</button>`,
+        html`<button
+          type="button"
+          class="chip category-chip"
+          data-category="${key}"
+          aria-pressed="${key === draft.category}"
+          title="${c.hint}"
+        >
+          ${categoryIcon(key)}${c.label}
+        </button>`,
     )
     .join('');
 }
@@ -131,7 +145,7 @@ export function openEditor(id) {
     ($(field).innerHTML =
       `<option value="">${empty}</option>` +
       Object.entries(choices)
-        .map(([key, label]) => `<option value="${key}">${escapeHtml(label)}</option>`)
+        .map(([key, label]) => html`<option value="${key}">${label}</option>`)
         .join(''));
   options('platform', 'Alle Plattformen', state.choices.platforms);
   options('fuel', 'Alle', state.choices.fuels);

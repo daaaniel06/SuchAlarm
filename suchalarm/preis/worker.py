@@ -9,7 +9,6 @@ import time
 
 from .. import status, store
 from ..core import images
-from ..status import source_ok, started
 from . import delivery, learning, sources
 from . import mail as mail  # the kind's mail presentation (kinds.py)
 from .domain import (
@@ -122,7 +121,7 @@ def save_result(search, source, offers, reference, now):
         waiting = {r[0] for r in conn.execute('SELECT url FROM outbox WHERE search_id=? AND batch IS NULL', (sid,))}
         current = {offer.url for offer in offers}
         # An offer already waiting for the mail is news, also in a starting point after an edit.
-        baseline = current - waiting if not (seen.keys() - waiting) and not started(conn, sid, source) else set()
+        baseline = current - waiting if not (seen.keys() - waiting) and not status.started(conn, sid, source) else set()
         # The app shows no "new" dot for this starting point either.
         conn.executemany('INSERT OR IGNORE INTO start_offers VALUES (?,?)', [(sid, url) for url in baseline])
         sent = dict(conn.execute('SELECT url, sent_at FROM notifications WHERE search_id=?', (sid,)))
@@ -146,7 +145,7 @@ def save_result(search, source, offers, reference, now):
             'INSERT OR IGNORE INTO shipping_baselines VALUES (?,?)',
             [(sid, o.url) for o in offers if o.source == 'vinted' and o.shipping is None and o.url in baseline],
         )
-        source_ok(conn, sid, source, now, len(offers))
+        status.source_ok(conn, sid, source, now, len(offers))
         if source == 'idealo' and reference:
             value = json.dumps(dict(reference, checked_at=now))
             conn.execute('INSERT OR REPLACE INTO idealo_references VALUES (?,?)', (sid, value))

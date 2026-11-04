@@ -1,7 +1,7 @@
 // One row for hits and the watch list, both kinds: picture, title, details, price; saving and hiding.
 
 import { ago, euro, flatDetails, html, moveIn, raw } from './logic.js';
-import { bookmarkIcon, fits, isFlat, isNew, redraw, safeImage, safeLink, short, sourceName } from './ui.js';
+import { bookmarkIcon, fits, isFlat, isNew, keepDrawn, safeImage, safeLink, short, sourceName } from './ui.js';
 import { api, message, refresh, render, state } from './page.js';
 
 export const rows = new Map(); // filled by offerRow for both lists; a swipe finds its row here
@@ -24,9 +24,11 @@ document.addEventListener(
   e => {
     const img = e.target;
     if (img.tagName === 'IMG' && img.parentElement?.classList.contains('thumb')) {
-      img.parentElement.classList.remove('photo');
+      const tile = img.parentElement;
+      tile.classList.remove('photo');
       img.nextElementSibling?.remove();
       img.remove();
+      keepDrawn(tile); // the next refresh must not bring the broken picture back and ask for it again
     }
   },
   true,
@@ -145,8 +147,7 @@ async function setHidden(o, hidden) {
     if (hidden) message('Angebot ausgeblendet', false, { label: 'Rückgängig', run: () => setHidden(o, false) });
   } catch (err) {
     message(err.message, true);
-    redraw(); // the row slid out by hand: draw it back
-    render();
+    render(); // the row slid out by hand: setHtml draws it back
   }
 }
 // Runs once the row has settled: hiding slides the row out and folds it away first.

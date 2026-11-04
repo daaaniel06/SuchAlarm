@@ -67,19 +67,24 @@ export const bookmarkIcon = raw(
 );
 
 // What each area shows. The page asks the server every few seconds; a refresh that changes nothing leaves the
-// area alone, so pictures are not decoded again, hover, focus and a selection stay, and a picture that failed
-// is not asked for again. A click may change a button by hand (disabled while its request runs): redraw() makes
-// the next render draw everything once more.
-let drawn = new WeakMap();
+// area alone, so pictures are not decoded again, hover, focus and a selection stay. An area someone changed by
+// hand since (a button disabled while its request runs, a row slid aside) is drawn anew; one changed on purpose
+// says so with keepDrawn().
+const drawn = new WeakMap(); // element -> { text: the markup it was given, dom: its markup right after }
 export function setHtml(element, markup) {
   const text = Array.isArray(markup) ? markup.join('') : String(markup);
-  if (drawn.get(element) === text) return;
+  const last = drawn.get(element);
+  if (last && last.text === text && last.dom === element.innerHTML) return;
   element.innerHTML = text;
-  drawn.set(element, text);
+  drawn.set(element, { text, dom: element.innerHTML });
 }
-export const redraw = () => {
-  drawn = new WeakMap();
-};
+// NODE was changed on purpose (a picture that failed to load is gone): the areas around it keep it that way.
+export function keepDrawn(node) {
+  for (let element = node; element; element = element.parentElement) {
+    const last = drawn.get(element);
+    if (last) last.dom = element.innerHTML;
+  }
+}
 
 // Long lists come in pages of 30.
 const PAGE_SIZE = 30;

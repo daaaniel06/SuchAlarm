@@ -15,7 +15,6 @@ from dataclasses import dataclass
 from . import mailer, scheduler, status, store
 from .core import cadence, images
 from .kinds import KINDS
-from .status import deferred, empty_after_stock, failed, rest
 
 log = logging.getLogger('suchalarm')
 
@@ -64,24 +63,24 @@ async def check(search, source_names=None):
         for source in search['sources'] if source_names is None else source_names:
             progress.source, now = source, time.time()
             if note := kind.rests(search, source):
-                rest(search, source, note, now)
+                status.rest(search, source, note, now)
                 completed.add(source)
                 continue
             try:
                 items, extra = await asyncio.wait_for(kind.fetch(source, search), timeout=FETCH_TIMEOUT)
             except cadence.Deferred:
-                if deferred(search, source, now):
+                if status.deferred(search, source, now):
                     completed.add(source)
                 continue
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 completed.add(source)
-                failed(search, source, now, exc)
+                status.failed(search, source, now, exc)
                 continue
             completed.add(source)
-            if not items and kind.EMPTY_IS_SUSPICIOUS and empty_after_stock(search, source):
-                failed(
+            if not items and kind.EMPTY_IS_SUSPICIOUS and status.empty_after_stock(search, source):
+                status.failed(
                     search, source, now, RuntimeError('Anbieter liefert plötzlich keine Angebote (Layout geändert?).')
                 )
                 continue
