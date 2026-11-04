@@ -120,6 +120,15 @@ class LearningTests(unittest.TestCase):
         self.offers(self.search(GAME, 'videospiele'), [f'Affiche {GAME} {n}' for n in range(3)], hidden=True)
         self.assertEqual(learning.learned({'category': 'videospiele'}), ['encadree'])  # never learned again
 
+    def test_a_hidden_offer_counts_once_after_its_title_changed(self):
+        games = self.search(GAME, 'videospiele')
+        self.offers(games, POSTERS[:1], hidden=True)
+        self.assertEqual(learning.learned({'category': 'videospiele'}), [])  # keeps the title it was hidden with
+        with store.db() as conn:
+            conn.execute("UPDATE offers SET title=title || ' neu'")  # the seller edits the title
+        self.assertEqual(learning.learned({'category': 'videospiele'}), [])
+        self.assertEqual(learning.by_category([{'category': 'videospiele'}]), {'videospiele': []})
+
     def test_the_editor_sees_freshly_hidden_offers_without_writing(self):
         games = self.search(GAME, 'videospiele')
         self.offers(games, POSTERS, hidden=True)

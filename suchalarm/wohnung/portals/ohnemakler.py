@@ -79,7 +79,8 @@ def om_parse(html):
 
 
 def _card(part):
-    link = re.search(r'<a\b[^>]*href="(/immobilie/\d+/)"', part)
+    # Newer offers have letters in their address ("/immobilie/23pe4c/", 04.11.2026).
+    link = re.search(r'<a\b[^>]*href="(/immobilie/[0-9a-z]+/)"', part)
     if not link:
         return None
     title = re.search(r'<h4\b[^>]*>(.*?)</h4>', part, re.S)

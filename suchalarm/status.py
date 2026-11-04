@@ -39,17 +39,24 @@ def started(conn, sid, source):
 def source_error(search, source, now, reason, failures=None):
     """Show a source as disturbed. Its previous offers stay visible as stale; never a clean empty result.
 
-    FAILURES: failed attempts in a row. None counts this attempt on top of the stored ones."""
+    FAILURES: failed attempts in a row. None counts this attempt on top of the stored ones. The count of the
+    last result stays, so an empty page after the failure still looks suspicious (empty_after_stock)."""
     with store.db() as conn:
+        row = _row(conn, search, source)
         if failures is None:
-            failures = _failures(conn, search, source) + 1
-        _show(conn, search['id'], source, now, error=reason[:300], failures=failures)
+            failures = (row['failures'] if row else 0) + 1
+        count = row['count'] if row else 0
+        _show(conn, search['id'], source, now, error=reason[:300], count=count, failures=failures)
+
+
+def _row(conn, search, source):
+    return conn.execute(
+        'SELECT count, failures FROM source_status WHERE search_id=? AND source=?', (search['id'], source)
+    ).fetchone()
 
 
 def _failures(conn, search, source):
-    row = conn.execute(
-        'SELECT failures FROM source_status WHERE search_id=? AND source=?', (search['id'], source)
-    ).fetchone()
+    row = _row(conn, search, source)
     return row['failures'] if row else 0
 
 
@@ -90,11 +97,10 @@ SUSPICIOUS_STOCK = 5  # an empty page after at least this many results is treate
 
 
 def empty_after_stock(search, source):
-    """A source that suddenly lists nothing after a healthy stock usually changed its layout."""
+    """A source that suddenly lists nothing after a healthy stock usually changed its layout. It stays
+    disturbed while it keeps listing nothing, also after a failure in between: source_error keeps the count."""
     with store.db() as conn:
-        row = conn.execute(
-            'SELECT count FROM source_status WHERE search_id=? AND source=? AND error IS NULL', (search['id'], source)
-        ).fetchone()
+        row = _row(conn, search, source)
     return bool(row) and row['count'] >= SUSPICIOUS_STOCK
 
 

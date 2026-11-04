@@ -102,6 +102,9 @@ def wg_place(street, district, postcode=''):
     return ', '.join(part for part in parts if part)[:300]
 
 
+# The count above the list, "0 Angebote in allen Kategorien in Darmstadt" when nothing fits (04.11.2026); with
+# offers it reads "53 Einzimmerwohnungen, Wohnungen | 221 Angebote in allen Kategorien".
+EMPTY_COUNT = re.compile(r'<h2\b[^>]*>\s*0\s+Angebote\b')
 WG_CARD = re.compile(r'<a\b[^>]*\boffer_list_item\b[^>]*>', re.S)
 
 
@@ -109,7 +112,9 @@ def wg_parse(html):
     """The result list (layout of 10/2026: each offer is an <a class="wgg-list-card offer_list_item">)."""
     tags = list(WG_CARD.finditer(html))
     if not tags:
-        if re.search(r'keine\s+(?:passenden\s+)?(?:Angebote|Anzeigen|Ergebnisse)', html, re.I):
+        if re.search(r'keine\s+(?:passenden\s+)?(?:Angebote|Anzeigen|Ergebnisse)', html, re.I) or EMPTY_COUNT.search(
+            html
+        ):
             return []
         link = r'^(?:https://www\.wg-gesucht\.de)?/(?:1-zimmer-)?wohnungen-in-[\w-]+\.\d+\.html$'
         if listings := rescue('WG-Gesucht', html, link, 'https://www.wg-gesucht.de', warm=True):

@@ -253,6 +253,15 @@ def is_wanted_ad(title):
     return bool(_SEEKING.search(title)) and not _OFFER_HINT.search(title)
 
 
+# Only Kleinanzeigen mixes wanted ads among offers; the other portals list offers only, where a title such
+# as "Wohnung gesucht, Haus gefunden" (ImmoScout24) is a landlord's.
+MIXES_WANTED_ADS = ('kleinanzeigen-wohnung',)
+
+
+def wanted_ad(listing):
+    return listing.source in MIXES_WANTED_ADS and is_wanted_ad(listing.title)
+
+
 # --- A search as the filter rules see it ---------------------------------------------
 
 
@@ -405,7 +414,7 @@ def match(listing, profile, centre=None):
     The portal search applies place, radius and its own filters; the radius is checked again here for
     portals that ignore it. CENTRE is the searched place's centre, None if not looked up yet.
     """
-    if is_wanted_ad(listing.title):
+    if wanted_ad(listing):
         return 'excluded', ['Gesuch, kein Angebot']
     if outside_home(listing, profile):
         return 'excluded', [f'Nicht in {home_area(profile)}']
