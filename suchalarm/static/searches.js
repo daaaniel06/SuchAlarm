@@ -1,7 +1,7 @@
 // The searches page and what describes a search (name, category, delivery, tags).
 
-import { AREA_TEXT, escapeHtml, euro, flatSummary, priceRange, splitWords, thousands } from './logic.js';
-import { $, isFlat, refreshIcon, safeLink, sourceName } from './ui.js';
+import { AREA_TEXT, euro, flatSummary, html, priceRange, raw, splitWords, thousands } from './logic.js';
+import { $, isFlat, refreshIcon, safeLink, setHtml, sourceName } from './ui.js';
 import { pill, sourceStep } from './steps.js';
 import { area, state } from './page.js';
 
@@ -28,7 +28,7 @@ export const PLACEHOLDERS = {
   sonstiges: ['Lego Millennium Falcon', 50],
 };
 export const categoryIcon = key =>
-  `<svg viewBox="0 0 24 24" aria-hidden="true">${CATEGORY_ICONS[key] || CATEGORY_ICONS.sonstiges}</svg>`;
+  raw(`<svg viewBox="0 0 24 24" aria-hidden="true">${CATEGORY_ICONS[key] || CATEGORY_ICONS.sonstiges}</svg>`);
 export const categoryOf = s => (state.choices.categories[s.category] ? s.category : 'sonstiges');
 export const searchName = s =>
   isFlat(s) ? s.query : s.filters?.platform ? `${s.query} · ${state.choices.platforms[s.filters.platform]}` : s.query;
@@ -60,17 +60,42 @@ function searchTags(s) {
 export const usedCategories = searches =>
   Object.keys(state.choices.categories).filter(key => searches.some(s => categoryOf(s) === key));
 
+// The idealo new price under a product search, as a link.
+function searchReference(s) {
+  if (!s.reference) return '';
+  const { url, price, shipping_included: included } = s.reference;
+  return html`<a class="search-ref" href="${safeLink(url)}" target="_blank" rel="noopener noreferrer"
+    >idealo-Neupreis ${included ? `${euro(price)} inkl. Versand` : `ab ${euro(price)}`}</a
+  >`;
+}
+
 function searchItem(s) {
   const running = state.running === s.id,
     queued = state.queued.includes(s.id),
     label = running ? 'Wird geprüft' : queued ? 'Eingereiht' : 'Jetzt prüfen';
-  const problems = s.sources.map(x => ({ source: x, ...sourceStep(s, x) })).filter(x => x.step === 'failed');
-  const reference = s.reference
-    ? `<a class="search-ref" href="${safeLink(s.reference.url)}" target="_blank" rel="noopener noreferrer">idealo-Neupreis ${s.reference.shipping_included ? `${euro(s.reference.price)} inkl. Versand` : `ab ${euro(s.reference.price)}`}</a>`
-    : '';
-  const tags = (isFlat(s) ? flatTags(s) : searchTags(s)).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('');
+  const steps = s.sources.map(x => ({ source: x, ...sourceStep(s, x) }));
+  const problems = steps
+    .filter(x => x.step === 'failed')
+    .map(p => html`<small class="search-error">${sourceName(p.source)}: ${p.text}</small>`);
+  const tags = (isFlat(s) ? flatTags(s) : searchTags(s)).map(t => html`<span class="tag">${t}</span>`);
   const summary = isFlat(s) ? flatSummary(s) : `${priceRange(s)} · ${deliveryText(s)}`;
-  return `<li class="search-item${s.active ? '' : ' paused'}"><button class="search-main" data-edit="${s.id}" ${running ? 'disabled' : ''}><strong>${escapeHtml(searchName(s))}</strong><span>${escapeHtml(summary)} · ${s.active ? 'automatisch eingeplant' : 'pausiert'}</span></button><button class="round-button small" data-check="${s.id}" ${running || queued ? 'disabled' : ''} aria-label="${label}" title="${label}">${refreshIcon}</button>${tags ? `<span class="search-tags">${tags}</span>` : ''}<span class="search-sources">${s.sources.map(x => pill({ source: x, ...sourceStep(s, x) })).join('')}</span>${problems.map(p => `<small class="search-error">${escapeHtml(sourceName(p.source))}: ${escapeHtml(p.text)}</small>`).join('')}${reference}</li>`;
+  const main = html`<button class="search-main" data-edit="${s.id}" ${running ? 'disabled' : ''}>
+    <strong>${searchName(s)}</strong><span>${summary} · ${s.active ? 'automatisch eingeplant' : 'pausiert'}</span>
+  </button>`;
+  const check = html`<button
+    class="round-button small"
+    data-check="${s.id}"
+    ${running || queued ? 'disabled' : ''}
+    aria-label="${label}"
+    title="${label}"
+  >
+    ${refreshIcon}
+  </button>`;
+  return html`<li class="search-item${s.active ? '' : ' paused'}">
+    ${main}${check}${tags.length > 0 && html`<span class="search-tags">${tags}</span>`}<span class="search-sources"
+      >${steps.map(step => raw(pill(step)))}</span
+    >${problems}${searchReference(s)}
+  </li>`;
 }
 // What sets a flat search apart: the excluded kinds of offers, words and the move-in window.
 function flatTags(s) {
@@ -88,17 +113,43 @@ export function renderSearches(searches) {
   $('new-search').setAttribute('aria-label', label);
   $('new-search').title = label;
   if (area === 'wohnung') {
-    $('search-list').innerHTML = searches.length
-      ? `<section class="search-group"><ul class="group">${searches.map(searchItem).join('')}</ul></section>`
-      : '<ul class="group"><li class="asset-empty"><p>Noch keine Wohnungssuche.</p><button class="text-button" data-new>Wohnungssuche anlegen</button></li></ul>';
+    setHtml(
+      $('search-list'),
+      searches.length
+        ? html`<section class="search-group">
+            <ul class="group">
+              ${searches.map(searchItem)}
+            </ul>
+          </section>`
+        : html`<ul class="group">
+            <li class="asset-empty">
+              <p>Noch keine Wohnungssuche.</p>
+              <button class="text-button" data-new>Wohnungssuche anlegen</button>
+            </li>
+          </ul>`,
+    );
     return;
   }
-  $('search-list').innerHTML = searches.length
-    ? usedCategories(searches)
-        .map(key => {
-          const group = searches.filter(s => categoryOf(s) === key);
-          return `<section class="search-group"><h2 class="group-title category-title">${categoryIcon(key)}${escapeHtml(state.choices.categories[key].label)}<span>${group.length}</span></h2><ul class="group">${group.map(searchItem).join('')}</ul></section>`;
-        })
-        .join('')
-    : '<ul class="group"><li class="asset-empty"><p>Noch keine Preissuche.</p><button class="text-button" data-new>Preissuche anlegen</button></li></ul>';
+  const group = key => {
+    const own = searches.filter(s => categoryOf(s) === key);
+    return html`<section class="search-group">
+      <h2 class="group-title category-title">
+        ${categoryIcon(key)}${state.choices.categories[key].label}<span>${own.length}</span>
+      </h2>
+      <ul class="group">
+        ${own.map(searchItem)}
+      </ul>
+    </section>`;
+  };
+  setHtml(
+    $('search-list'),
+    searches.length
+      ? usedCategories(searches).map(group)
+      : html`<ul class="group">
+          <li class="asset-empty">
+            <p>Noch keine Preissuche.</p>
+            <button class="text-button" data-new>Preissuche anlegen</button>
+          </li>
+        </ul>`,
+  );
 }

@@ -1,7 +1,7 @@
 // Settings: automatic search on top, below it the tabs Mails, Quellen (with details) and Daten.
 
 import { AREAS, AREA_TEXT, ago, escapeHtml, mailProvider, parseServer, serverText } from './logic.js';
-import { $, clock, kindOfSource, safeLink } from './ui.js';
+import { $, clock, kindOfSource, safeLink, setHtml } from './ui.js';
 import { STEP_LABEL, nextFetch, pill, sourceSteps } from './steps.js';
 import { api, clearAsking, message, refresh, render, state } from './page.js';
 import { searchName } from './searches.js';
@@ -41,14 +41,17 @@ export function renderMailStatus() {
         : log.status === 'unknown'
           ? `<span class="down">Unklar, ob angekommen · ${ago(log.created_at)}</span>`
           : 'Wird gesendet …';
-  $('mail-log').innerHTML = state.mail_log.length
-    ? state.mail_log
-        .map(
-          log =>
-            `<li class="field"><span><b>${escapeHtml(log.subject)}</b><small>${outcome(log)}</small></span><span class="count">${log.count}</span></li>`,
-        )
-        .join('')
-    : '<li class="field"><span><small>Noch keine Mails verschickt.</small></span></li>';
+  setHtml(
+    $('mail-log'),
+    state.mail_log.length
+      ? state.mail_log
+          .map(
+            log =>
+              `<li class="field"><span><b>${escapeHtml(log.subject)}</b><small>${outcome(log)}</small></span><span class="count">${log.count}</span></li>`,
+          )
+          .join('')
+      : '<li class="field"><span><small>Noch keine Mails verschickt.</small></span></li>',
+  );
 }
 
 export function renderSettings(checking) {
@@ -78,13 +81,14 @@ export function renderSettings(checking) {
   $('auto-text').textContent = state.paused ? 'Pausiert · „Jetzt prüfen“ geht weiterhin' : '';
   $('auto-text').hidden = !state.paused;
   let failedAll = 0;
-  $('source-list').innerHTML = AREAS.map((kind, i) => {
+  const groups = AREAS.map((kind, i) => {
     const steps = sourceSteps(checking, true).filter(x => kindOfSource(x.source) === kind),
       failed = steps.filter(x => x.step === 'failed').length,
       count = `${steps.length} ${steps.length === 1 ? 'Quelle' : 'Quellen'}${failed ? ` · <span class="down">${failed} gestört</span>` : ''}`;
     failedAll += failed;
     return `<h2 class="group-title${i ? '' : ' first'}">${AREA_TEXT[kind].title}<small>${count}</small></h2><div class="group form-group">${steps.map(sourceField).join('')}</div>`;
-  }).join('');
+  });
+  setHtml($('source-list'), groups.join(''));
   // A disturbed source shows on its tab, so it is not missed while another tab is open.
   document.querySelector('[data-settings-tab="sources"]').classList.toggle('alert', failedAll > 0);
 }

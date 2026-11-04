@@ -1,7 +1,7 @@
 // A flat's detail sheet and its application: a click on a flat opens the sheet
 // instead of the portal. Applying happens on the portal; the page copies the text and remembers the day.
 
-import { dateText, decimal, district, escapeHtml, euro, mapCoordinates, mapView, moveIn } from './logic.js';
+import { dateText, decimal, district, euro, html, mapCoordinates, mapView, moveIn, raw } from './logic.js';
 import { $, bookmarkIcon, markOpened, safeImage, safeLink, short, sourceName } from './ui.js';
 import { api, message, refresh, state } from './page.js';
 
@@ -10,10 +10,12 @@ let copied = false; // the application text went to the portal: now the mark mus
 let shown = ''; // the sheet's markup: a refresh that changes nothing leaves the sheet alone
 const spots = new Map(); // URL -> {lat, lon, approx}, 'pending' or 'none'; looked up once per page load
 
-const openIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"/></svg>';
-const closeIcon = '<svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>';
-const hideIcon =
-  '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c5 0 9 4.5 10 7a12 12 0 0 1-3.2 4.3M6.6 6.6A12 12 0 0 0 2 12c1 2.5 5 7 10 7a9.6 9.6 0 0 0 4.4-1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
+const openIcon = raw('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"/></svg>');
+const closeIcon = raw('<svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>');
+const hideIcon = raw(
+  '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c5 0 9 4.5 10 7a12 12 0 0 1-3.2 4.3M6.6 6.6A12 12 0 0 0 2 12c1 2.5 5 7 10 7a9.6 9.6 0 0 0 4.4-1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>',
+);
+const arrowIcon = raw('<svg viewBox="0 0 16 16"><path d="M3 8h9M8.5 4 12.5 8l-4 4"/></svg>');
 
 // The flat as it is now: the live listing, or the watch list's snapshot once the portal dropped it.
 function current() {
@@ -49,9 +51,9 @@ export function renderSheet() {
     return;
   }
   if (flat.live) locate(flat.o);
-  const html = detailHtml(flat) + mapHtml(flat);
-  if (html !== shown) {
-    $('detail-body').innerHTML = shown = html;
+  const markup = `${detailHtml(flat)}${mapHtml(flat)}`;
+  if (markup !== shown) {
+    $('detail-body').innerHTML = shown = markup;
     placeMap(flat);
   }
   if ($('application').open) renderApplication(flat);
@@ -63,31 +65,107 @@ function rentLine(o) {
   return [euro(o.price), 'Warmmiete'];
 }
 
+// The photo, the portal with the day found, and the tools: save, hide, close.
+function sheetTop(o, saved, live) {
+  const image = o.image_url ? safeImage(o.image_url) : '';
+  const found = live ? ` · ${new Date(o.first_seen * 1000).toLocaleDateString('de-DE')}` : ' · nicht mehr gefunden';
+  const hide =
+    live &&
+    html`<button class="round-button small tool" data-sheet="hide" aria-label="Ausblenden" title="Ausblenden">
+      ${hideIcon}
+    </button>`;
+  return html`<div class="sheet-grip" aria-hidden="true"></div>
+    ${image && html`<img class="sheet-photo" src="${image}" alt="" decoding="async" />`}
+    <div class="sheet-top">
+      <span class="source-mark ${o.source}" aria-hidden="true">${short[o.source]}</span
+      ><span class="sheet-source">${sourceName(o.source)}${found}</span
+      ><span class="sheet-tools"
+        ><button
+          class="round-button small tool${saved ? ' on' : ''}"
+          data-sheet="save"
+          aria-pressed="${Boolean(saved)}"
+          aria-label="${saved ? 'Von der Merkliste nehmen' : 'Merken'}"
+          title="${saved ? 'Gemerkt' : 'Merken'}"
+        >
+          ${bookmarkIcon}</button
+        >${hide}<button class="round-button small" data-sheet="close" aria-label="Schließen">${closeIcon}</button></span
+      >
+    </div>`;
+}
+
+// Size, rooms and cold rent of a live listing; a snapshot keeps only its detail line.
+function sheetFacts(o, live) {
+  if (!live) return html`<p class="sheet-title">${o.detail || ''}</p>`;
+  const fact = (label, value) =>
+    html`<div>
+      <dt>${label}</dt>
+      <dd>${value}</dd>
+    </div>`;
+  return html`<dl class="sheet-facts">
+    ${fact('Fläche', o.area ? `${decimal(o.area)} m²` : '–')}${fact('Zimmer', o.rooms ? decimal(o.rooms) : '–')}${fact(
+      'Kalt',
+      o.cold_rent ? euro(o.cold_rent * 100) : '–',
+    )}
+  </dl>`;
+}
+
+// Whether the detail page is still to come, and the button that asks for it.
+function detailsNote(o) {
+  if (o.details === 'pending')
+    return html`<div class="details-note">
+      <p><b>Detailseite wird geladen</b>Dauert ein paar Minuten, damit das Portal nicht gedrängt wird.</p>
+    </div>`;
+  if (o.details !== 'available' && o.details !== 'failed') return '';
+  const failed = o.details === 'failed';
+  return html`<div class="details-note">
+    <p>
+      <b>${failed ? 'Detailseite nicht lesbar' : 'Nur Angaben aus der Trefferliste'}</b>Warmmiete und Beschreibung
+      stehen auf der Detailseite.
+    </p>
+    <button class="pill compact" data-sheet="load">${failed ? 'Erneut' : 'Laden'}</button>
+  </div>`;
+}
+
+// The same flat on other portals, each a link.
+function sheetTwins(o) {
+  const links = (o.twins || []).map(
+    (t, i) =>
+      html`${i ? ' und ' : ''}<a href="${safeLink(t.url)}" target="_blank" rel="noopener noreferrer"
+          >${sourceName(t.source)}</a
+        >`,
+  );
+  return links.length
+    ? html`<p class="sheet-twins">
+        Auch bei ${links} <button class="text-button" data-sheet="separate">Nicht dieselbe Wohnung</button>
+      </p>`
+    : '';
+}
+
 function detailHtml({ o, saved, live }) {
   const [price, priceNote] = rentLine(o),
     move = moveIn(o.available_from),
-    image = o.image_url ? safeImage(o.image_url) : '';
-  const facts = live
-    ? `<dl class="sheet-facts"><div><dt>Fläche</dt><dd>${o.area ? `${decimal(o.area)} m²` : '–'}</dd></div><div><dt>Zimmer</dt><dd>${o.rooms ? decimal(o.rooms) : '–'}</dd></div><div><dt>Kalt</dt><dd>${o.cold_rent ? euro(o.cold_rent * 100) : '–'}</dd></div></dl>`
-    : `<p class="sheet-title">${escapeHtml(o.detail || '')}</p>`;
+    applied = saved?.applied_at;
   // "Not checked yet" is what the details note says already.
   const reasons = (o.status === 'matched' ? o.traits : o.reasons || []).filter(
     r => !['available', 'pending', 'failed'].includes(o.details) || r !== 'Beschreibung noch nicht geprüft',
   );
-  const twins = (o.twins || [])
-    .map(
-      t =>
-        `<a href="${safeLink(t.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(sourceName(t.source))}</a>`,
-    )
-    .join(' und ');
-  const note =
-    o.details === 'pending'
-      ? '<div class="details-note"><p><b>Detailseite wird geladen</b>Dauert ein paar Minuten, damit das Portal nicht gedrängt wird.</p></div>'
-      : o.details === 'available' || o.details === 'failed'
-        ? `<div class="details-note"><p><b>${o.details === 'failed' ? 'Detailseite nicht lesbar' : 'Nur Angaben aus der Trefferliste'}</b>Warmmiete und Beschreibung stehen auf der Detailseite.</p><button class="pill compact" data-sheet="load">${o.details === 'failed' ? 'Erneut' : 'Laden'}</button></div>`
-        : '';
-  const place = district(o.place) || 'Wohnung';
-  return `<div class="sheet-grip" aria-hidden="true"></div>${image ? `<img class="sheet-photo" src="${image}" alt="" decoding="async">` : ''}<div class="sheet-top"><span class="source-mark ${o.source}" aria-hidden="true">${short[o.source]}</span><span class="sheet-source">${escapeHtml(sourceName(o.source))}${live ? ` · ${escapeHtml(new Date(o.first_seen * 1000).toLocaleDateString('de-DE'))}` : ' · nicht mehr gefunden'}</span><span class="sheet-tools"><button class="round-button small tool${saved ? ' on' : ''}" data-sheet="save" aria-pressed="${Boolean(saved)}" aria-label="${saved ? 'Von der Merkliste nehmen' : 'Merken'}" title="${saved ? 'Gemerkt' : 'Merken'}">${bookmarkIcon}</button>${live ? `<button class="round-button small tool" data-sheet="hide" aria-label="Ausblenden" title="Ausblenden">${hideIcon}</button>` : ''}<button class="round-button small" data-sheet="close" aria-label="Schließen">${closeIcon}</button></span></div><h2 id="detail-title" tabindex="-1">${escapeHtml(place)}</h2><p class="sheet-address">${escapeHtml(o.place || '')}</p><p class="sheet-price${o.estimated || o.note === 'geschätzt' ? ' estimate' : ''}">${price}<span>${priceNote}${move ? ` · ${move}` : ''}</span></p>${facts}<p class="sheet-title">${escapeHtml(o.title)}</p>${reasons.length ? `<p class="sheet-reason${o.status === 'matched' ? '' : ' warn'}">${escapeHtml(reasons.join(' · '))}</p>` : ''}${twins ? `<p class="sheet-twins">Auch bei ${twins} <button class="text-button" data-sheet="separate">Nicht dieselbe Wohnung</button></p>` : ''}${saved?.applied_at ? `<p class="sheet-applied">Beworben am ${dateText(saved.applied_at)}</p>` : ''}${note}<div class="sheet-actions"><button class="pill primary" data-sheet="apply">${saved?.applied_at ? 'Bewerbung ansehen' : 'Bewerben'}</button><a class="pill" href="${safeLink(o.url)}" target="_blank" rel="noopener noreferrer">Inserat öffnen${openIcon}</a></div>`;
+  const estimate = o.estimated || o.note === 'geschätzt';
+  return html`${sheetTop(o, saved, live)}
+    <h2 id="detail-title" tabindex="-1">${district(o.place) || 'Wohnung'}</h2>
+    <p class="sheet-address">${o.place || ''}</p>
+    <p class="sheet-price${estimate ? ' estimate' : ''}">
+      ${price}<span>${priceNote}${move ? ` · ${move}` : ''}</span>
+    </p>
+    ${sheetFacts(o, live)}
+    <p class="sheet-title">${o.title}</p>
+    ${reasons.length > 0 &&
+    html`<p class="sheet-reason${o.status === 'matched' ? '' : ' warn'}">${reasons.join(' · ')}</p>`}${sheetTwins(
+      o,
+    )}${applied && html`<p class="sheet-applied">Beworben am ${dateText(applied)}</p>`}${detailsNote(o)}
+    <div class="sheet-actions">
+      <button class="pill primary" data-sheet="apply">${applied ? 'Bewerbung ansehen' : 'Bewerben'}</button
+      ><a class="pill" href="${safeLink(o.url)}" target="_blank" rel="noopener noreferrer">Inserat öffnen${openIcon}</a>
+    </div>`;
 }
 
 // The flat's position comes from the server: the portal's coordinates, or its address looked up once.
@@ -112,7 +190,8 @@ async function locate(o) {
 function mapHtml({ o, live }) {
   if (!live) return '';
   const map = state.maps?.[o.search_id];
-  if (!map) return '<figure class="map-card"><figcaption role="status">Karte wird vorbereitet …</figcaption></figure>';
+  if (!map)
+    return html`<figure class="map-card"><figcaption role="status">Karte wird vorbereitet …</figcaption></figure>`;
   const found = spots.get(o.url),
     spot = typeof found === 'object' ? found : null,
     view = mapView(map, spot);
@@ -120,7 +199,8 @@ function mapHtml({ o, live }) {
   const href = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=${spot ? 16 : map.zoom}/${lat}/${lon}`;
   const caption =
     found === 'none'
-      ? 'Position konnte nicht geladen werden. <button class="text-button" data-sheet="locate">Erneut versuchen</button>'
+      ? html`Position konnte nicht geladen werden.
+          <button class="text-button" data-sheet="locate">Erneut versuchen</button>`
       : !spot
         ? 'Position wird ermittelt …'
         : view.arrow
@@ -128,7 +208,20 @@ function mapHtml({ o, live }) {
           : spot.approx
             ? 'Ungefähre Lage – das Inserat nennt keine genaue Adresse'
             : '';
-  return `<figure class="map-card"><a class="map-view" href="${safeLink(href)}" target="_blank" rel="noopener noreferrer" aria-label="${spot ? 'Lage auf OpenStreetMap öffnen' : 'Suchbereich auf OpenStreetMap öffnen'}"><span class="map-image" aria-hidden="true"></span>${view.dot ? `<span class="map-pin${spot.approx ? ' approx' : ''}" aria-hidden="true"></span>` : ''}${view.arrow ? '<span class="map-arrow" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 8h9M8.5 4 12.5 8l-4 4"/></svg></span>' : ''}<small class="map-credit">© OpenStreetMap</small></a>${caption ? `<figcaption role="status">${caption}</figcaption>` : ''}</figure>`;
+  const pin = view.dot && html`<span class="map-pin${spot.approx ? ' approx' : ''}" aria-hidden="true"></span>`;
+  const arrow = view.arrow && html`<span class="map-arrow" aria-hidden="true">${arrowIcon}</span>`;
+  return html`<figure class="map-card">
+    <a
+      class="map-view"
+      href="${safeLink(href)}"
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="${spot ? 'Lage auf OpenStreetMap öffnen' : 'Suchbereich auf OpenStreetMap öffnen'}"
+      ><span class="map-image" aria-hidden="true"></span>${pin}${arrow}<small class="map-credit"
+        >© OpenStreetMap</small
+      ></a
+    >${caption && html`<figcaption role="status">${caption}</figcaption>`}
+  </figure>`;
 }
 // Sizes and positions are set here: the page's CSP allows no inline style attributes.
 const EDGE = 22; // px from the frame's edge to the arrow's middle

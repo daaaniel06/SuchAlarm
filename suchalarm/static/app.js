@@ -2,7 +2,7 @@
 // handles the clicks and keys that are not part of one area (editors, settings and rows have their own).
 
 import { AREAS, areaUnit, kindOf, mailTarget } from './logic.js';
-import { $, fits, pages, pool } from './ui.js';
+import { $, fits, pages, pool, redraw } from './ui.js';
 import {
   api,
   area,
@@ -158,6 +158,7 @@ $('auto').addEventListener('change', e => setPaused(!e.target.checked));
 document.addEventListener('click', async event => {
   const button = event.target.closest('button');
   if (!button) return;
+  redraw(); // handlers below may disable their button by hand until the next render
   if (button.dataset.view) selectView(button.dataset.view);
   if (button.dataset.page) {
     const [key, step] = button.dataset.page.split(':');
