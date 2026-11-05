@@ -135,7 +135,8 @@ async function setSaved(o, saved) {
   try {
     await api('saved', { method: 'POST', body: JSON.stringify({ search_id: o.search_id, url: o.url, saved }) });
     await refresh();
-    message(saved ? 'In deiner Merkliste gespeichert' : 'Aus der Merkliste entfernt');
+    if (saved) message('In deiner Merkliste gespeichert');
+    else message('Aus der Merkliste entfernt', false, { label: 'Rückgängig', run: () => setSaved(o, true) });
   } catch (err) {
     message(err.message, true);
   }

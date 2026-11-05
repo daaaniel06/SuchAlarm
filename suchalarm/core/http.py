@@ -6,12 +6,13 @@ Every request is booked in the same page budget as a browser visit and fails the
 
 import asyncio
 import json
+import re
 import ssl
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from . import cadence
-from .browser import REFUSAL_STATUSES, Blocked, Unreadable, note
+from .browser import BLOCK, REFUSAL_STATUSES, Blocked, Unreadable, note
 
 BROWSER_UA = (
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -81,5 +82,9 @@ async def get_json(source, url, headers=None, data=None, follow=False, kind='pag
 
 async def get_html(source, url, follow=False):
     headers = {'Accept': 'text/html,application/xhtml+xml', 'Accept-Language': 'de-DE,de;q=0.9'}
-    raw = await get(source, url, headers, None, follow)
-    return raw.decode('utf-8', errors='replace')
+    html = (await get(source, url, headers, None, follow)).decode('utf-8', errors='replace')
+    # A security check answered with 200 must not read as a page: only its headings, scripts may name a captcha.
+    headings = ' '.join(re.findall(r'<(?:title|h1)\b[^>]*>(.*?)</(?:title|h1)>', html, re.S | re.I))
+    if BLOCK.search(re.sub(r'<[^>]+>', ' ', headings)):
+        raise Blocked('Anbieter verlangt eine Sicherheitsprüfung. Später erneut versuchen.')
+    return html

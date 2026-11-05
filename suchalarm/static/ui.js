@@ -44,7 +44,17 @@ const saveVisit = left => {
   } catch {}
 };
 saveVisit(null);
-document.addEventListener('visibilitychange', () => saveVisit(document.hidden ? Date.now() / 1000 : null));
+let hiddenAt = null;
+document.addEventListener('visibilitychange', () => {
+  const now = Date.now() / 1000;
+  if (!document.hidden && hiddenAt && now - hiddenAt >= VISIT_GAP) {
+    // Back after a long time in the background (a phone keeps the page alive): a new visit, as after a reload.
+    visit.since = hiddenAt;
+    visit.opened = [];
+  }
+  hiddenAt = document.hidden ? now : null;
+  saveVisit(hiddenAt);
+});
 window.addEventListener('pagehide', () => saveVisit(Date.now() / 1000));
 export const isNew = o => isFresh(o, visit.since, visit.opened); // a new search's first result is no news
 

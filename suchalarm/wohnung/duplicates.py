@@ -132,11 +132,31 @@ def stock_photos(items):
     their facts. Returns their hashes."""
     shown = [x for x in items if x.get('photo_hash')]
     stock = set()
-    for i, a in enumerate(shown):
-        for b in shown[i + 1 :]:
-            if a['url'] != b['url'] and same_photo(a, b) and (a['source'] == b['source'] or not same_facts(a, b)):
-                stock |= {a['photo_hash'], b['photo_hash']}
+    for a, b in _close_photos(shown):
+        if a['url'] != b['url'] and (a['source'] == b['source'] or not same_facts(a, b)):
+            stock |= {a['photo_hash'], b['photo_hash']}
     return stock
+
+
+def _close_photos(shown):
+    """The pairs of SHOWN with practically identical photos. Two hashes at most PHOTO_BITS apart agree
+    completely on at least one of PHOTO_BITS + 1 slices, so only listings sharing a slice are compared."""
+    hashes = [int(x['photo_hash'], 16) for x in shown]
+    bits, slices = max(64, *(h.bit_length() for h in hashes), 0), PHOTO_BITS + 1
+    bounds = [round(k * bits / slices) for k in range(slices + 1)]
+    buckets: dict[tuple[int, int], list[int]] = {}
+    for i, h in enumerate(hashes):
+        for k in range(slices):
+            part = (h >> bounds[k]) & ((1 << (bounds[k + 1] - bounds[k])) - 1)
+            buckets.setdefault((k, part), []).append(i)
+    pairs = {
+        (i, j)
+        for members in buckets.values()
+        for n, i in enumerate(members)
+        for j in members[n + 1 :]
+        if (hashes[i] ^ hashes[j]).bit_count() <= PHOTO_BITS
+    }
+    return [(shown[i], shown[j]) for i, j in pairs]
 
 
 def _postcode(listing):
@@ -206,15 +226,32 @@ def groups(listings, apart=frozenset()):
 
 
 def _close_pairs(items):
-    """Pairs of different listings found within ADDRESS_WINDOW of each other; ITEMS sorted by first_seen."""
-    pairs = []
+    """Pairs of different listings found within ADDRESS_WINDOW of each other that could be the same flat (every
+    proof needs the area and rooms to agree), in the order of ITEMS, which are sorted by first_seen.
+
+    Listings are looked up by their whole square metres: a large starting stock compared each with each took
+    seconds on every request."""
+    by_area: dict[int, list[int]] = {}
+    for i, x in enumerate(items):
+        if x.get('area') is not None and x.get('rooms') is not None:
+            by_area.setdefault(int(x['area']), []).append(i)
+    found = []
     for i, a in enumerate(items):
-        for b in items[i + 1 :]:
-            if b['first_seen'] - a['first_seen'] > ADDRESS_WINDOW:
-                break  # sorted: every later one is further apart
-            if a['url'] != b['url']:
-                pairs.append((a, b))
-    return pairs
+        if a.get('area') is None or a.get('rooms') is None:
+            continue
+        near = int(a['area'])
+        for bucket in range(near - int(AREA_TOLERANCE) - 1, near + int(AREA_TOLERANCE) + 2):
+            for j in by_area.get(bucket, ()):
+                b = items[j]
+                if (
+                    j > i
+                    and b['first_seen'] - a['first_seen'] <= ADDRESS_WINDOW
+                    and a['url'] != b['url']
+                    and abs(a['area'] - b['area']) <= AREA_TOLERANCE
+                    and abs(a['rooms'] - b['rooms']) <= ROOMS_TOLERANCE
+                ):
+                    found.append((i, j))
+    return [(items[i], items[j]) for i, j in sorted(found)]
 
 
 def _ambiguous(pairs, stock):

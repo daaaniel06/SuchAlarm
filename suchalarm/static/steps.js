@@ -64,7 +64,8 @@ export function sourceSteps(searches, all = false) {
     )[0];
     // Searches for which a regional portal rests do not count towards its result.
     const done = steps.filter(x => x.step === 'done');
-    if (worst.step !== 'done' || done.length === 1) return [{ source, ...(done[0] || worst) }];
+    if (worst.step !== 'done') return [{ source, ...worst }]; // one disturbed search is enough to show it
+    if (done.length === 1) return [{ source, ...done[0] }];
     const sum = key => done.reduce((total, x) => total + x[key], 0);
     const checked = Math.min(...done.map(x => x.checked)),
       unread = Math.max(0, ...done.map(x => x.unread || 0));

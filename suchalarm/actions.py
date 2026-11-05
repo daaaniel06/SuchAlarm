@@ -30,9 +30,25 @@ def bookmark(conn, search_id, url):
     return True
 
 
+UNDO_WINDOW = 10 * 60
+_removed: dict = {}  # the watch-list entry taken off last, with its time: undoing brings it back whole
+
+
 def set_saved(search_id, url, saved):
+    """Saving again right after taking a hit off restores its snapshot and "Beworben", even once the hit left."""
     with store.db() as conn:
-        return bookmark(conn, search_id, url) if saved else bool(store.unsave(conn, url))
+        if not saved:
+            entry = store.saved_entry(conn, url)
+            _removed.clear()
+            if entry:
+                _removed.update(entry=entry, at=time.time())
+            return bool(store.unsave(conn, url))
+        entry = _removed.get('entry')
+        if entry and entry['url'] == url and time.time() - _removed['at'] < UNDO_WINDOW:
+            _removed.clear()
+            store.restore_saved(conn, entry)
+            return True
+        return bookmark(conn, search_id, url)
 
 
 def set_hidden(search_id, url, hidden):
