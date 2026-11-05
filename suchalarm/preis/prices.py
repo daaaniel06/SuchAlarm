@@ -99,6 +99,7 @@ class Offer:
     seller: str = ''
     condition: str = ''
     owner: str = ''  # the provider's ID of the seller, only for the dealer signal; not kept with the hits, never shown
+    negotiable: bool = False
 
     @classmethod
     def from_row(cls, row):

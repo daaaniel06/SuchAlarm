@@ -48,7 +48,7 @@ Wie Suchalarm Preise vergleicht, Anbieter abfragt und Mails verschickt. Der Übe
 
 ### Lieferart
 
-- **Versand:** deutschlandweit.
+- **Versand:** deutschlandweit; Angebote mit „Nur Abholung“ zählen nicht. Ebenso wenig Titel mit „Verkauft“ oder „Reserviert“, und „Gratisversand ab 50 € Bestellwert“ gilt als unbekannter Versand.
 - **Abholung:** sucht bei eBay und Kleinanzeigen im Umkreis (10–200 km) einer PLZ. Vinted und idealo können das nicht und sind dann gesperrt; Versandkosten spielen keine Rolle. Treffer zeigen Ort und Entfernung.
 - **Beides:** liest bei eBay und Kleinanzeigen zwei Seiten: den Umkreis der PLZ und deutschlandweit, wovon nur versendbare Angebote zählen (Kleinanzeigen „Versand möglich“, eBay alles außer „Nur Abholung“). Die zweite Seite wartet auf ihren eigenen Platz im Seitenbudget. Vinted und idealo suchen deutschlandweit mit.
 - Bei Abholung und Beides zählt immer der Artikelpreis.
@@ -94,6 +94,7 @@ Zentrale Taktung (`cadence.py`, `cadence.db`):
 - Anbieter können Sicherheitsabfragen, Einwilligung oder eine Anmeldung verlangen. Dann zeigt die App einen Fehler und versucht es im nächsten Intervall erneut. Sie umgeht keine Captchas.
 - Sperrt ein Anbieter mit HTTP 401/403/429 oder einer Sicherheitsprüfung, pausiert er für alle Suchen 30 Minuten, bei weiteren Sperren 1, 2 und 6 Stunden. Die App zeigt „Pause bis …“.
 - Diese Einschränkungen sind keine Null-Treffer-Meldungen.
+- Liefert ein Wohnungsportal nach einem Bestand plötzlich nichts, gilt es als gestört (Seitenaufbau geändert?). Nennt das Portal selbst 0 Angebote, oder lagen alle Angebote der Seite nur außerhalb des gesuchten Orts, ist das ein ehrliches leeres Ergebnis.
 - Beim lokalen Ersttest am 20.10.2026 war Vinted lesbar, eBay und idealo lieferten HTTP 403, und Kleinanzeigen lieferte mit einem breiten Suchbegriff lesbare Angebotskarten (die spezifische Beispielsuche hatte dort keine Ergebnisse). Der Server kann ein anderes Ergebnis haben.
 
 ## Mails
@@ -104,6 +105,7 @@ Zentrale Taktung (`cadence.py`, `cadence.db`):
 - Der erste lesbare Abruf einer Quelle ist der Startstand und löst keine Mail aus. Gleiche Angebote melden sich erst bei einem weiteren Preisrückgang erneut. Bei Wohnungen gilt das für die Warmmiete: Sinkt sie bei einem bekannten Inserat, auch aus dem Startstand oder einem vorher zu teuren, liest Suchalarm die Detailseite neu und meldet es, wenn es jetzt passt und günstiger ist als zuletzt gemeldet.
 - Was bei ausgeschalteten Mails, ohne eingerichteten Mailserver oder bei pausierten Suchen gefunden wird, gilt als bekannt und wird später nicht nachgeschickt. Wird der Mailserver entfernt, gilt das auch für noch nicht versendete Treffer im Postausgang. Ein eingerichteter, vorübergehend nicht erreichbarer Mailserver behält dagegen seine Warteschlange.
 - Lehnt der Mailserver eine Mail sicher ab, bleiben die Angebote im Postausgang und werden nach 10 Minuten erneut versucht.
+- Eine Wohnung geht per Mail raus, sobald sie passt und ihre Detailseite gelesen ist (oder nach 15 Minuten ohne). Bleibt sie danach unklar, weil auch die Detailseite etwa keine Fläche nennt, kommt sie trotzdem, als unklar markiert: Eine Wohnung zu verpassen wiegt schwerer. Antwortet das Portal auf die Detailseite mit „nicht gefunden“, ist das Inserat gelöscht: Es verschwindet aus den Treffern und wird nicht gemailt.
 - Ist unklar, ob die Mail angekommen ist (Verbindung während der Übergabe abgebrochen oder Neustart beim Versand), wird sie nicht erneut gesendet: Doppelte Mails zu vermeiden ist wichtiger als eine fehlende. Die Mails-Seite zeigt den Ausgang jeder Mail.
 
 ### Shop-Vergleich

@@ -66,6 +66,15 @@ class VehicleTests(unittest.TestCase):
         self.assertTrue(title_fits('kleinanzeigen', 'Mercedes C 200 T-Modell', search))
         self.assertTrue(title_fits('kleinanzeigen', 'Mercedes Benz C200', search))
 
+    def test_make_omission_never_substitutes_another_make(self):
+        bmw = dict(self.car, query='BMW 320')
+        for title in ('Mercedes 320 CDI', 'Mercedes-Benz 320 CDI', 'Volkswagen 320', 'VW 320'):
+            with self.subTest(title=title):
+                self.assertFalse(title_fits('kleinanzeigen', title, bmw))
+        self.assertTrue(title_fits('kleinanzeigen', '320 Touring', bmw))
+        self.assertTrue(title_fits('kleinanzeigen', 'BMW 320 Touring', bmw))
+        self.assertTrue(title_fits('kleinanzeigen', 'Volkswagen Golf 7', self.car))
+
     def test_negated_excluded_words_keep_the_offer(self):
         self.assertTrue(title_fits('kleinanzeigen', 'VW Golf 7 TSI kein Unfall, Scheckheft', self.car))
         self.assertTrue(title_fits('kleinanzeigen', 'VW Golf 7 ohne Motorschaden', self.car))

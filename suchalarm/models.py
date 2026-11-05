@@ -29,8 +29,12 @@ class Applied(BaseModel):
     applied: bool
 
 
+# An application text this long fits the request size limit (app.MAX_BODY, 16 KiB) even as three-byte UTF-8.
+TEMPLATE_CHARS = 5000  # also the fields' maxlength in index.html
+
+
 class Template(BaseModel):
-    text: str = Field(max_length=20000)
+    text: str = Field(max_length=TEMPLATE_CHARS)
 
 
 class Preferences(BaseModel):

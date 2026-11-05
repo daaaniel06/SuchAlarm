@@ -32,6 +32,27 @@ def attribute(tag, name):
     return unescape(match.group(1)) if match else ''
 
 
+_NOT_INCLUDED = re.compile(r'\b(?:nicht|nein|keine?|zzgl|zuzüglich|exkl|exklusive|extra|separat)\b')
+_INCLUDED = re.compile(r'enthalten|inkl|inklusive|inbegriffen')
+
+
+def heating_included(text):
+    """Whether a portal's heating line says the heating is paid with the other costs: "in Nebenkosten
+    enthalten" is, "nicht in Nebenkosten enthalten" is not."""
+    text = (text or '').casefold()
+    return bool(_INCLUDED.search(text)) and not _NOT_INCLUDED.search(text)
+
+
+def warm_from_parts(cold, running, heating, included=False):
+    """The warm rent from its parts, for an offer that names no total: only with every part known, the heating
+    INCLUDED in the running costs (an amount then is already in them) or as an amount of its own. Otherwise None,
+    so the warm rent is estimated and marked so (domain.estimated_rent) instead of passing a total without the
+    heating as stated."""
+    if cold is None or running is None or (heating is None and not included):
+        return None
+    return cold + running + (0 if included else heating)
+
+
 def near(place, radius, centre, address, spot):
     """A radius search measures the distance where both the search's centre and the flat's spot are known.
     Otherwise the town or postcode must match: a landlord's whole stock (all of Hessen at NHW) must not pass

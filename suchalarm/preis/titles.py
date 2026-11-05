@@ -89,7 +89,10 @@ def title_fits(source, title, search):
     chosen, named = platform(search), named_platforms(title)
     excluded = search.get('excluded', '')
     wanted = [wanted_words(source, search, phrase) for phrase in phrases(source, search)]
-    wanted += [rest for words in wanted if (rest := without_make(search, words))]
+    makes = set(normalized(title).split()) & CAR_MAKES
+    wanted += [
+        rest for words in wanted if (rest := without_make(search, words)) and not makes - set(normalized(words).split())
+    ]
     return any(matches(title, words, excluded) for words in wanted) and (chosen is None or not named or chosen in named)
 
 
@@ -143,25 +146,38 @@ def normalized(text):
     text = folded_words(text)
     # Sellers write PS5, PS 5 and PlayStation 5 interchangeably.
     text = re.sub(r'\b(?:playstation|ps) ?([1-5])\b', r'ps\1', text)
+    text = re.sub(r'\bswitch ?2\b', 'switch 2', text)
+    text = re.sub(r'\bxbox ?(series|one)(?: ?([xs]))?\b', lambda m: f'xbox {m[1]} {m[2] or ""}'.strip(), text)
     for pattern, same in ALIASES:
         text = pattern.sub(same, text)
     return text
 
 
-def _with_glued_pairs(words):
-    """WORDS plus each neighbouring pair written as one word ("spider man" also gives "spiderman")."""
-    return set(words) | {first + second for first, second in pairwise(words)}
-
-
 def _has_all_words(title_words, wanted):
     """Whether every wanted word is in the title, also where one side writes two words as one:
     "Spiderman" is "Spider-Man", "iPhone13" is "iPhone 13"."""
-    present = _with_glued_pairs(title_words)
-    found = {index for index, word in enumerate(wanted) if word in present}
-    for index, (first, second) in enumerate(pairwise(wanted)):
-        if first + second in present:
-            found |= {index, index + 1}
-    return len(found) == len(wanted)
+    if Counter(wanted) <= Counter(title_words):
+        return True
+    present: dict[str, list[int]] = {}
+    for index, word in enumerate(title_words):
+        present.setdefault(word, []).append(1 << index)
+    for index, (first, second) in enumerate(pairwise(title_words)):
+        present.setdefault(first + second, []).append(3 << index)
+
+    @lru_cache(maxsize=4096)
+    def fits(index, used):
+        if index == len(wanted):
+            return True
+        # Each title occurrence may fill only one word (or one glued pair) of the query.
+        for size in (1, 2):
+            if index + size > len(wanted):
+                continue
+            for occurrence in present.get(''.join(wanted[index : index + size]), ()):
+                if not used & occurrence and fits(index + size, used | occurrence):
+                    return True
+        return False
+
+    return fits(0, 0)
 
 
 def matches(title, query, excluded=''):

@@ -7,7 +7,7 @@ from urllib.parse import urlencode
 
 from ...core.browser import Unreadable
 from ..domain import area, available_from, clip, detect_traits, line, money, number, rooms
-from .common import plain
+from .common import heating_included, plain, warm_from_parts
 
 IMMOBILIEN_DE = 'https://www.immobilien.de'
 
@@ -133,10 +133,9 @@ def id_detail(html):
     rows = {plain(label): plain(value) for label, value in _ROW.findall(html)}
     cold = number(rows.get('Kaltmiete') or rows.get('Nettokaltmiete'))
     warm, running = number(rows.get('Warmmiete')), number(rows.get('Nebenkosten'))
-    heating_text = rows.get('Heizkosten') or ''
-    heating = 0 if 'enthalten' in heating_text else number(heating_text)
-    if warm is None and None not in (cold, running, heating):
-        warm = cold + running + heating
+    heating = rows.get('Heizkosten')
+    if warm is None:
+        warm = warm_from_parts(cold, running, number(heating), heating_included(heating))
     description = re.search(r'id="section-beschreibung".*?data-print-flow="true"[^>]*>(.*?)</div>', html, re.S)
     text = plain(description.group(1)) if description else listing.get('description') or ''
     return {

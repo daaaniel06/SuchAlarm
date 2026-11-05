@@ -16,7 +16,7 @@ from ..domain import (
     number,
     rooms,
 )
-from .common import plain
+from .common import plain, warm_from_parts
 
 log = logging.getLogger('suchalarm')
 
@@ -179,9 +179,9 @@ def immowelt_detail(html):
         return number(found.group(1)) if found else None
 
     warm, cold, running = cost('Warmmiete'), cost('Kaltmiete'), cost('Nebenkosten')
-    heating = 0 if re.search(r'Heizkosten in (?:Nebenkosten|Warmmiete) enthalten', costs) else cost('Heizkosten')
-    if warm is None and None not in (cold, running, heating):
-        warm = cold + running + heating
+    included = re.search(r'Heizkosten in (?:Nebenkosten|Warmmiete) enthalten', costs) is not None
+    if warm is None:
+        warm = warm_from_parts(cold, running, cost('Heizkosten'), included)
     facts = plain(sections.get('cdp-hardfacts-keyfacts', ''))  # "2 Zimmer • 55 m² • Geschoss 1/2 • frei ab 01.12.2026"
     size = re.search(r'([\d.,]+) m²', facts)
     count = re.search(r'([\d.,]+) Zimmer', facts)

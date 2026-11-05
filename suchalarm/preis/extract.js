@@ -183,7 +183,10 @@
           offer.priceCurrency === 'EUR' &&
           /InStock$|LimitedAvailability$/.test(offer.availability || '')
         ) {
-          const detail = [].concat(offer.shippingDetails || [])[0];
+          const details = [].concat(offer.shippingDetails || []);
+          const detail =
+            details.find(entry => entry.shippingDestination?.addressCountry === 'DE') ||
+            (details.length === 1 && !details[0].shippingDestination?.addressCountry ? details[0] : null);
           structured.push({
             title: v.name,
             price: offer.price,

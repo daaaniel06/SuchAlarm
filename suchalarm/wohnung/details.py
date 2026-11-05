@@ -7,10 +7,11 @@ import logging
 import time
 
 from .. import store
-from ..core import cadence
+from ..core import cadence, http
 from . import sources
 from .catalog import DETAIL_WINDOW, STALE
 from .domain import Listing, could_match, profile
+from .tables import DONE, FAILED, GONE, PENDING
 
 log = logging.getLogger('suchalarm')
 
@@ -23,6 +24,12 @@ DETAIL_RETRY = 600  # a failed detail page is tried again after 10, then 20 minu
 
 BACKFILL_GAP = 15 * 60  # at most one detail page of the starting stock per portal in this time
 
+# Detail pages detail_step() reads: recent, and asked for by the user or listed by an active search.
+WORKABLE = (
+    'd.state=? AND d.created_at>=? AND (d.requested OR EXISTS (SELECT 1 FROM listings l JOIN searches s '
+    'ON s.id=l.search_id WHERE l.url=d.url AND s.active))'
+)
+
 
 async def detail_step(now=None):
     """At most one detail page: the listing waiting longest whose site may be visited now. Returns its URL.
@@ -32,10 +39,8 @@ async def detail_step(now=None):
     now = time.time() if now is None else now
     with store.db() as conn:
         rows = conn.execute(
-            "SELECT * FROM listing_details d WHERE state='pending' AND next_at<=? AND created_at>=? AND (requested "
-            'OR EXISTS (SELECT 1 FROM listings l JOIN searches s ON s.id=l.search_id WHERE l.url=d.url AND s.active)) '
-            'ORDER BY created_at',
-            (now, now - DETAIL_WINDOW),
+            f'SELECT * FROM listing_details d WHERE {WORKABLE} AND d.next_at<=? ORDER BY d.created_at',
+            (PENDING, now - DETAIL_WINDOW, now),
         ).fetchall()
     job = next((row for row in rows if cadence.ready_at(row['source'], now=now) <= now), None)
     if job is None:
@@ -48,7 +53,10 @@ async def detail_step(now=None):
         raise
     except Exception as exc:
         attempts, until = job['attempts'] + 1, time.time() + DETAIL_RETRY * 2 ** job['attempts']
-        if isinstance(exc, cadence.Refused):
+        state = FAILED if attempts >= DETAIL_ATTEMPTS else PENDING
+        if isinstance(exc, http.NotFound):
+            state = GONE  # the portal deleted the listing: never mailed, gone from the hits
+        elif isinstance(exc, cadence.Refused):
             # A refusal says nothing about the listing: pause the site, keep the attempts.
             attempts, until = job['attempts'], cadence.outcome(job['source'], 'page', True)
         with store.db() as conn:
@@ -58,7 +66,7 @@ async def detail_step(now=None):
                     attempts,
                     until,
                     cadence.error_text(exc)[:300],
-                    'failed' if attempts >= DETAIL_ATTEMPTS else 'pending',
+                    state,
                     job['url'],
                 ),
             )
@@ -67,7 +75,7 @@ async def detail_step(now=None):
     cadence.outcome(job['source'], 'page')
     with store.db() as conn:
         conn.execute(
-            "UPDATE listing_details SET body=?, state='done', error=NULL WHERE url=?", (json.dumps(detail), job['url'])
+            'UPDATE listing_details SET body=?, state=?, error=NULL WHERE url=?', (json.dumps(detail), DONE, job['url'])
         )
     return job['url']
 
@@ -83,8 +91,9 @@ def backfill_step(now=None):
     now = time.time() if now is None else now
     searches = {s['id']: s for s in store.searches('wohnung') if s['active']}
     with store.db() as conn:
+        # Only what detail_step() would read waits first: a paused search's page must not hold the others back.
         waiting = conn.execute(
-            "SELECT 1 FROM listing_details WHERE state='pending' AND created_at>=? LIMIT 1", (now - DETAIL_WINDOW,)
+            f'SELECT 1 FROM listing_details d WHERE {WORKABLE} LIMIT 1', (PENDING, now - DETAIL_WINDOW)
         ).fetchone()
         if waiting or not searches:
             return None

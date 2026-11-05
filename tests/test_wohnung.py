@@ -14,8 +14,9 @@ from typing import ClassVar
 from unittest.mock import AsyncMock, patch
 
 from suchalarm import status, store, worker
-from suchalarm.core import browser, cadence
+from suchalarm.core import browser, cadence, http
 from suchalarm.core.browser import Unreadable
+from suchalarm.models import TEMPLATE_CHARS
 from suchalarm.wohnung import catalog, details, domain, outbox, pages, portals, sources
 from suchalarm.wohnung import worker as flats
 from suchalarm.wohnung.domain import Listing, match, profile
@@ -441,6 +442,12 @@ class ParserTests(unittest.TestCase):
             (detail['rent'], detail['coldRent'], detail['traits'], detail['availableFrom']),
             (1290, 1050, ['WBS'], '2026-11-01'),
         )
+        row = '<li class="addetailslist--detail">{}<span class="addetailslist--detail--value" >{}</span></li>'
+        warm = row.format('Warmmiete', '1.290 €')
+        costs = KLEINANZEIGEN_DETAIL.replace(warm, row.format('Nebenkosten', '150 €'))
+        self.assertIsNone(portals.kleinanzeigen_detail(costs)['rent'])  # heating unknown: estimated, not stated
+        heating = costs + row.format('Heizkosten', '80 €')
+        self.assertEqual(portals.kleinanzeigen_detail(heating)['rent'], 1050 + 150 + 80)
 
     def test_kleinanzeigen_place_is_the_one_the_product_search_picks(self):
         """Both kinds keep Kleinanzeigen's place IDs under one key, so a postcode must lead to the same place."""
@@ -509,6 +516,7 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(parts(cold, costs, ('Heizkosten', '+80 €'))['rent'], 930)
         self.assertEqual(parts(cold, costs, ('Heizkosten', 'in Nebenkosten enthalten'))['rent'], 850)
         self.assertIsNone(parts(cold, costs, ('Heizkosten', 'keine Angabe'))['rent'])  # estimated instead
+        self.assertIsNone(parts(cold, costs, ('Heizkosten', 'nicht in Nebenkosten enthalten'))['rent'])
         self.assertIsNone(parts(cold)['rent'])
         with self.assertRaises(Unreadable):
             portals.immoscout_parse({'error': 'x'})
@@ -694,6 +702,8 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(portals.id_detail(unstated)['rent'], 1750 + 270)  # heating included in the running costs
         unknown_heating = unstated.replace('in Warmmiete enthalten', 'keine Angabe')
         self.assertIsNone(portals.id_detail(unknown_heating)['rent'])
+        not_included = unstated.replace('in Warmmiete enthalten', 'nicht in Nebenkosten enthalten')
+        self.assertIsNone(portals.id_detail(not_included)['rent'])
         net = page.replace('>Kaltmiete<', '>Nettokaltmiete<')
         self.assertEqual(portals.id_detail(net)['coldRent'], 1750)
         with self.assertRaises(Unreadable):
@@ -971,6 +981,9 @@ class AreaTests(TempData):
         cadence.save_location('osm', 'potsdam', json.dumps([52.39, 13.06, 'Brandenburg']))
         self.assertEqual(sources.out_of_area(potsdam, 'nhw'), 'Nur in Hessen')
         self.assertEqual(sources.out_of_area(potsdam, 'bauverein'), 'Nur Darmstadt und Umgebung')
+        mainz = self.stored_search(query='Mainz', radius=15)
+        cadence.save_location('osm', 'mainz', json.dumps([50.0, 8.27, 'Rheinland-Pfalz']))
+        self.assertIsNone(sources.out_of_area(mainz, 'nhw'))  # Wiesbaden lies within 15 km
         darmstadt = self.stored_search(query='Darmstadt')
         cadence.save_location('osm', 'darmstadt', json.dumps([49.87, 8.65, 'Hessen']))
         self.assertIsNone(sources.out_of_area(darmstadt, 'bauverein'))
@@ -1133,7 +1146,7 @@ class BauvereinDetailTests(unittest.TestCase):
         self.assertEqual(self.rent(warmmiete='990', gesamtmiete='850', heizkosten='90'), 990)
         self.assertEqual(self.rent(gesamtmiete='850', heizkosten='90'), 940)
         self.assertEqual(self.rent(gesamtmiete='850', heizkosten='90', heizkosten_enthalten=True), 850)
-        self.assertEqual(self.rent(gesamtmiete='850'), 850)
+        self.assertIsNone(self.rent(gesamtmiete='850'))  # heating unknown: estimated from the cold rent instead
         self.assertIsNone(self.rent())
 
 
@@ -1383,6 +1396,25 @@ class WorkerTests(TempData):
         self.assertEqual(new, {'https://www.immobilienscout24.de/expose/99'})
         self.assertEqual(self.due(), [(2, 0)])  # the reading of the stock goes on
 
+    def test_a_stock_read_again_goes_past_a_first_page_of_known_flats(self):
+        """A higher rent limit: the newest flats were known already, the ones it lets in lie further back."""
+        flat_search = self.stored_search()
+        known = [self.card(n) for n in range(pages.FULL_PAGE)]
+        pages.save_result(flat_search, 'immoscout24', known, len(known), time.time())  # the starting stock
+        with store.db() as conn:
+            conn.execute('DELETE FROM more_pages')
+            pages.read_stock_again(conn, flat_search['id'], ['immoscout24'])
+        with patch.object(flats.sources, 'more', new=AsyncMock(return_value=(known, counts(known)))):
+            asyncio.run(pages.more_step())
+        self.assertEqual(self.due(), [(2, 0)])
+        older = [self.card(n) for n in range(100, 103)]
+        with patch.object(flats.sources, 'more', new=AsyncMock(return_value=(older, counts(older)))):
+            asyncio.run(pages.more_step())
+        self.assertEqual(self.due(), [])  # not full: the end
+        self.assertEqual(len(catalog.listings(flat_search)), pages.FULL_PAGE + 3)
+        with store.db() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM start_offers').fetchone()[0], pages.FULL_PAGE + 3)
+
     def test_a_failure_after_an_empty_start_does_not_make_the_first_flat_stock(self):
         flat_search = self.stored_search()
         self.assertEqual(pages.save_result(flat_search, 'immoscout24', [], 0, time.time()), set())  # the stock: none
@@ -1504,6 +1536,38 @@ class WorkerTests(TempData):
         with store.db() as conn:
             self.assertEqual(conn.execute('SELECT state, attempts FROM listing_details').fetchone()[:], ('failed', 3))
 
+    def test_a_listing_whose_detail_page_is_gone_is_never_mailed(self):
+        flat_search = self.stored_search()
+        self.run_check([self.card(1)], flat_search)
+        self.run_check([self.card(1), self.card(2)], flat_search)
+        with (
+            patch.object(flats.sources, 'detail', new=AsyncMock(side_effect=http.NotFound('HTTP 404'))),
+            patch.object(flats.cadence, 'ready_at', return_value=0),
+        ):
+            asyncio.run(details.detail_step())
+        with store.db() as conn:
+            self.assertEqual(conn.execute('SELECT state FROM listing_details').fetchone()[0], 'gone')
+        self.assertEqual([r['url'][-1] for r in catalog.listings(flat_search)], ['1'])  # deleted on the portal
+        self.assertFalse(catalog.mailable(Listing(source='immoscout24', url='u', title='t'), 'matched', 'gone'))
+
+    def test_an_unclear_listing_is_mailable_once_nothing_is_left_to_learn(self):
+        flat = Listing(source='immoscout24', url='u', title='t')
+        self.assertFalse(catalog.mailable(flat, 'unclear', 'pending'))
+        self.assertTrue(catalog.mailable(flat, 'unclear', 'done'))  # the detail page names no area either
+        self.assertTrue(catalog.mailable(flat, 'unclear', 'failed'))
+
+    def test_a_paused_search_does_not_hold_back_the_starting_stock_of_others(self):
+        paused, active = self.stored_search(), self.stored_search()
+        details._backfilled.clear()
+        self.run_check([self.card(1)], paused)
+        self.run_check([self.card(1), self.card(2)], paused)  # 2 waits for its detail page
+        with store.db() as conn:
+            conn.execute('UPDATE searches SET active=0 WHERE id=?', (paused['id'],))
+        stock = [self.card(7), self.card(8)]
+        pages.save_result(active, 'immoscout24', stock, len(stock), time.time())
+        with patch.object(flats.cadence, 'ready_at', return_value=0):
+            self.assertIn(details.backfill_step()[-1], '78')
+
     def test_a_refused_immowelt_expose_skips_only_that_listing(self):
         url = 'https://www.immowelt.de/expose/abc'
         with store.db() as conn:
@@ -1542,6 +1606,17 @@ class WorkerTests(TempData):
             status = conn.execute('SELECT error, count FROM source_status').fetchone()
         self.assertIn('plötzlich keine Angebote', status['error'])
         self.assertEqual(len(catalog.listings(flat_search)), 6)  # the stock stays visible
+
+    def test_an_empty_page_the_portal_confirms_is_no_failure(self):
+        """Every flat let, or only offers elsewhere: the portal's own count or its page says so."""
+        for found_counts in ({'listed': 0, 'unread': 0}, {'listed': 12, 'unread': None}):
+            flat_search = self.stored_search()
+            self.run_check([self.card(n) for n in range(6)], flat_search)
+            with patch.object(flats.sources, 'fetch', new=AsyncMock(return_value=([], found_counts))):
+                asyncio.run(worker.check(flat_search))
+            with store.db() as conn:
+                row = status.of(conn, flat_search['id'], 'immoscout24')
+            self.assertEqual((row['error'], row['count']), (None, 0), found_counts)
 
     def test_a_portal_that_stays_empty_stays_disturbed(self):
         """Also after a failure in between; a landlord's stock is not let because of an empty page."""
@@ -1703,7 +1778,7 @@ class ApiAndMailTests(TempData):
         self.client.put(f'/api/searches/{paged["id"]}', json={**edit, 'sources': ['immoscout24', 'nhw']})
         with store.db() as conn:
             due = [tuple(r) for r in conn.execute('SELECT source, page, stock FROM more_pages')]
-        self.assertEqual(due, [('immoscout24', 1, 1)])  # a higher rent limit: ImmoScout24 lists older flats
+        self.assertEqual(due, [('immoscout24', 1, pages.REREAD)])  # a higher rent limit: ImmoScout24 lists older flats
         wrong = self.client.put(f'/api/searches/{product.json()["id"]}', json=edit)
         self.assertEqual(wrong.status_code, 422)
 
@@ -1741,6 +1816,9 @@ class ApiAndMailTests(TempData):
         self.assertEqual(gone.status_code, 404)
         self.assertEqual(self.client.put('/api/template', json={'text': 'Hallo'}).status_code, 200)
         self.assertEqual(self.client.get('/api/state').json()['template'], 'Hallo')
+        longest = '€\n' * (TEMPLATE_CHARS // 2)  # three bytes and an escape each: still within the request limit
+        self.assertEqual(self.client.put('/api/template', json={'text': longest}).status_code, 200)
+        self.assertEqual(self.client.put('/api/template', json={'text': 'x' * (TEMPLATE_CHARS + 1)}).status_code, 422)
 
     def test_taking_a_flat_off_the_watch_list_can_be_undone_after_it_left(self):
         flat_search = self.create()

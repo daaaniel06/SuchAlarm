@@ -79,7 +79,7 @@ async def check(search, source_names=None):
                 status.failed(search, source, now, exc)
                 continue
             completed.add(source)
-            if not items and kind.EMPTY_IS_SUSPICIOUS and status.empty_after_stock(search, source):
+            if not items and kind.empty_is_suspicious(extra) and status.empty_after_stock(search, source):
                 status.failed(
                     search, source, now, RuntimeError('Anbieter liefert plötzlich keine Angebote (Layout geändert?).')
                 )

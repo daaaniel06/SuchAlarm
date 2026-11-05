@@ -68,7 +68,7 @@
 <p class="sheet-address" id="application-flat"></p>
 <p class="sheet-applied" id="application-applied" hidden></p>
 <div class="apply-reminder" id="application-remind" role="alert" hidden><p><b>Im Portal abgeschickt?</b> Dann jetzt markieren – sonst vergisst du es.</p><button type="button" class="pill primary" id="application-remind-mark">Als beworben markieren</button></div>
-<div class="group"><label class="sr-only" for="application-text">Bewerbungstext</label><textarea id="application-text" class="plain-textarea" rows="8" maxlength="20000" placeholder="Bewerbungstext eingeben …"></textarea></div>
+<div class="group"><label class="sr-only" for="application-text">Bewerbungstext</label><textarea id="application-text" class="plain-textarea" rows="8" maxlength="5000" placeholder="Bewerbungstext eingeben …"></textarea></div>
 <p class="group-note" id="application-feedback" role="status"></p>
 <div class="sheet-actions"><button type="button" class="pill primary" id="application-open">Kopieren &amp; öffnen<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"/></svg></button><button type="button" class="pill" id="application-copy">Nur kopieren<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8"/></svg></button></div>
 <div class="sheet-secondary"><button type="button" class="text-button" id="application-mark">Als beworben markieren</button><button type="button" class="text-button" id="application-unmark" hidden>Markierung entfernen</button><button type="button" class="text-button" id="application-template">Als Vorlage speichern</button></div>
@@ -76,7 +76,7 @@
 <dialog id="template-editor" class="sheet" tabindex="-1" aria-labelledby="template-title"><form class="sheet-body" id="template-form">
 <div class="sheet-grip" aria-hidden="true"></div>
 <div class="sheet-top"><h2 id="template-title" class="sheet-heading">Bewerbungstext</h2><button type="button" class="round-button small" data-close aria-label="Bewerbungstext schließen"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
-<div class="group"><label class="sr-only" for="template-text">Bewerbungstext</label><textarea id="template-text" class="plain-textarea" rows="10" maxlength="20000" placeholder="Bewerbungstext hier einfügen …"></textarea></div>
+<div class="group"><label class="sr-only" for="template-text">Bewerbungstext</label><textarea id="template-text" class="plain-textarea" rows="10" maxlength="5000" placeholder="Bewerbungstext hier einfügen …"></textarea></div>
 <p class="group-note down" id="template-error" role="alert" hidden></p>
 <div class="sheet-actions"><button type="submit" class="pill primary" id="template-save">Speichern</button><button type="button" class="pill" data-close>Abbrechen</button></div>
 </form></dialog>

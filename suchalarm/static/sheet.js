@@ -264,13 +264,16 @@ function renderApplication({ o, saved }) {
   $('application-open').disabled = $('application-copy').disabled = $('application-template').disabled = empty;
 }
 
+// Returns whether the server took it.
 async function act(path, body, done) {
   try {
     await api(path, { method: 'POST', body: JSON.stringify(body) });
     await refresh();
     if (done) message(done);
+    return true;
   } catch (err) {
     message(err.message, true);
+    return false;
   }
 }
 
@@ -384,7 +387,7 @@ async function copy(openPortal) {
 async function mark(applied) {
   const flat = current();
   if (!flat) return;
-  await act('applied', { search_id: flat.o.search_id, url: flat.o.url, applied });
+  if (!(await act('applied', { search_id: flat.o.search_id, url: flat.o.url, applied }))) return;
   $('application-feedback').textContent = applied ? 'Als beworben markiert und gemerkt.' : 'Markierung entfernt.';
 }
 $('application-open').addEventListener('click', () => copy(true));

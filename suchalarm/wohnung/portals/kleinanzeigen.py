@@ -16,7 +16,7 @@ from ..domain import (
     number,
     rooms,
 )
-from .common import plain, rescue
+from .common import heating_included, plain, rescue, warm_from_parts
 
 log = logging.getLogger('suchalarm')
 
@@ -150,9 +150,10 @@ def kleinanzeigen_detail(html):
     # The page's own tracking data carries the same field, should the list change.
     tracked = re.search(r'"Warmmiete"\s*:\s*"([\d.,]+)"', html)
     warm = number(label('Warmmiete')) or (number(tracked.group(1)) if tracked else None)
-    if warm is None and cold is not None and label('Nebenkosten'):
+    if warm is None:
         # Private ads often list cold rent plus costs instead of a warm total.
-        warm = cold + (number(label('Nebenkosten')) or 0) + (number(label('Heizkosten')) or 0)
+        heating = label('Heizkosten')
+        warm = warm_from_parts(cold, number(label('Nebenkosten')), number(heating), heating_included(heating))
     return {
         'rent': money(warm),
         'coldRent': money(cold),

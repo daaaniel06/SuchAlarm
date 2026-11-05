@@ -76,6 +76,7 @@ function endSwipe(e) {
   setTimeout(() => {
     swallowClick = false;
   }, 0);
+  if (e.type === 'pointercancel') g.dx = 0; // the browser or system took the gesture over: no action
   release(g);
 }
 document.addEventListener('pointerup', endSwipe);
