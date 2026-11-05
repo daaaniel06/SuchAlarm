@@ -41,9 +41,10 @@ def phrases(source, search):
 
 
 def terms(search, phrase=None):
-    """The words of a search: its query (or PHRASE, one of its other spellings) plus a chosen platform."""
+    """The words of a search: its query (or PHRASE, one of its other spellings) plus a chosen platform, unless
+    the phrase names it already (a title then needs it once, not twice)."""
     chosen, phrase = platform(search), phrase or search['query']
-    return f'{phrase} {PLATFORMS[chosen]}' if chosen else phrase
+    return f'{phrase} {PLATFORMS[chosen]}' if chosen and chosen not in named_platforms(phrase) else phrase
 
 
 def all_terms(search):
@@ -64,15 +65,19 @@ def wanted_words(source, search, phrase=None):
     return phrase if platform_ids(source, search) else terms(search, phrase)
 
 
-def named_platforms(title):
-    """The platforms a title names; "Switch 2" is not also "Switch"."""
+def _platforms_in(title):
+    """(the platforms a title names, the normalized title without them); "Switch 2" is not also "Switch"."""
     text, named = f' {normalized(title)} ', set()
     for key, label in sorted(PLATFORMS.items(), key=lambda item: -len(item[1])):
         phrase = f' {normalized(label)} '
         if phrase in text:
             named.add(key)
             text = text.replace(phrase, ' ')
-    return named
+    return named, ' '.join(text.split())
+
+
+def named_platforms(title):
+    return _platforms_in(title)[0]
 
 
 def without_make(search, words):
@@ -86,14 +91,17 @@ def without_make(search, words):
 def title_fits(source, title, search):
     """Whether an offer title belongs to the search: all words of one of its spellings, nothing excluded, not
     only other platforms. A provider's platform filter fills up with other platforms once its matches run out."""
-    chosen, named = platform(search), named_platforms(title)
+    chosen, (named, bare) = platform(search), _platforms_in(title)
     excluded = search.get('excluded', '')
     wanted = [wanted_words(source, search, phrase) for phrase in phrases(source, search)]
-    makes = set(normalized(title).split()) & CAR_MAKES
+    # Sellers name the make first ("Mercedes 320 CDI"); further on "smart" is "Smart Repair", not the make.
+    makes = set(normalized(title).split()[:2]) & CAR_MAKES
     wanted += [
         rest for words in wanted if (rest := without_make(search, words)) and not makes - set(normalized(words).split())
     ]
-    return any(matches(title, words, excluded) for words in wanted) and (chosen is None or not named or chosen in named)
+    # Words that do not name the platform are found outside it: the "2" of "Switch 2" is no "Resident Evil 2".
+    found = any(matches(title if named_platforms(words) else bare, words) for words in wanted)
+    return found and matches(title, '', excluded) and (chosen is None or not named or chosen in named)
 
 
 def taught_away(title, search):

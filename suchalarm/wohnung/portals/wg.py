@@ -133,8 +133,10 @@ def wg_parse(html):
         if not href:
             continue
         title = line(attribute(tag.group(0), 'aria-label')) or 'Wohnung'
-        heading = re.search(r'<div[^>]*ad-subtitle[^>]*>', card)
-        subtitle = attribute(heading.group(0), 'title') if heading else ''
+        # "2-Zimmer-Wohnung · Darmstadt Darmstadt · Am alten Bahnhof 6", found by its content: the class was
+        # renamed from ad-subtitle to card-details-text (live 05.11.2026).
+        heading = re.search(r'\btitle="([^"]*-Zimmer-[^"]*·[^"]*)"', card)
+        subtitle = unescape(heading.group(1)) if heading else ''
         kind, district, street = ([' '.join(part.split()) for part in subtitle.split('·')] + ['', '', ''])[:3]
         district = ' '.join(dict.fromkeys(district.split()))  # "Darmstadt Darmstadt" -> "Darmstadt"
         price = re.search(r'class="card-main-text">\s*([^<]*?(?:&euro;|€))', card)
@@ -142,7 +144,11 @@ def wg_parse(html):
         middle = card.split('middle-row', 1)[-1].split('bottom-card', 1)[0] if 'middle-row' in card else ''
         dates = re.findall(r'\d{2}\.\d{2}\.\d{4}', middle)
         count = re.match(r'([\d,.]+)-Zimmer', kind)
-        picture = re.search(r'<img[^>]+class="top-image-card[^"]*"[^>]+src="(https://img\.wg-gesucht\.de/[^"]+)"', card)
+        # The picture loads lazily now: its address is in data-src, src is a placeholder (live 05.11.2026).
+        picture = re.search(
+            r'<img[^>]+class="[^"]*\btop-image-card\b[^"]*"[^>]+?\b(?:data-)?src="(https://img\.wg-gesucht\.de/[^"]+)"',
+            card,
+        )
         listings.append(
             {
                 'url': 'https://www.wg-gesucht.de' + unescape(href.group(1)),

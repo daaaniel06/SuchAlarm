@@ -478,5 +478,219 @@ class AreaInterfaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(errors, [])
 
 
+class FrontendRegressionTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        from suchalarm.app import ALL_SOURCES, SOURCE_KINDS
+
+        now = time.time()
+        self.listing = dict(
+            search_id=1,
+            kind='wohnung',
+            source='immoscout24',
+            url='https://www.immobilienscout24.de/expose/1',
+            title='Helle Wohnung',
+            place='Darmstadt',
+            price=100000,
+            area=55,
+            rooms=2,
+            status='matched',
+            reasons=['Alle Filter erfüllt'],
+            traits=[],
+            first_seen=now,
+            last_seen=now,
+            start=False,
+        )
+        self.state = dict(
+            searches=[dict(id=1, kind='wohnung', query='Darmstadt', max_price=130000, radius=0, excluded='',
+                           sources=['immoscout24'], active=1, filters={})],
+            offers=[], listings=[self.listing], saved=[], statuses=[], mail_log=[], paused=False,
+            running=None, running_source=None, queued=[], schedule=[], sources=ALL_SOURCES,
+            source_kinds=SOURCE_KINDS, choices=CHOICES,
+            mail=dict(recipients=['a@example.org', 'b@example.org'], configured=True, error=None,
+                      pending=dict(preis=0, wohnung=0),
+                      server=dict(sender='', host='', port=587, password_set=False, fixed=False),
+                      preis=dict(enabled=True, frequency='Sofort', batch_size=1),
+                      wohnung=dict(enabled=True, frequency='Sofort', batch_size=1)),
+        )  # fmt: skip
+        self.actions, self.errors = [], []
+        static = Path(__file__).resolve().parents[1] / 'suchalarm' / 'static'
+
+        async def serve(route):
+            path = urlparse(route.request.url).path
+            if path == '/api/state':
+                await route.fulfill(json=self.state)
+            elif path == '/api/location':
+                await route.fulfill(body='null', content_type='application/json')
+            elif path in ('/api/hidden', '/api/saved'):
+                self.actions.append((path, route.request.method, route.request.post_data_json))
+                await route.fulfill(json={'ok': True})
+            else:
+                file = static / (path.removeprefix('/static/') if path.startswith('/static/') else 'index.html')
+                types = {'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2'}
+                await route.fulfill(
+                    body=file.read_bytes(), content_type=types.get(file.suffix, 'application/octet-stream')
+                )
+
+        playwright = await async_playwright().start()
+        self.addAsyncCleanup(playwright.stop)
+        browser = await playwright.chromium.launch()
+        self.addAsyncCleanup(browser.close)
+        self.page = await browser.new_page(has_touch=True)
+        self.page.on('pageerror', lambda error: self.errors.append(str(error)))
+        await self.page.route('http://suchalarm.test/**', serve)
+        await self.page.add_init_script("localStorage.setItem('suchalarm.area', 'wohnung')")
+        await self.page.goto('http://suchalarm.test/')
+        await self.page.locator('#offer-list .asset-row').wait_for()
+
+    async def asyncTearDown(self):
+        self.assertEqual(self.errors, [])
+
+    async def test_pointercancel_resets_swipe_but_pointerup_commits_in_both_directions(self):
+        page = self.page
+        touch = await page.context.new_cdp_session(page)
+
+        async def drag(direction):
+            box = await page.locator('#offer-list .asset-row').bounding_box()
+            x, y = box['x'] + box['width'] / 2, box['y'] + box['height'] / 2
+            await touch.send('Input.dispatchTouchEvent', dict(type='touchStart', touchPoints=[dict(x=x, y=y)]))
+            await touch.send(
+                'Input.dispatchTouchEvent', dict(type='touchMove', touchPoints=[dict(x=x + direction * 160, y=y)])
+            )
+            # Real touch input gives setPointerCapture a live pointer; 160 px exceeds SWIPE_ARM.
+            await page.wait_for_function("document.querySelector('#offer-list li').classList.contains('armed')")
+            self.assertTrue(await page.locator('#offer-list li').evaluate("li => li.classList.contains('swiping')"))
+            self.assertGreater(
+                await page.locator('#offer-list .asset-row').evaluate(
+                    'row => Math.abs(new DOMMatrix(getComputedStyle(row).transform).m41)'
+                ),
+                80,
+            )
+
+        for direction, path, flag in ((-1, '/api/hidden', 'hidden'), (1, '/api/saved', 'saved')):
+            with self.subTest(direction=direction):
+                await page.reload()
+                await page.locator('#offer-list .asset-row').wait_for()
+                self.actions.clear()
+                await drag(direction)
+                await touch.send('Input.dispatchTouchEvent', dict(type='touchCancel', touchPoints=[]))
+                # Hiding posts after 200 + 220 ms, saving after 260 ms: observe beyond both timers.
+                await page.wait_for_timeout(600)
+                self.assertEqual(self.actions, [])
+                self.assertEqual(await page.locator('#offer-list .asset-row').count(), 1)
+                self.assertEqual(
+                    await page.locator('#offer-list .asset-row').evaluate('row => row.style.transform'), ''
+                )
+                self.assertEqual(
+                    await page.locator('#offer-list .asset-row').evaluate(
+                        'row => new DOMMatrix(getComputedStyle(row).transform).m41'
+                    ),
+                    0,
+                )
+                self.assertFalse(
+                    await page.locator('#offer-list li').evaluate(
+                        "li => ['swiping', 'armed', 'to-left', 'to-right', 'leaving'].some(c => li.classList.contains(c))"
+                    )
+                )
+                await drag(direction)
+                async with page.expect_request(f'http://suchalarm.test{path}') as requested:
+                    await touch.send('Input.dispatchTouchEvent', dict(type='touchEnd', touchPoints=[]))
+                request = await requested.value
+                self.assertEqual(request.method, 'POST')
+                self.assertEqual(request.post_data_json, dict(search_id=1, url=self.listing['url'], **{flag: True}))
+                await page.wait_for_timeout(600)
+                self.assertEqual(len(self.actions), 1)
+
+    async def test_application_mark_only_confirms_success_after_a_successful_post(self):
+        page = self.page
+        outcome = 'http'
+        submitted = []
+
+        async def applied(route):
+            submitted.append((route.request.method, route.request.post_data_json))
+            if outcome == 'http':
+                await route.fulfill(status=500, json={'detail': 'Bewerbung konnte nicht gespeichert werden.'})
+            elif outcome == 'network':
+                await route.abort('failed')
+            else:
+                self.state['saved'] = [dict(self.listing, saved_at=time.time(), applied_at=time.time())]
+                await route.fulfill(json={'ok': True})
+
+        await page.route('http://suchalarm.test/api/applied', applied)
+        for failure in ('http', 'network'):
+            with self.subTest(failure=failure):
+                outcome = failure
+                self.state['saved'] = []
+                await page.reload()
+                await page.locator('#offer-list .asset-row').click()
+                await page.locator('#detail [data-sheet="apply"]').click()
+                feedback = page.locator('#application-feedback')
+                before = await feedback.inner_text()
+                await page.locator('#application-mark').click()
+                await page.wait_for_function(
+                    "!document.getElementById('message').hidden && document.getElementById('message').classList.contains('down')"
+                )
+                # Let mark() resume after act() has caught the error before checking the negative assertion.
+                await page.evaluate('() => new Promise(resolve => requestAnimationFrame(resolve))')
+                self.assertEqual(await feedback.inner_text(), before)
+                self.assertNotIn('Als beworben markiert und gemerkt.', await feedback.inner_text())
+                self.assertEqual(submitted[-1], ('POST', dict(search_id=1, url=self.listing['url'], applied=True)))
+                self.assertTrue(await page.locator('#application-mark').is_visible())
+                self.assertTrue(await page.locator('#application-applied').is_hidden())
+
+                outcome = 'success'
+                await page.locator('#application-mark').click()
+                await page.wait_for_function(
+                    "document.getElementById('application-feedback').textContent === 'Als beworben markiert und gemerkt.'"
+                )
+                self.assertTrue(await page.locator('#application-applied').is_visible())
+                self.assertTrue(await page.locator('#application-mark').is_hidden())
+
+    async def test_stale_state_after_mail_save_cannot_restore_a_removed_recipient(self):
+        page = self.page
+        await page.locator('[data-view="settings"]').first.click()
+        old_started, fresh_started = asyncio.Event(), asyncio.Event()
+        held = []
+        submitted = []
+
+        async def state(route):
+            if len(held) < 2:
+                # Snapshot at request time: the old poll sees a+b, the post-save refresh sees a.
+                held.append((route, json.dumps(self.state)))
+                (old_started if len(held) == 1 else fresh_started).set()
+            else:
+                await route.fulfill(json=self.state)
+
+        async def mail(route):
+            self.assertEqual(route.request.method, 'PUT')
+            body = route.request.post_data_json
+            submitted.append(body)
+            self.state['mail'].update(body)
+            await route.fulfill(json={'ok': True})
+
+        await page.route('http://suchalarm.test/api/state', state)
+        await page.route('http://suchalarm.test/api/mail', mail)
+        # Start the real refresh, but do not await its deliberately held response yet.
+        await page.evaluate("() => { window.oldPoll = import('/static/page.js').then(m => m.refresh()); }")
+        await asyncio.wait_for(old_started.wait(), timeout=5)
+        await page.get_by_role('button', name='b@example.org entfernen', exact=True).click()
+        await asyncio.wait_for(fresh_started.wait(), timeout=5)
+        self.assertEqual(submitted[0]['recipients'], ['a@example.org'])
+
+        # PUT has completed. Deliver the pre-save poll while the subsequent refresh is still in flight.
+        old_route, old_body = held[0]
+        await old_route.fulfill(body=old_body, content_type='application/json')
+        await page.evaluate('() => window.oldPoll')  # includes parsing and rendering the stale state
+        async with page.expect_request('http://suchalarm.test/api/mail') as requested:
+            await page.locator('[data-mail-area="wohnung"] [data-mail="frequency"]').select_option('Täglich')
+        request = await requested.value
+        self.assertEqual(request.method, 'PUT')
+        self.assertEqual(request.post_data_json['wohnung']['frequency'], 'Täglich')
+        self.assertEqual(request.post_data_json['recipients'], ['a@example.org'])
+        self.assertEqual(await page.locator('#recipient-items [data-remove]').count(), 1)
+        await page.wait_for_function("!document.getElementById('mail-form').dataset.saving")
+        fresh_route, fresh_body = held[1]
+        await fresh_route.fulfill(body=fresh_body, content_type='application/json')
+
+
 if __name__ == '__main__':
     unittest.main()

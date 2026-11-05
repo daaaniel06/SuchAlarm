@@ -58,10 +58,12 @@ class DomainTests(unittest.TestCase):
 
     def test_sold_or_reserved_titles_are_unavailable(self):
         base = dict(url='https://www.ebay.de/itm/123', price='30 €', status='', text='')
-        for title in ('Spiel Verkauft!', 'RESERVIERT Spiel'):
+        for title in ('Spiel Verkauft!', 'RESERVIERT Spiel', 'Spiel (reserviert)'):
             with self.subTest(title=title):
                 self.assertEqual(parse_rows('ebay', [dict(base, title=title)], {'query': 'Spiel'}), [])
-        self.assertEqual(len(parse_rows('ebay', [dict(base, title='Verkaufe Spiel')], {'query': 'Spiel'})), 1)
+        for talk in ('Verkaufe Spiel', 'Verkauft wird ein Spiel', 'Spiel wird verkauft', 'Spiel – nicht reserviert'):
+            with self.subTest(title=talk):  # sales talk, no marker
+                self.assertEqual(len(parse_rows('ebay', [dict(base, title=talk)], {'query': 'Spiel'})), 1)
 
     def test_price_and_shipping(self):
         self.assertEqual(money('1.234,56 €'), 123456)

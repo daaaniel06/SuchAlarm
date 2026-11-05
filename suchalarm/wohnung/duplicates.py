@@ -129,34 +129,50 @@ def same_photo(a, b):
 
 def stock_photos(items):
     """Photos that show more than one flat: one portal lists two offers with it, or offers with it differ in
-    their facts. Returns their hashes."""
-    shown = [x for x in items if x.get('photo_hash')]
-    stock = set()
-    for a, b in _close_photos(shown):
-        if a['url'] != b['url'] and (a['source'] == b['source'] or not same_facts(a, b)):
-            stock |= {a['photo_hash'], b['photo_hash']}
+    their facts. Returns their hashes.
+
+    Listings with the same picture are taken together first: a landlord's stock picture on hundreds of listings
+    is then one entry, not hundreds of thousands of pairs."""
+    by_hash: dict[str, list[dict]] = {}
+    for x in items:
+        if x.get('photo_hash'):
+            by_hash.setdefault(x['photo_hash'], []).append(x)
+    stock = {photo for photo, group in by_hash.items() if _several_flats(group, group)}
+    for first, second in _close_hashes(list(by_hash)):
+        if _several_flats(by_hash[first], by_hash[second]):
+            stock |= {first, second}
     return stock
 
 
-def _close_photos(shown):
-    """The pairs of SHOWN with practically identical photos. Two hashes at most PHOTO_BITS apart agree
-    completely on at least one of PHOTO_BITS + 1 slices, so only listings sharing a slice are compared."""
-    hashes = [int(x['photo_hash'], 16) for x in shown]
-    bits, slices = max(64, *(h.bit_length() for h in hashes), 0), PHOTO_BITS + 1
+def _several_flats(group, other):
+    """Whether a listing of GROUP and a different one of OTHER cannot be the same flat: the same portal, or other
+    facts. GROUP and OTHER may be the same list."""
+    if group is other and len({x['source'] for x in group}) < len({x['url'] for x in group}):
+        return True  # one portal lists the picture twice; the usual stock picture case, found without pairs
+    return any(
+        a['url'] != b['url'] and (a['source'] == b['source'] or not same_facts(a, b)) for a in group for b in other
+    )
+
+
+def _close_hashes(hashes):
+    """The pairs of different HASHES (hex) at most PHOTO_BITS apart. Two such hashes agree completely on at least
+    one of PHOTO_BITS + 1 slices, so only hashes sharing a slice are compared."""
+    values = [int(h, 16) for h in hashes]
+    bits, slices = max(64, *(v.bit_length() for v in values), 0), PHOTO_BITS + 1
     bounds = [round(k * bits / slices) for k in range(slices + 1)]
     buckets: dict[tuple[int, int], list[int]] = {}
-    for i, h in enumerate(hashes):
+    for i, value in enumerate(values):
         for k in range(slices):
-            part = (h >> bounds[k]) & ((1 << (bounds[k + 1] - bounds[k])) - 1)
+            part = (value >> bounds[k]) & ((1 << (bounds[k + 1] - bounds[k])) - 1)
             buckets.setdefault((k, part), []).append(i)
     pairs = {
         (i, j)
         for members in buckets.values()
         for n, i in enumerate(members)
         for j in members[n + 1 :]
-        if (hashes[i] ^ hashes[j]).bit_count() <= PHOTO_BITS
+        if (values[i] ^ values[j]).bit_count() <= PHOTO_BITS
     }
-    return [(shown[i], shown[j]) for i, j in pairs]
+    return [(hashes[i], hashes[j]) for i, j in pairs]
 
 
 def _postcode(listing):
