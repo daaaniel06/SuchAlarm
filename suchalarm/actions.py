@@ -46,6 +46,8 @@ def set_saved(search_id, url, saved):
         entry = _removed.get('entry')
         if entry and entry['url'] == url and time.time() - _removed['at'] < UNDO_WINDOW:
             _removed.clear()
+            if store.is_saved(conn, url):
+                return False  # saved again meanwhile (another tab, "Beworben"): that one is newer
             store.restore_saved(conn, entry)
             return True
         return bookmark(conn, search_id, url)

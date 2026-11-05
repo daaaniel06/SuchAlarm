@@ -74,6 +74,7 @@ class VehicleTests(unittest.TestCase):
         self.assertTrue(title_fits('kleinanzeigen', '320 Touring', bmw))
         self.assertTrue(title_fits('kleinanzeigen', 'BMW 320 Touring', bmw))
         self.assertTrue(title_fits('kleinanzeigen', 'Volkswagen Golf 7', self.car))
+        self.assertTrue(title_fits('kleinanzeigen', 'Golf 7 GTI Smart Repair durchgeführt', self.car))
 
     def test_negated_excluded_words_keep_the_offer(self):
         self.assertTrue(title_fits('kleinanzeigen', 'VW Golf 7 TSI kein Unfall, Scheckheft', self.car))

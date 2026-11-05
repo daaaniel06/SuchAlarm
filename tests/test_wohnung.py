@@ -1549,6 +1549,14 @@ class WorkerTests(TempData):
             self.assertEqual(conn.execute('SELECT state FROM listing_details').fetchone()[0], 'gone')
         self.assertEqual([r['url'][-1] for r in catalog.listings(flat_search)], ['1'])  # deleted on the portal
         self.assertFalse(catalog.mailable(Listing(source='immoscout24', url='u', title='t'), 'matched', 'gone'))
+        self.run_check([self.card(1), self.card(2)], flat_search)  # listed again the same day: still gone
+        self.assertEqual([r['url'][-1] for r in catalog.listings(flat_search)], ['1'])
+        with store.db() as conn:
+            conn.execute('UPDATE listing_details SET created_at=created_at-?', (details.GONE_RECHECK + 1,))
+        self.run_check([self.card(1), self.card(2)], flat_search)  # a day later: read again
+        with store.db() as conn:
+            self.assertEqual(conn.execute('SELECT state FROM listing_details').fetchone()[0], 'pending')
+        self.assertEqual(sorted(r['url'][-1] for r in catalog.listings(flat_search)), ['1', '2'])
 
     def test_an_unclear_listing_is_mailable_once_nothing_is_left_to_learn(self):
         flat = Listing(source='immoscout24', url='u', title='t')
@@ -1609,14 +1617,18 @@ class WorkerTests(TempData):
 
     def test_an_empty_page_the_portal_confirms_is_no_failure(self):
         """Every flat let, or only offers elsewhere: the portal's own count or its page says so."""
-        for found_counts in ({'listed': 0, 'unread': 0}, {'listed': 12, 'unread': None}):
+        for found_counts, disturbed in (
+            ({'listed': 0, 'unread': 0}, False),
+            ({'listed': 12, 'unread': None}, False),
+            ({'listed': 0, 'unread': 6}, True),  # the portal counts six, the parser read none: the layout changed
+        ):
             flat_search = self.stored_search()
             self.run_check([self.card(n) for n in range(6)], flat_search)
             with patch.object(flats.sources, 'fetch', new=AsyncMock(return_value=([], found_counts))):
                 asyncio.run(worker.check(flat_search))
             with store.db() as conn:
                 row = status.of(conn, flat_search['id'], 'immoscout24')
-            self.assertEqual((row['error'], row['count']), (None, 0), found_counts)
+            self.assertEqual(row['error'] is not None, disturbed, found_counts)
 
     def test_a_portal_that_stays_empty_stays_disturbed(self):
         """Also after a failure in between; a landlord's stock is not let because of an empty page."""
@@ -1832,6 +1844,16 @@ class ApiAndMailTests(TempData):
         self.assertEqual(self.client.get('/api/state').json()['saved'], [])
         self.assertEqual(self.client.post('/api/saved', json=dict(body, saved=True)).status_code, 200)
         self.assertEqual(self.client.get('/api/state').json()['saved'], before)  # with its "Beworben"
+
+    def test_undoing_a_removal_keeps_a_newer_entry(self):
+        flat_search = self.create()
+        pages.save_result(flat_search, 'immoscout24', [self.card(1)], 1, time.time())
+        body = {'search_id': flat_search['id'], 'url': self.card(1).url}
+        self.client.post('/api/saved', json=dict(body, saved=True))
+        self.client.post('/api/saved', json=dict(body, saved=False))
+        self.client.post('/api/applied', json=dict(body, applied=True))  # meanwhile, in another tab
+        self.client.post('/api/saved', json=dict(body, saved=True))  # the first tab's "Rückgängig"
+        self.assertIsNotNone(self.client.get('/api/state').json()['saved'][0]['applied_at'])
 
     def test_the_starting_stock_gets_its_detail_page_on_request(self):
         flat_search = self.create()

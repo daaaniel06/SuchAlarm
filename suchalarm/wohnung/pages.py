@@ -13,8 +13,9 @@ from .. import store
 from ..core import cadence
 from ..status import more_unread, source_ok, started
 from . import sources
-from .details import FETCH_TIMEOUT, read_again
+from .details import FETCH_TIMEOUT, GONE_RECHECK, read_again
 from .domain import WHOLE_STOCK, Listing, cheaper, could_match, other_rent, profile
+from .tables import GONE
 
 log = logging.getLogger('suchalarm')
 
@@ -161,8 +162,18 @@ def _store(conn, search, page, seen, now):
     moved = [item for item in listings if item.url in before and other_rent(before[item.url], item)]
     _mark_cheaper(conn, sid, [item.url for item in moved if cheaper(before[item.url], item)], now)
     if source in sources.DETAILS:
-        # The detail page states the rent that counts; one read before the change no longer does.
-        read_again(conn, source, [item.url for item in moved], now)
+        # The detail page states the rent that counts; one read before the change no longer does. A page that
+        # was gone but is listed again a day later may have been taken down only for a while.
+        gone = {
+            row[0]
+            for row in conn.execute(
+                'SELECT url FROM listing_details WHERE source=? AND state=? AND created_at<?',
+                (source, GONE, now - GONE_RECHECK),
+            )
+        }
+        read_again(
+            conn, source, [item.url for item in moved] + [item.url for item in listings if item.url in gone], now
+        )
     stock = {row[0] for row in conn.execute('SELECT url FROM start_offers WHERE search_id=?', (sid,))}
     conn.executemany(
         "INSERT OR IGNORE INTO listing_details(url,source,state,created_at) VALUES (?,?,'pending',?)",

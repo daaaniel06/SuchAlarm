@@ -55,8 +55,9 @@ async def fetch(source: str, search: store.Search) -> tuple[list[Listing], PageC
 
 def empty_is_suspicious(counts: PageCounts) -> bool:
     """A portal that suddenly lists nothing usually changed its layout, unless it said so itself (its own count is
-    0) or its page held offers that only lie outside the search's place."""
-    return counts['listed'] == 0 and counts['unread'] is None
+    0) or its page held offers that only lie outside the search's place. A count the parser read none of is the
+    layout change itself."""
+    return counts['listed'] == 0 and counts['unread'] != 0
 
 
 def save(search: store.Search, source: str, listings: list[Listing], counts: PageCounts, observed: float) -> set[str]:

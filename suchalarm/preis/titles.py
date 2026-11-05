@@ -41,9 +41,10 @@ def phrases(source, search):
 
 
 def terms(search, phrase=None):
-    """The words of a search: its query (or PHRASE, one of its other spellings) plus a chosen platform."""
+    """The words of a search: its query (or PHRASE, one of its other spellings) plus a chosen platform, unless
+    the phrase names it already (a title then needs it once, not twice)."""
     chosen, phrase = platform(search), phrase or search['query']
-    return f'{phrase} {PLATFORMS[chosen]}' if chosen else phrase
+    return f'{phrase} {PLATFORMS[chosen]}' if chosen and chosen not in named_platforms(phrase) else phrase
 
 
 def all_terms(search):
@@ -89,7 +90,8 @@ def title_fits(source, title, search):
     chosen, named = platform(search), named_platforms(title)
     excluded = search.get('excluded', '')
     wanted = [wanted_words(source, search, phrase) for phrase in phrases(source, search)]
-    makes = set(normalized(title).split()) & CAR_MAKES
+    # Sellers name the make first ("Mercedes 320 CDI"); further on "smart" is "Smart Repair", not the make.
+    makes = set(normalized(title).split()[:2]) & CAR_MAKES
     wanted += [
         rest for words in wanted if (rest := without_make(search, words)) and not makes - set(normalized(words).split())
     ]

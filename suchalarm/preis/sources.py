@@ -199,7 +199,12 @@ UNAVAILABLE_PATTERNS = (
     r'\b(?:auktion|gebote?)\b',
 )
 UNAVAILABLE = re.compile('|'.join(UNAVAILABLE_PATTERNS), re.I)
-UNAVAILABLE_TITLE = re.compile(r'\b(?:verkauft|reserviert)\b', re.I)
+# A seller marks a title at its start, its end or in brackets ("VERKAUFT - PS5", "PS5 (reserviert)"); "Verkauft
+# wird eine PS5" and "nicht reserviert" are sales talk.
+_MARK = r'(?:verkauft|reserviert)'
+UNAVAILABLE_TITLE = re.compile(
+    rf'^\W*{_MARK}\b(?!\s+(?:wird|werden)\b)|(?<!nicht )(?<!wird ){_MARK}\W*$|[(\[]\s*{_MARK}\s*[)\]]', re.I
+)
 PICKUP_ONLY = re.compile(r'\bnur\s+abholung\b', re.I)
 USED_CONDITION = re.compile(r'(?:Used|Refurbished|Damaged)Condition$', re.I)
 # eBay's sales counters on listings still for sale ("Mehr als 10 verkauft", "Fast ausverkauft").

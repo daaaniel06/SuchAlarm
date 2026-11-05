@@ -24,6 +24,8 @@ DETAIL_RETRY = 600  # a failed detail page is tried again after 10, then 20 minu
 
 BACKFILL_GAP = 15 * 60  # at most one detail page of the starting stock per portal in this time
 
+GONE_RECHECK = 86400  # a listing whose page was gone but that the portal lists again is looked at after this
+
 # Detail pages detail_step() reads: recent, and asked for by the user or listed by an active search.
 WORKABLE = (
     'd.state=? AND d.created_at>=? AND (d.requested OR EXISTS (SELECT 1 FROM listings l JOIN searches s '
