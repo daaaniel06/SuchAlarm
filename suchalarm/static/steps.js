@@ -46,11 +46,12 @@ export function sourceStep(search, source) {
   const hits = pool(kindOf(search)).filter(
     o => o.search_id === search.id && o.source === source && fits(o, search),
   ).length;
-  return withUnread({ step: 'done', ...doneText(status.count, hits, status.checked_at) }, status.unread);
+  return withInfo({ step: 'done', ...doneText(status.count, hits, status.checked_at) }, status.unread, status.warning);
 }
-// Offers the portal counts but the parser could not read: a changed card layout, shown beside the result.
-function withUnread(step, unread) {
-  return unread ? { ...step, unread, text: `${step.text} · ${unread} nicht lesbar` } : step;
+// Layout hints stay beside a successful result.
+function withInfo(step, unread, warning) {
+  const hints = [unread && `${unread} nicht lesbar`, warning].filter(Boolean);
+  return { ...step, unread, warning, text: [step.text, ...hints].join(' · ') };
 }
 // Across searches: a source is only fine if it is fine for every search that uses it.
 // When every search is done, the counts add up and the oldest check is shown.
@@ -68,8 +69,11 @@ export function sourceSteps(searches, all = false) {
     if (done.length === 1) return [{ source, ...done[0] }];
     const sum = key => done.reduce((total, x) => total + x[key], 0);
     const checked = Math.min(...done.map(x => x.checked)),
-      unread = Math.max(0, ...done.map(x => x.unread || 0));
-    return [{ source, ...withUnread({ step: 'done', ...doneText(sum('found'), sum('hits'), checked) }, unread) }];
+      unread = Math.max(0, ...done.map(x => x.unread || 0)),
+      warning = [...new Set(done.map(x => x.warning).filter(Boolean))].join(' · ');
+    return [
+      { source, ...withInfo({ step: 'done', ...doneText(sum('found'), sum('hits'), checked) }, unread, warning) },
+    ];
   });
 }
 export const pill = ({ source, step, text }, label = sourceName(source)) =>

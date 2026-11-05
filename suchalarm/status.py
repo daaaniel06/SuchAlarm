@@ -30,19 +30,27 @@ def _show(conn, sid, source, now, error=None, count=0, failures=0, note=None):
     )
 
 
-def source_ok(conn, sid, source, now, count, unread=None):
+def source_ok(conn, sid, source, now, count, unread=None, warning=None):
     """A readable result with COUNT offers. From now on the source has started for the search (started()).
-    UNREAD: offers the portal counts on the page but the parser could not read (None: the portal names no count)."""
+    UNREAD: offers the parser missed. WARNING: a layout hint beside the successful result."""
     _show(conn, sid, source, now, count=count)
-    conn.execute('UPDATE source_status SET started=1, unread=? WHERE search_id=? AND source=?', (unread, sid, source))
+    conn.execute(
+        'UPDATE source_status SET started=1, unread=?, warning=? WHERE search_id=? AND source=?',
+        (unread, warning, sid, source),
+    )
 
 
-def more_unread(conn, sid, source, unread):
-    """A further page of the source (its stock) missed UNREAD offers too: shown until the next regular result."""
+def more_unread(conn, sid, source, unread, warning=None):
+    """Keep unread counts and the first layout hint of further pages until the next regular result."""
     if unread:
         conn.execute(
             'UPDATE source_status SET unread=COALESCE(unread, 0) + ? WHERE search_id=? AND source=?',
             (unread, sid, source),
+        )
+    if warning:
+        conn.execute(
+            'UPDATE source_status SET warning=COALESCE(warning, ?) WHERE search_id=? AND source=?',
+            (warning, sid, source),
         )
 
 

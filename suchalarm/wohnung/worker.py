@@ -62,7 +62,9 @@ def empty_is_suspicious(counts: PageCounts) -> bool:
 
 def save(search: store.Search, source: str, listings: list[Listing], counts: PageCounts, observed: float) -> set[str]:
     """COUNTS: what sources.fetch counted on the portal's page (listed, unread)."""
-    return pages.save_result(search, source, listings, counts['listed'], observed, counts['unread'])
+    return pages.save_result(
+        search, source, listings, counts['listed'], observed, counts['unread'], counts.get('warning')
+    )
 
 
 def finish(search: store.Search, saved: list[set[str]]) -> None:

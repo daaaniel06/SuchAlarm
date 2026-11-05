@@ -267,6 +267,12 @@ def _add_status_unread(conn):
         conn.execute('ALTER TABLE source_status ADD COLUMN unread INTEGER')
 
 
+def _add_status_warning(conn):
+    """A layout hint beside a successful source result, without marking its offers stale."""
+    if 'warning' not in {r[1] for r in conn.execute('PRAGMA table_info(source_status)')}:
+        conn.execute('ALTER TABLE source_status ADD COLUMN warning TEXT')
+
+
 # Each entry runs once; PRAGMA user_version counts the applied ones. Only ever append.
 MIGRATIONS = (
     _migrate_legacy,
@@ -284,6 +290,7 @@ MIGRATIONS = (
     _add_alternatives,
     _add_status_started,
     _add_status_unread,
+    _add_status_warning,
 )
 
 

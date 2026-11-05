@@ -46,7 +46,7 @@ class Page:
     unread: int | None = None
 
 
-def save_result(search, source, listings, listed, now, unread=None):
+def save_result(search, source, listings, listed, now, unread=None, warning=None):
     """Store a successful result (LISTED: how many offers the portal's page held before select(); UNREAD: how many
     of the portal's own count the parser missed, sources.unread); queue
     detail pages for new listings.
@@ -64,13 +64,13 @@ def save_result(search, source, listings, listed, now, unread=None):
         unseen = _save_page(conn, search, page, now, stock)
         if source in WHOLE_STOCK:
             _drop_let(conn, sid, source, listings)
-        source_ok(conn, sid, source, now, len(listings), unread)
+        source_ok(conn, sid, source, now, len(listings), unread, warning)
         if stock or not reading_stock:  # the reading of the stock goes on behind a regular check
             _queue_next(conn, sid, page, unseen, stock, reread=bool(job) and job['stock'] == REREAD)
     return set() if stock else unseen
 
 
-def save_more(search, job, listings, listed, now, unread=None):
+def save_more(search, job, listings, listed, now, unread=None, warning=None):
     """Store the further result page that JOB (a more_pages row) asked for. Its unseen flats are starting
     stock while a search takes in the stock, otherwise they count like any new ones. Returns the URLs of
     new ones."""
@@ -78,7 +78,7 @@ def save_more(search, job, listings, listed, now, unread=None):
     with store.db() as conn:
         if not _current(conn, job):
             return set()  # a regular check or an edit decided anew while the page loaded
-        more_unread(conn, sid, page.source, unread)
+        more_unread(conn, sid, page.source, unread, warning)
         stock = bool(job['stock'])
         unseen = _save_page(conn, search, page, now, stock)
         _queue_next(conn, sid, page, unseen, stock, reread=job['stock'] == REREAD)
@@ -245,5 +245,5 @@ async def more_step(now=None):
         log.warning('Page %s of %s failed (%s)', job['page'], job['source'], type(exc).__name__)
         return job
     cadence.outcome(job['source'], 'page')
-    save_more(search, job, found, counts['listed'], time.time(), counts['unread'])
+    save_more(search, job, found, counts['listed'], time.time(), counts['unread'], counts.get('warning'))
     return job

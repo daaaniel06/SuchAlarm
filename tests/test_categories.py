@@ -125,6 +125,54 @@ class CategoryTests(unittest.TestCase):
                 self.assertTrue(title_fits(source, 'Resident Evil 2 Switch 2', remake))
                 self.assertFalse(title_fits(source, 'Resident Evil 4 Switch 2', remake))  # the 2 is the console's
 
+    def test_title_matrix(self):
+        cases = [
+            ('Resident Evil Requiem', 'ps5', 'Resident Evil Requiem PS5', '', True),
+            ('Resident Evil Requiem PS5', 'ps5', 'Resident Evil Requiem PS5', '', True),
+            ('Resident Evil Requiem PS5', 'ps5', 'Resident Evil Requiem Playstation 5', '', True),
+            ('Resident Evil Requiem Playstation 5', 'ps5', 'Resident Evil Requiem PS5', '', True),
+            ('Resident Evil Requiem PS 5', 'ps5', 'Resident Evil Requiem (PS5)', '', True),
+            ('PS5 Resident Evil Requiem', 'ps5', 'Resident Evil Requiem für PS5 neu', '', True),
+            ('Resident Evil Requiem PS5', 'ps5', 'Resident Evil Requiem PS4', '', False),
+            ('Resident Evil Requiem PS5', 'ps5', 'Resident Evil Requiem Switch 2', '', False),
+            ('Mario Kart World', 'switch2', 'Mario Kart World Switch 2', '', True),
+            ('Mario Kart World Switch 2', 'switch2', 'Mario Kart World Nintendo Switch 2', '', True),
+            ('Mario Kart World Switch2', 'switch2', 'Mario Kart World Switch 2', '', True),
+            ('Mario Kart World Switch 2', 'switch2', 'Mario Kart World Switch2', '', True),
+            ('Mario Kart World Switch 2', 'switch2', 'Mario Kart World Switch', '', False),
+            ('Resident Evil 2', 'switch2', 'Resident Evil 2 Switch 2', '', True),
+            ('Resident Evil 2', 'switch2', 'Resident Evil 4 Switch 2', '', False),
+            (
+                'Resident Evil 2',
+                'switch2',
+                'Resident Evil 2',
+                '',
+                {'kleinanzeigen': False, 'ebay': False, 'vinted': True},
+            ),
+            ('Resident Evil 2 Switch 2', 'switch2', 'Resident Evil 2 Nintendo Switch 2', '', True),
+            ('Resident Evil 4', 'ps4', 'Resident Evil 4 PS4', '', True),
+            ('Gran Turismo 7', 'ps5', 'Gran Turismo 7 PS5', '', True),
+            ('FIFA 23', 'ps5', 'FIFA 23 PS5', '', True),
+            ('Halo Infinite', 'xbox-series', 'Halo Infinite Xbox Series X', '', True),
+            ('Halo Infinite Xbox Series X', 'xbox-series', 'Halo Infinite XboxSeriesX', '', True),
+            ('Forza Horizon 5', 'xbox-series', 'Forza Horizon 5 Xbox Series X', '', True),
+            ('Halo 5', 'xbox-one', 'Halo 5 Xbox One', '', True),
+            ('Spider-Man 2', 'ps5', 'Spiderman 2 PS5', '', True),
+            ('Spider-Man 2 PS5', 'ps5', 'Marvel Spider Man 2 PS5', '', True),
+            ('Spider-Man 2', None, 'Spider-Man 2 PS5', '', True),
+            ('iPhone 13', None, 'iPhone13 128GB', '', True),
+            ('Resident Evil Requiem', 'ps5', 'Resident Evil Requiem PS5 defekt', '', True),
+            ('Resident Evil Requiem', 'ps5', 'Resident Evil Requiem PS5 defekt', 'defekt,ps4', False),
+            ('Resident Evil Requiem', 'ps5', 'Resident Evil Requiem PS4', 'defekt,ps4', False),
+            ('Resident Evil Requiem', 'ps5', 'Resident Evil Requiem PS5', 'defekt,ps4', True),
+        ]
+        for query, platform, title, excluded, expected in cases:
+            search = dict(query=query, excluded=excluded, filters={'platform': platform} if platform else {})
+            for source in ('kleinanzeigen', 'ebay', 'vinted'):
+                with self.subTest(query=query, platform=platform, title=title, excluded=excluded, source=source):
+                    want = expected[source] if isinstance(expected, dict) else expected
+                    self.assertEqual(title_fits(source, title, search), want)
+
     def test_shipping_search_drops_explicit_pickup_only_cards(self):
         for source, url in (
             ('ebay', 'https://www.ebay.de/itm/123'),
