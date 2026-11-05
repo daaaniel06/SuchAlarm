@@ -61,6 +61,7 @@ async def detail_step(now=None):
         elif isinstance(exc, cadence.Refused):
             # A refusal says nothing about the listing: pause the site, keep the attempts.
             attempts, until = job['attempts'], cadence.outcome(job['source'], 'page', True)
+            state = PENDING
         with store.db() as conn:
             conn.execute(
                 'UPDATE listing_details SET attempts=?, next_at=?, error=?, state=? WHERE url=?',

@@ -9,6 +9,7 @@ import { area, state } from './page.js';
 const CATEGORY_ICONS = {
   videospiele:
     '<path d="M6 11h4M8 9v4M15 12h.01M18 10h.01"/><path d="M17.3 5H6.7a4 4 0 0 0-3.9 3.2l-1 5.2A3 3 0 0 0 6.7 16l1.8-2h7l1.8 2a3 3 0 0 0 4.9-2.6l-1-5.2A4 4 0 0 0 17.3 5Z"/>',
+  konsolen: '<rect x="2" y="7" width="20" height="10" rx="2"/><path d="M6 12h4M8 10v4M15 11h.01M18 13h.01"/>',
   elektronik: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M2 20h20"/>',
   moebel:
     '<path d="M4 11V8a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v3"/><path d="M2 13a2 2 0 0 1 4 0v2h12v-2a2 2 0 0 1 4 0v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2Z"/><path d="M5 19v2M19 19v2"/>',
@@ -21,6 +22,7 @@ const CATEGORY_ICONS = {
 // Example query and maximum price per category.
 export const PLACEHOLDERS = {
   videospiele: ['Resident Evil Requiem', 35],
+  konsolen: ['PS5 Slim', 350],
   elektronik: ['iPhone 15 128 GB', 400],
   moebel: ['Ecksofa', 150],
   fahrraeder: ['Cube Rennrad', 500],

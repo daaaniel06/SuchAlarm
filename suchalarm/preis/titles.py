@@ -88,11 +88,16 @@ def without_make(search, words):
     return ' '.join(rest) if rest and len(rest) < len(normalized(words).split()) else None
 
 
+BRANDS = {'ps5': 'playstation', 'ps4': 'playstation', 'xbox-series': 'xbox', 'xbox-one': 'xbox'}
+
+
 def title_fits(source, title, search):
     """Whether an offer title belongs to the search: all words of one of its spellings, nothing excluded, not
     only other platforms. A provider's platform filter fills up with other platforms once its matches run out."""
     chosen, (named, bare) = platform(search), _platforms_in(title)
     excluded = search.get('excluded', '')
+    if chosen is None:  # "Xbox" still finds "Xbox Series X" and "PlayStation" a "PS5" once the platform is gone
+        bare = ' '.join([bare, *(BRANDS[key] for key in named if key in BRANDS)])
     wanted = [wanted_words(source, search, phrase) for phrase in phrases(source, search)]
     # Sellers name the make first ("Mercedes 320 CDI"); further on "smart" is "Smart Repair", not the make.
     makes = set(normalized(title).split()[:2]) & CAR_MAKES
