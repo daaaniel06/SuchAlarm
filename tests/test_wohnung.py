@@ -10,6 +10,7 @@ import unittest
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import AsyncMock, patch
 
 from suchalarm import status, store, worker
@@ -209,6 +210,22 @@ class FilterTests(unittest.TestCase):
         self.assertEqual(match(flat(text='Schöne Wohnung, voll MÖBLIERT'), words), ('excluded', ['Enthält „möbliert“']))
         self.assertEqual(match(flat(title='Wohnen auf Zeit in Bessungen'), words)[0], 'excluded')
         self.assertEqual(match(flat(exclusions_known=False), words)[0], 'unclear')
+
+    def test_own_exclusion_words_use_whole_words_and_negation_like_product_searches(self):
+        words = {**PROFILE, 'excludeWords': ['möbliert', 'Wohnen auf Zeit']}
+        for text, verdict in (
+            ('Die Wohnung ist unmöbliert.', 'matched'),
+            ('Die Wohnung ist NICHT MÖBLIERT.', 'matched'),
+            ('Kein Wohnen auf Zeit.', 'matched'),
+            ('Keine weiteren Kosten, voll möbliert.', 'excluded'),
+            ('Wohnen auf Zeit', 'excluded'),
+            ('Nicht möbliert, das Schlafzimmer wird möbliert angeboten.', 'excluded'),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(match(flat(text=text), words)[0], verdict)
+        self.assertEqual(match(flat(text='Schöne Wohnung, voll MOBLIERT'), words), ('excluded', ['Enthält „möbliert“']))
+        phrase = {**PROFILE, 'excludeWords': ['ohne Balkon']}
+        self.assertEqual(match(flat(text='Wohnung ohne Balkon'), phrase), ('excluded', ['Enthält „ohne Balkon“']))
 
     def test_move_in_window(self):
         window = {**PROFILE, 'moveInFrom': '2026-10-01', 'moveInBy': '2026-11-15'}
@@ -810,9 +827,11 @@ def without_markup(html):
 
 
 class TempData(unittest.TestCase):
+    MAIL_ENV: ClassVar[dict[str, str]] = {}
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {'DATA_DIR': self.tmp.name})
+        self.env = patch.dict(os.environ, {'DATA_DIR': self.tmp.name, **self.MAIL_ENV})
         self.env.start()
         store.init()
 
@@ -844,6 +863,28 @@ class PlaceTests(TempData):
         self.assertEqual(len(sources.select(stock, around)), 2)  # Mühltal is 6 km from the centre
         postcode = self.stored_search(query='64367', sources=['bauverein'])
         self.assertEqual([x.place for x in sources.select(stock, postcode)], ['Bruchmühlenweg 8, 64367 Mühltal'])
+
+    def test_a_radius_search_without_a_position_goes_by_the_town(self):
+        """Distance only where the centre and the flat's spot are known; else the town decides, so a landlord's
+        whole stock never passes for want of a position (live NHW stock, 04.11.2026)."""
+
+        def stock(source):
+            return [
+                flat(source=source, place='Darmstadt, Berliner Allee 16', lat=None, lon=None),
+                flat(source=source, place='Kassel, Bunsenstraße 9', lat=51.3286, lon=9.5023),
+                flat(source=source, place='Bad Wildungen, Sudetenstraße 19', lat=None, lon=None),
+                flat(source=source, place='Pfungstadt, Moselstraße 20', lat=49.7976, lon=8.6154),
+            ]
+
+        def towns(source):
+            around = self.stored_search(query='Darmstadt', radius=10, sources=[source])
+            return [x.place.split(',')[0] for x in sources.select(stock(source), around)]
+
+        for source in ('nhw', 'bauverein'):  # before the search's centre is looked up only the town counts
+            self.assertEqual(towns(source), ['Darmstadt'], source)
+        cadence.save_location('osm', 'darmstadt', json.dumps([49.8728, 8.6512, 'Hessen']))
+        for source in ('nhw', 'bauverein'):
+            self.assertEqual(towns(source), ['Darmstadt', 'Pfungstadt'], source)
 
     def test_a_postcode_search_keeps_the_regional_portals_flats_in_the_postcodes_town(self):
         centre, place = (49.8728, 8.6512), {'kind': 'plz', 'label': '64283 Darmstadt', 'query': '64283'}
@@ -1163,6 +1204,13 @@ class ConnectionTests(TempData):
 
 
 class WorkerTests(TempData):
+    def setUp(self):
+        super().setUp()
+        # Small pages keep these multi-page scenarios readable; the configured size decides fullness.
+        size = patch.dict(sources.PAGE_SIZES, {'immoscout24': pages.FULL_PAGE})
+        size.start()
+        self.addCleanup(size.stop)
+
     def card(self, number, **changes):
         return Listing.from_card(
             'immoscout24',
@@ -1177,6 +1225,36 @@ class WorkerTests(TempData):
     def due(self):
         with store.db() as conn:
             return [tuple(r) for r in conn.execute('SELECT page, tries FROM more_pages')]
+
+    def test_wg_starting_stock_with_53_of_100_flats_does_not_plan_page_two(self):
+        flat_search = self.stored_search(sources=['wg-gesucht'])
+        listings = [replace(self.card(n), source='wg-gesucht') for n in range(53)]
+        self.assertEqual(sources.PAGE_SIZES['wg-gesucht'], 100)
+        pages.save_result(flat_search, 'wg-gesucht', listings, 53, time.time())
+        self.assertEqual(self.due(), [])
+
+    def test_unread_cards_count_towards_a_full_page_on_every_stock_page(self):
+        flat_search = self.stored_search(sources=['wg-gesucht'])
+        first = [replace(self.card(n), source='wg-gesucht') for n in range(53)]
+        pages.save_result(flat_search, 'wg-gesucht', first, 53, time.time(), unread=47)
+        self.assertEqual(self.due(), [(2, 0)])
+        with patch.object(
+            sources,
+            'more',
+            new=AsyncMock(return_value=([replace(self.card(100), source='wg-gesucht')], {'listed': 1, 'unread': 99})),
+        ):
+            asyncio.run(pages.more_step())
+        self.assertEqual(self.due(), [(3, 0)])
+        with patch.object(sources, 'more', new=AsyncMock(return_value=([], {'listed': 0, 'unread': 53}))):
+            asyncio.run(pages.more_step())
+        self.assertEqual(self.due(), [])
+
+    def test_portals_without_page_size_keep_the_full_page_fallback(self):
+        flat_search = self.stored_search()
+        first = [self.card(n) for n in range(pages.FULL_PAGE)]
+        with patch.dict(sources.PAGE_SIZES, {}, clear=True):
+            pages.save_result(flat_search, 'immoscout24', first, len(first), time.time())
+        self.assertEqual(self.due(), [(2, 0)])
 
     def test_a_full_page_of_new_flats_is_followed_by_the_next_pages(self):
         flat_search = self.stored_search()
@@ -1502,6 +1580,8 @@ class BrowserExtractTests(unittest.TestCase):
 
 
 class ApiAndMailTests(TempData):
+    MAIL_ENV: ClassVar[dict[str, str]] = {'SMTP_HOST': 'smtp.example', 'SMTP_FROM': 'a@example.com'}
+
     def setUp(self):
         super().setUp()
         from fastapi.testclient import TestClient
@@ -1746,6 +1826,30 @@ class ApiAndMailTests(TempData):
         )
         with store.db() as conn:
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM listing_details').fetchone()[0], 0)  # the stock again
+
+    def test_flats_found_without_a_mailserver_are_known_when_one_is_configured(self):
+        flat_search = self.create(sources=['immoscout24'], filters={'exclusions': []})
+        with store.db() as conn:
+            store.put_setting(conn, 'recipients', '["a@example.com"]')
+            store.put_setting(conn, 'mail_enabled:wohnung', '1')
+        pages.save_result(flat_search, 'immoscout24', [], 0, time.time())
+        old = self.card(1)
+        with patch.dict(os.environ, {'SMTP_HOST': '', 'SMTP_FROM': ''}):
+            pages.save_result(flat_search, 'immoscout24', [old], 1, time.time())
+            with store.db() as conn:
+                conn.execute("UPDATE listing_details SET state='done', body='{}'")
+            outbox.queue_mails()
+            with store.db() as conn:
+                self.assertEqual(conn.execute('SELECT COUNT(*) FROM outbox').fetchone()[0], 0)
+                self.assertEqual(conn.execute('SELECT url FROM notifications').fetchone()[0], old.url)
+                self.assertEqual(conn.execute('SELECT COUNT(*) FROM mail_log').fetchone()[0], 0)
+        new = self.card(2)
+        pages.save_result(flat_search, 'immoscout24', [old, new], 2, time.time())
+        with store.db() as conn:
+            conn.execute("UPDATE listing_details SET state='done', body='{}'")
+        outbox.queue_mails()
+        with store.db() as conn:
+            self.assertEqual([row[0] for row in conn.execute('SELECT url FROM outbox')], [new.url])
 
     def test_new_fitting_flats_are_mailed_once_their_check_is_complete(self):
         from suchalarm import mailer, worker

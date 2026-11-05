@@ -33,7 +33,9 @@ def attribute(tag, name):
 
 
 def near(place, radius, centre, address, spot):
-    """Radius searches measure the distance; otherwise the town or postcode must match."""
+    """A radius search measures the distance where both the search's centre and the flat's spot are known.
+    Otherwise the town or postcode must match: a landlord's whole stock (all of Hessen at NHW) must not pass
+    for want of a position, and a flat elsewhere without coordinates would otherwise be mailed."""
     if radius and centre and spot:
         return distance_km(centre, spot) <= radius
     if re.fullmatch(r'\d{5}', place):

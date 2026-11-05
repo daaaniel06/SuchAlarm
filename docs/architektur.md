@@ -53,8 +53,12 @@ Ein Klick auf eine Wohnung öffnet ihr Detailblatt (`static/sheet.js`): Fakten, 
 | `core/browser.py` | Geschützte Seite im getarnten Firefox (invisible_playwright), gebuchter Seitenabruf, Erkennen von Sperren und unlesbaren Seiten. |
 | `core/cadence.py` | Taktung je Anbieter, geteilte Abfragen, Seiten- und Ergebnis-Cache. |
 | `core/images.py` | Vorschaubilder laden und ausliefern. |
-| `preis/domain.py`, `wohnung/domain.py` | Fachregeln (Preise, Versand, Titelvergleich, Kategorien bzw. Miete, Filter). Reine Funktionen ohne Datenbank. |
+| `core/text.py` | Ausschlusswörter als ganze Wörter, mit Verneinung („kein Unfall“), für beide Sucharten. |
+| `preis/categories.py`, `preis/money.py`, `preis/titles.py`, `preis/prices.py`, `preis/queries.py` | Kategorien und Anbieter-Konfiguration, Geld und Versand, Titelvergleich, Preisregeln sowie Anbieterfilter und Abfrageschlüssel. Reine Funktionen ohne Datenbank. |
+| `wohnung/domain.py` | Fachregeln für Miete und Wohnungsfilter. Reine Funktionen ohne Datenbank. |
 | `preis/sources.py`, `preis/extract.js` | Anbieter-URLs und Auslesen der Angebotskarten. |
 | `wohnung/sources.py`, `wohnung/portals/` | Portal-URLs und Auslesen der Inserate. |
 | `models.py` | Validierung der API-Eingaben (Pydantic). |
+| `kinds.py`, `shapes.py` | Die Sucharten und ihre Schnittstelle (`Protocol`, von mypy geprüft); die Formen der Werte zwischen Kern und Sucharten. |
+| `mailserver.py`, `mailer.py` | Ob und über welches Postfach Mails rausgehen; die Sammelmail bauen und senden. |
 | `static/*.js` | Oberfläche als ES-Module ohne Build: `page.js` (geteilter Zustand, Serveraufrufe, `render()`), `app.js` (Rendern, Klicks), `hits.js`, `rows.js`, `swipe.js`, `searches.js`, `settings.js`, `editor.js`, `flat-editor.js`, `sheet.js` (Detailblatt und Bewerbung), `steps.js` (Quellenstatus), `ui.js`; `logic.js` enthält die testbaren reinen Funktionen. |

@@ -6,7 +6,9 @@ from unittest.mock import patch
 
 from suchalarm import store
 from suchalarm.preis import learning
-from suchalarm.preis.domain import CATEGORIES, Offer, learned_words, select_offers, taught_away, title_fits
+from suchalarm.preis.categories import CATEGORIES
+from suchalarm.preis.prices import Offer, select_offers
+from suchalarm.preis.titles import learned_words, taught_away, title_fits
 
 GAME = 'Resident Evil Requiem'
 POSTERS = [f'Affiche encadrée {GAME} {n}' for n in range(3)]

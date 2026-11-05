@@ -11,8 +11,9 @@ from fastapi.testclient import TestClient
 from suchalarm import store
 from suchalarm.app import app
 from suchalarm.core import cadence
-from suchalarm.preis.domain import query_text, title_fits
+from suchalarm.preis.queries import query_text
 from suchalarm.preis.sources import parse_rows, search_url
+from suchalarm.preis.titles import title_fits
 
 
 class VehicleTests(unittest.TestCase):

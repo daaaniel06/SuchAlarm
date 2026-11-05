@@ -12,8 +12,11 @@ from suchalarm import store, worker
 from suchalarm.app import app
 from suchalarm.core import cadence
 from suchalarm.preis import sources
-from suchalarm.preis.domain import Offer, eligible, select_offers, title_fits, too_cheap, vehicle, wanted_words
+from suchalarm.preis.categories import CATEGORIES
+from suchalarm.preis.prices import Offer, eligible, select_offers, too_cheap
+from suchalarm.preis.queries import vehicle
 from suchalarm.preis.sources import parse_rows, place_of, search_url
+from suchalarm.preis.titles import title_fits, wanted_words
 
 
 class CategoryTests(unittest.TestCase):
@@ -104,6 +107,25 @@ class CategoryTests(unittest.TestCase):
         self.assertTrue(
             title_fits('vinted', 'Mario Kart World Switch 2', dict(switch, filters={'platform': 'switch2'}))
         )
+
+    def test_switch_2_at_ebay_requires_the_explicit_platform_even_for_exclusive_games(self):
+        for query in ('Mario Kart World', 'Resident Evil 2'):
+            wanted = {'query': query, 'category': 'videospiele', 'filters': {'platform': 'switch2'}}
+            with self.subTest(query=query):
+                self.assertFalse(title_fits('ebay', f'{query} Nintendo Switch', wanted))
+                self.assertFalse(title_fits('ebay', query, wanted))
+                self.assertTrue(title_fits('ebay', f'{query} Nintendo Switch 2', wanted))
+                self.assertTrue(title_fits('ebay', f'{query} Nintendo Switch-2', wanted))
+
+    def test_game_defaults_explicitly_exclude_known_compounds_without_substring_matching(self):
+        wanted = {'query': 'Spiel', 'excluded': CATEGORIES['videospiele']['excluded']}
+        for word in ('Downloadcode', 'Konsolenhülle', 'Spielehülle'):
+            with self.subTest(word=word):
+                self.assertFalse(title_fits('ebay', f'Spiel {word}', wanted))
+                self.assertTrue(title_fits('ebay', f'Spiel ohne {word}', wanted))
+        self.assertTrue(title_fits('ebay', 'Spiel mit Barcode', wanted))
+        # Other compounds are only excluded when explicitly included in the search's words.
+        self.assertTrue(title_fits('ebay', 'Spiel Downloadcode', {'query': 'Spiel', 'excluded': 'Code'}))
 
     def test_old_searches_keep_their_cache_key(self):
         old = dict(query='Spiel PS5', max_price=3500, include_shipping=True, excluded='')

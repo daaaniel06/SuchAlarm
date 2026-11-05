@@ -4,7 +4,8 @@ from html import escape
 
 from .. import mailhtml
 from ..fmt import amount
-from .domain import SOURCES, compared_price, search_fee, with_shipping
+from .categories import SOURCES
+from .prices import compared_price, search_fee, with_shipping
 
 WORDS = {
     'one': 'neues Angebot',

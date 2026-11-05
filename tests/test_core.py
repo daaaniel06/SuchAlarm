@@ -13,13 +13,16 @@ from unittest.mock import AsyncMock, Mock, patch
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from suchalarm import mailer, scheduler, store, worker
+from suchalarm import mailer, mailserver, scheduler, store, worker
 from suchalarm.app import app, create, delete, update
 from suchalarm.core import browser, cadence, images
 from suchalarm.preis import sources
-from suchalarm.preis.domain import Offer, canonical, clean_title, eligible, matches, money, select_offers, shipping
 from suchalarm.preis.models import Search as ProductSearch
+from suchalarm.preis.money import money, shipping
+from suchalarm.preis.prices import Offer, eligible, select_offers
+from suchalarm.preis.queries import canonical
 from suchalarm.preis.sources import parse_rows
+from suchalarm.preis.titles import clean_title, matches
 
 PAYLOAD = dict(query='Resident Evil Requiem', max_price=3500, sources=['ebay'], include_shipping=False, active=False)
 
@@ -362,6 +365,34 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         with patch('suchalarm.worker.asyncio.to_thread', side_effect=pause_while_sending):
             await worker.send_digest()
         self.assertEqual((self.count('notifications'), self.count('outbox')), (1, 0))
+
+    async def test_without_a_mailserver_hits_are_known_and_a_saved_server_only_mails_new_hits(self):
+        with without_smtp_env():
+            await self.found(self.offer)
+            self.assertEqual((self.count('outbox'), self.count('notifications'), self.count('mail_log')), (0, 1, 0))
+            self.setting('mail_server', json.dumps({'host': 'smtp.example', 'sender': 'a@example.com'}))
+            new = replace(self.offer, url='https://www.ebay.de/itm/2')
+            await self.found(self.offer, new)
+            with patch.object(mailer, 'deliver', return_value=[]) as deliver:
+                await worker.send_digest()
+            message = deliver.call_args.args[0].get_body(('plain',)).get_content()
+            self.assertNotIn(self.offer.url, message)
+            self.assertIn(new.url, message)
+            # A real later price drop still deserves a notification.
+            await self.found(replace(self.offer, price=2900), new)
+            self.assertEqual(self.count('outbox'), 1)
+
+    async def test_removing_the_mailserver_forgets_pending_hits_without_recording_a_sent_mail(self):
+        await self.found(self.offer)
+        self.assertEqual(self.count('outbox'), 1)
+        with without_smtp_env(), patch.object(mailer, 'deliver') as deliver:
+            await worker.send_digest()
+            deliver.assert_not_called()
+        self.assertEqual((self.count('outbox'), self.count('notifications'), self.count('mail_log')), (0, 1, 0))
+        self.assertEqual(self.count('batches'), 0)
+        await self.found(self.offer, replace(self.offer, url='https://www.ebay.de/itm/2'))
+        with store.db() as conn:
+            self.assertEqual([r[0] for r in conn.execute('SELECT url FROM outbox')], ['https://www.ebay.de/itm/2'])
 
     async def test_mails_off_means_no_flood_later(self):
         await self.found(self.offer)
@@ -851,7 +882,7 @@ class ApiTests(unittest.TestCase):
                     'fixed': False,
                 },
             )
-            current = mailer.server()
+            current = mailserver.server()
             self.assertEqual((current.user, current.password), ('me@gmail.com', 'secret-app-pw'))
             self.assertEqual(current.sender, 'Suchalarm <me@gmail.com>')
 

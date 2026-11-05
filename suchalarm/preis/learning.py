@@ -2,7 +2,7 @@
 A word the user takes back (forget) never filters that category again."""
 
 from .. import store
-from .domain import all_terms, learned_words
+from .titles import all_terms, learned_words
 
 
 def _remember_hidden(conn):

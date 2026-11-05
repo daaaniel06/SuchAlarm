@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from suchalarm import scheduler, store
 from suchalarm.core import cadence
-from suchalarm.preis.domain import Offer, buyer_fee, eligible, portal_price_bounds
+from suchalarm.preis.prices import Offer, buyer_fee, eligible, portal_price_bounds
 from suchalarm.preis.sources import ebay_in_germany, parse_rows, search_url
 from suchalarm.preis.worker import judged
 

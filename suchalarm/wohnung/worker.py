@@ -8,14 +8,18 @@ else waits, the starting stock that can still fit gets its detail pages too, slo
 
 import logging
 import time
+from collections.abc import Collection
+from sqlite3 import Connection
+from typing import Any
 
 from .. import status, store
 from ..core import cadence, images
+from ..shapes import MailEntry, MailSample, PageCounts, Row
 from . import details, maps, pages, sources
 from . import mail as mail  # the kind's mail presentation (kinds.py)
 from .catalog import listings
 from .domain import SOURCES as SOURCES  # the kind's source labels (kinds.py)
-from .domain import TRAITS, place_query, profile, query_text
+from .domain import TRAITS, Listing, place_query, profile, query_text
 from .models import FLAT_RADII, FlatSearch
 from .outbox import queue_mails as queue_mails  # the kind's mail queue (kinds.py)
 from .outbox import take_pending as take_pending
@@ -31,7 +35,7 @@ MODEL = FlatSearch  # the request body of a flat search
 CHOICES = {'flat_radii': FLAT_RADII, 'traits': TRAITS}  # what the flat editor offers
 
 
-async def prepare(search):
+async def prepare(search: store.Search) -> None:
     """Radius, postcode and regional portals need the place's centre; until it is known, names count."""
     if sources.needs_place(search):
         try:
@@ -42,24 +46,24 @@ async def prepare(search):
             log.warning('Place lookup failed for search %s', search['id'])
 
 
-def rests(search, source):
+def rests(search: store.Search, source: str) -> str | None:
     return sources.out_of_area(search, source)
 
 
-async def fetch(source, search):
+async def fetch(source: str, search: store.Search) -> tuple[list[Listing], PageCounts]:
     return await sources.fetch(source, search)
 
 
-def save(search, source, listings, counts, observed):
+def save(search: store.Search, source: str, listings: list[Listing], counts: PageCounts, observed: float) -> set[str]:
     """COUNTS: what sources.fetch counted on the portal's page (listed, unread)."""
     return pages.save_result(search, source, listings, counts['listed'], observed, counts['unread'])
 
 
-def finish(search, saved):
+def finish(search: store.Search, saved: list[set[str]]) -> None:
     """New flats are mailed once their detail page is read (queue_mails)."""
 
 
-async def idle():
+async def idle() -> None:
     """A further result page after a burst, one detail page and a few map tiles when no search is due."""
     await pages.more_step()
     details.backfill_step()
@@ -67,7 +71,7 @@ async def idle():
     await maps.build_step(store.searches('wohnung'))
 
 
-def explain(conn, entries, now):
+def explain(conn: Connection, entries: list[MailEntry], now: float) -> None:
     """Flat mails need no comparison."""
 
 
@@ -75,7 +79,7 @@ KEEP_LISTINGS = 30 * 86400  # listings unseen this long are forgotten (the watch
 KEEP_DETAILS = 30 * 86400  # detail pages of listings no search lists any more go after this
 
 
-def cleanup(now=None):
+def cleanup(now: float | None = None) -> int:
     """Forget listings unseen for a month, detail pages nothing lists any more and unused maps; returns
     how many rows."""
     now = time.time() if now is None else now
@@ -94,7 +98,7 @@ def cleanup(now=None):
 # The API
 
 
-def reset(conn, search_id, old, payload):
+def reset(conn: Connection, search_id: int, old: store.Search, payload: FlatSearch) -> None:
     """Another place or radius makes the stored flats wrong; other filters are judged per listing. A portal
     that applies a changed limit itself may now list older flats: its stock is read again."""
     moved = old['query'] != payload.query or old['radius'] != payload.radius
@@ -114,28 +118,28 @@ def reset(conn, search_id, old, payload):
     )
 
 
-def search_url(source, search):
+def search_url(source: str, search: store.Search) -> str | None:
     """Portals are read through their own query, not a result page to open."""
     return None
 
 
-def extras(searches):
+def extras(searches: list[store.Search]) -> dict[str, Any]:
     """The ready maps of the flat searches, for the hit list's sheet."""
     return {'maps': maps.areas(searches)}
 
 
-def hits(searches, hidden):
+def hits(searches: list[store.Search], hidden: Collection[tuple[int, str]]) -> list[Row]:
     """Flats of these searches without hidden ones, in the row shape of the hit list."""
     rows = [row for search in searches for row in listings(search) if (search['id'], row['url']) not in hidden]
     return images.enrich(rows)
 
 
-def saved(rows, searches):
+def saved(rows: list[Row], searches: list[store.Search]) -> list[Row]:
     """Watch-list snapshots of flats are shown as saved; the live listing carries its verdict."""
     return rows
 
 
-def bookmark(conn, search, url):
+def bookmark(conn: Connection, search: store.Search, url: str) -> bool:
     """Keep a snapshot on the watch list: price and the detail line stay readable once the portal drops
     the flat. False if the flat is gone."""
     flat = next((row for row in listings(search, conn) if row['url'] == url), None)
@@ -150,9 +154,9 @@ def bookmark(conn, search, url):
     return True
 
 
-def samples(searches, limit):
+def samples(searches: list[store.Search], limit: int) -> list[MailSample]:
     """The first fitting flat of each search, so a test mail shows the real layout."""
-    found = []
+    found: list[MailSample] = []
     for search in searches:
         flat = next((row for row in listings(search) if row['status'] == 'matched'), None)
         if flat:
@@ -162,7 +166,7 @@ def samples(searches, limit):
     return found
 
 
-def clear(conn):
+def clear(conn: Connection) -> int:
     """Forget every listing; flat searches start over with a silent first fetch (the stock is taken without
     mails or detail pages)."""
     count = conn.execute('DELETE FROM listings').rowcount

@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 from suchalarm import scheduler, store, worker
 from suchalarm.core import cadence
 from suchalarm.preis import sources
-from suchalarm.preis.domain import Offer
+from suchalarm.preis.prices import Offer
 
 
 class SchedulerTests(unittest.IsolatedAsyncioTestCase):
