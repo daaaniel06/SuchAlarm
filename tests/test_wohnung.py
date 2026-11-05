@@ -1243,6 +1243,27 @@ class FieldWarningTests(TempData):
                 expected = f'Seitenaufbau geändert? Zimmer fehlen bei {extent} Inseraten' if extent else None
                 self.assertEqual(warning, expected)
 
+    def test_kleinanzeigen_cards_saying_only_vb_warn_from_ten_cards(self):
+        def page(count):
+            return (
+                '<main id="srchrslt-content"><ul>'
+                + ''.join(
+                    f'<article class="aditem" data-adid="35207179{n:02}" data-href="/s-anzeige/wohnung/35207179{n:02}-203-7963">'
+                    f'<h3><a>Wohnung {n}</a></h3><p class="price">VB</p></article>'
+                    for n in range(count)
+                )
+                + '</ul></main>'
+            )
+
+        for count, expected in ((9, None), (10, 'Seitenaufbau geändert? Kaltmieten fehlen bei allen Inseraten')):
+            with self.subTest(cards=count):
+                listings = [
+                    Listing.from_card('kleinanzeigen-wohnung', c) for c in portals.kleinanzeigen_parse(page(count))
+                ]
+                self.assertEqual(len(listings), count)
+                self.assertTrue(all(listing.cold_rent in (None, '') for listing in listings))
+                self.assertEqual(sources.field_warning('kleinanzeigen-wohnung', listings), expected)
+
     def test_wg_layout_warning_keeps_hits_and_clears_on_a_clean_result(self):
         normal = fixture('wg-gesucht', 'list-2026-11.html')
         normal = ''.join(
@@ -1659,6 +1680,27 @@ class WorkerTests(TempData):
                 asyncio.run(details.detail_step(now=time.time() + 86400))
         with store.db() as conn:
             self.assertEqual(conn.execute('SELECT state, attempts FROM listing_details').fetchone()[:], ('failed', 3))
+
+    def test_a_refusal_after_two_failures_keeps_the_detail_page_queued(self):
+        flat_search = self.stored_search()
+        self.run_check([self.card(1)], flat_search)
+        self.run_check([self.card(1), self.card(2)], flat_search)
+        later = time.time() + 86400
+        failing = AsyncMock(side_effect=[RuntimeError('weg'), RuntimeError('weg'), cadence.Refused('HTTP 403')])
+        with (
+            patch.object(flats.sources, 'detail', new=failing),
+            patch.object(flats.cadence, 'ready_at', return_value=0),
+        ):
+            for _ in range(details.DETAIL_ATTEMPTS):
+                asyncio.run(details.detail_step(now=later))
+        with store.db() as conn:
+            self.assertEqual(conn.execute('SELECT state, attempts FROM listing_details').fetchone()[:], ('pending', 2))
+        reread = AsyncMock(return_value={'rent': 1000.0})
+        with patch.object(flats.sources, 'detail', new=reread), patch.object(flats.cadence, 'ready_at', return_value=0):
+            self.assertTrue(asyncio.run(details.detail_step(now=later + 86400)).endswith('/2'))  # after the pause
+        reread.assert_awaited_once()
+        with store.db() as conn:
+            self.assertEqual(conn.execute('SELECT state FROM listing_details').fetchone()[0], 'done')
 
     def test_a_listing_whose_detail_page_is_gone_is_never_mailed(self):
         flat_search = self.stored_search()
