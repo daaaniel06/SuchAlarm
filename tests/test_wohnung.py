@@ -1742,6 +1742,19 @@ class ApiAndMailTests(TempData):
         self.assertEqual(self.client.put('/api/template', json={'text': 'Hallo'}).status_code, 200)
         self.assertEqual(self.client.get('/api/state').json()['template'], 'Hallo')
 
+    def test_taking_a_flat_off_the_watch_list_can_be_undone_after_it_left(self):
+        flat_search = self.create()
+        pages.save_result(flat_search, 'immoscout24', [self.card(1)], 1, time.time())
+        body = {'search_id': flat_search['id'], 'url': self.card(1).url}
+        self.client.post('/api/applied', json=dict(body, applied=True))
+        before = self.client.get('/api/state').json()['saved']
+        with store.db() as conn:
+            conn.execute('DELETE FROM listings')  # the portal dropped it meanwhile
+        self.client.post('/api/saved', json=dict(body, saved=False))
+        self.assertEqual(self.client.get('/api/state').json()['saved'], [])
+        self.assertEqual(self.client.post('/api/saved', json=dict(body, saved=True)).status_code, 200)
+        self.assertEqual(self.client.get('/api/state').json()['saved'], before)  # with its "Beworben"
+
     def test_the_starting_stock_gets_its_detail_page_on_request(self):
         flat_search = self.create()
         pages.save_result(
@@ -1944,6 +1957,12 @@ class ApiAndMailTests(TempData):
             conn.execute("UPDATE listing_details SET state='done', body='{}'")
         outbox.queue_mails()
         self.assertEqual(self.queued(), ['1', '2'])  # 1 now fits, 2 is cheaper than mailed
+        risen = [self.card(1, rent=1200), self.card(2, rent=1300)]
+        pages.save_result(flat_search, 'immoscout24', risen, len(risen), time.time())
+        with store.db() as conn:
+            taken = [found['url'][-1] for _, found, _ in outbox.take_pending(conn)]
+        self.assertEqual(taken, ['1'])  # 2 rose above what was mailed before the digest went out
+        self.assertEqual(self.queued(), ['1'])
 
     def test_a_queued_flat_survives_a_wider_radius(self):
         flat_search = self.create(sources=['immoscout24'], filters={'min_area': 40, 'min_rooms': 2, 'exclusions': []})

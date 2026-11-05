@@ -65,8 +65,8 @@ def queue_mails(now: float | None = None) -> None:
 
 def take_pending(conn: Connection) -> list[MailEntry]:
     """Outbox rows of flat searches still worth a mail, as (search, offer, price), oldest first.
-    Rows that are not (search gone or paused, listing gone, hidden, no longer fitting, another portal's copy of
-    a flat mailed through its fitting listing) are deleted."""
+    Rows that are not (search gone or paused, listing gone, hidden, no longer fitting, a fallen rent that rose
+    again, another portal's copy of a flat mailed through its fitting listing) are deleted."""
     searches = {s['id']: s for s in store.read_searches(conn, 'wohnung')}
     wanted = _wanted(searches)
     # A flat queued before its twin on another portal was recognised (its photo came later): only one mail.
@@ -77,11 +77,13 @@ def take_pending(conn: Connection) -> list[MailEntry]:
         twins[sid] = twins_by_url(rows)
     entries, dropped = [], []
     rows = conn.execute(
-        'SELECT x.search_id, x.url, l.body, d.body AS detail, d.state, h.url AS hidden FROM outbox x '
+        'SELECT x.search_id, x.url, l.body, d.body AS detail, d.state, h.url AS hidden, n.price AS reported '
+        'FROM outbox x '
         'JOIN searches s ON s.id=x.search_id AND s.kind=? '
         'LEFT JOIN listings l ON l.search_id=x.search_id AND l.url=x.url '
         "LEFT JOIN listing_details d ON d.url=x.url AND d.state IN ('done','failed') "
         'LEFT JOIN hidden h ON h.search_id=x.search_id AND h.url=x.url '
+        'LEFT JOIN notifications n ON n.search_id=x.search_id AND n.url=x.url '
         'WHERE x.batch IS NULL ORDER BY x.created_at',
         ('wohnung',),
     ).fetchall()
@@ -96,7 +98,9 @@ def take_pending(conn: Connection) -> list[MailEntry]:
         ):
             item = completed(row)
             verdict, reasons = match(item, *wanted[search['id']])
-            if mailable(item, verdict, row['state']):
+            # A fall in rent queued for the digest is no news once the rent rose again before it went out.
+            dearer = row['reported'] is not None and (cents(warm_rent(item)) or 0) >= row['reported']
+            if mailable(item, verdict, row['state']) and not dearer:
                 found = offer(item, verdict, reasons)
                 found['twins'] = twins.get(search['id'], {}).get(row['url'], [])
                 entries.append((search, found, found['price'] or 0))

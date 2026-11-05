@@ -63,6 +63,14 @@ def _explain(error, sending):
     return DeliveryError('Versand fehlgeschlagen.', sending)
 
 
+def _hang_up(client):
+    """Say goodbye. A server that answers QUIT with an error has still taken what it took before."""
+    try:
+        client.quit()
+    except (smtplib.SMTPException, OSError):
+        client.close()
+
+
 def deliver(message):
     """Send over SMTP. Returns the recipients the server refused while it took the others, each with its SMTP
     code (address -> code, sorted). Raises DeliveryError with a short German reason, never secrets."""
@@ -77,13 +85,15 @@ def deliver(message):
             client = smtplib.SMTP_SSL(current.host, current.port, timeout=SMTP_TIMEOUT, context=context)
         else:
             client = smtplib.SMTP(current.host, current.port, timeout=SMTP_TIMEOUT)
-        with client:
+        try:
             if current.security == 'starttls':
                 client.starttls(context=context)
             if current.user:
                 client.login(current.user, current.password)
             sending = True
             refused = client.send_message(message)
+        finally:
+            _hang_up(client)
     except Exception as error:
         raise _explain(error, sending) from None
     return {address: refused[address][0] for address in sorted(refused)}

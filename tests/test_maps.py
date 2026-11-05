@@ -30,6 +30,16 @@ class QueryTests(unittest.TestCase):
             ['Karlstraße 22, 64283 Darmstadt', '64283 Darmstadt', 'Darmstadt'],
         )
         self.assertEqual(maps.queries('Darmstadt, Bessungen'), ['Bessungen'])
+        self.assertEqual(
+            maps.queries('Bahnhofstraße 1, 61348 Bad Homburg vor der Höhe'),
+            [
+                'Bahnhofstraße 1, 61348 Bad Homburg vor der Höhe',
+                '61348 Bad Homburg vor der Höhe',
+                'Bad Homburg vor der Höhe',
+            ],
+        )
+        self.assertEqual(maps.queries('64283 Darmstadt - Bessungen'), ['64283 Darmstadt', 'Darmstadt'])
+        self.assertEqual(maps.queries('15230 Frankfurt (Oder)'), ['15230 Frankfurt', 'Frankfurt'])
         self.assertEqual(maps.queries(''), [])
         self.assertTrue(maps.has_street('Karlstraße 22, 64283 Darmstadt'))
         self.assertFalse(maps.has_street('64283 Darmstadt'))

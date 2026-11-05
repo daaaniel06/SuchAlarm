@@ -434,6 +434,21 @@ def unsave(conn, url=None):
     return conn.execute('DELETE FROM saved WHERE url=?', (url,)).rowcount
 
 
+def saved_entry(conn, url):
+    """One watch-list row as it is stored, or None."""
+    row = conn.execute('SELECT * FROM saved WHERE url=?', (url,)).fetchone()
+    return dict(row) if row else None
+
+
+def restore_saved(conn, entry):
+    """Put back a row saved_entry() returned."""
+    columns = list(entry)
+    conn.execute(
+        f'INSERT OR REPLACE INTO saved({",".join(columns)}) VALUES ({",".join("?" * len(columns))})',
+        [entry[c] for c in columns],
+    )
+
+
 def mark_applied(conn, url, when):
     """When the user applied for a saved flat; None takes the mark back."""
     conn.execute('UPDATE saved SET applied_at=? WHERE url=?', (when, url))

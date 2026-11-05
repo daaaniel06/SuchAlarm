@@ -1006,11 +1006,10 @@ class DeliveryOutcomeTests(unittest.TestCase):
     def tearDown(self):
         self.env.stop()
 
-    def outcome(self, connect=None, login=None, send=None, refused=None):
+    def outcome(self, connect=None, login=None, send=None, refused=None, quit=None):
         client = Mock()
-        client.__enter__ = Mock(return_value=client)
-        client.__exit__ = Mock(return_value=False)
         client.login.side_effect = login
+        client.quit.side_effect = quit
         client.send_message.side_effect = send
         client.send_message.return_value = refused or {}
         with patch('smtplib.SMTP', side_effect=connect, return_value=client):
@@ -1046,6 +1045,10 @@ class DeliveryOutcomeTests(unittest.TestCase):
             ('Mailserver lehnt die Nachricht ab (Code 552).', False),
         )
 
+    def test_an_error_on_quit_after_the_handover_is_still_sent(self):
+        self.assertEqual(self.outcome(quit=smtplib.SMTPResponseException(421, b'bye')), 'sent')
+        self.assertEqual(self.outcome(quit=smtplib.SMTPServerDisconnected()), 'sent')
+
     def test_a_broken_handover_may_have_arrived(self):
         self.assertEqual(self.outcome(send=smtplib.SMTPServerDisconnected()), (mailer.UNREACHABLE, True))
         self.assertEqual(self.outcome(send=TimeoutError())[1], True)
@@ -1061,8 +1064,6 @@ class DeliveryOutcomeTests(unittest.TestCase):
             with store.db() as conn:
                 store.put_setting(conn, 'mail_server', json.dumps(saved))
             client = Mock()
-            client.__enter__ = Mock(return_value=client)
-            client.__exit__ = Mock(return_value=False)
             client.send_message.return_value = {}
             with patch('smtplib.SMTP_SSL', return_value=client) as connect:
                 mailer.deliver(mailer.EmailMessage())

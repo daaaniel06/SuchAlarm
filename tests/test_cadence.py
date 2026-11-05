@@ -171,6 +171,26 @@ class CadenceTests(unittest.IsolatedAsyncioTestCase):
             await cadence.shared_search(newer, cache_version=2)('ebay', search)  # the new result is served again
         newer.assert_awaited_once()
 
+    async def test_a_result_the_reparser_cannot_repair_is_asked_anew(self):
+        search = {'id': 1, 'query': 'x', 'max_price': 1000}
+        await cadence.shared_search(AsyncMock(return_value=([], 1)), cache_version=1)('ebay', search)
+        newer = AsyncMock(return_value=([], 2))
+        with patch.object(cadence, 'ready_at', return_value=0):
+            fetch = cadence.shared_search(newer, cache_version=2, cached_parser=lambda *args: None)
+            self.assertEqual(await fetch('ebay', search), ([], 2))
+        newer.assert_awaited_once()
+
+    async def test_a_security_check_answered_with_200_is_a_refusal(self):
+        from suchalarm.core import http
+
+        page = b'<html><head><title>ohne-makler</title><script src="recaptcha.js"></script></head>'
+        self.enterContext(patch.object(cadence, 'book'))  # two pages of one site at once
+        blocked = page + b'<h1>Zugriff verweigert</h1></html>'
+        with patch.object(http, '_download', return_value=blocked), self.assertRaises(http.Blocked):
+            await http.get_html('ohne-makler', 'https://www.ohne-makler.net/immobilie/1/')
+        with patch.object(http, '_download', return_value=page + b'<h1>2-Zimmer-Wohnung</h1></html>'):
+            self.assertIn('2-Zimmer', await http.get_html('ohne-makler', 'https://www.ohne-makler.net/immobilie/2/'))
+
     async def test_refusal_is_remembered_for_the_query(self):
         inner = AsyncMock(side_effect=cadence.Refused('Anbieter blockiert die Browser-Abfrage (HTTP 403).'))
         fetch = cadence.shared_search(inner)

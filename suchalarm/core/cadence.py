@@ -391,10 +391,11 @@ def _cached_result(source, search, row, cache_version, cached_parser):
         if not cached_parser:
             return None
         repaired = cached_parser(source, dict(search, excluded=''), value, row['at'])
-        if repaired is not None:
-            value = dict(repaired, version=cache_version)
-            with db() as conn:
-                conn.execute('UPDATE queries SET value=? WHERE key=?', (json.dumps(value), row['key']))
+        if repaired is None:
+            return None
+        value = dict(repaired, version=cache_version)
+        with db() as conn:
+            conn.execute('UPDATE queries SET value=? WHERE key=?', (json.dumps(value), row['key']))
     item: Any = PROVIDERS[source].item
     return [item(**o) for o in value['offers']], value['reference']
 

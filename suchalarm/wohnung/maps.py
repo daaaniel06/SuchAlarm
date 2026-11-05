@@ -58,10 +58,11 @@ def queries(place):
     """Address first, then the postcode, then the town: the best match that exists wins."""
     parts = [part.strip() for part in re.sub(r'\(.*?\)', '', place).split(',') if part.strip()]
     postcode = re.search(r'\b\d{5}\b', place)
-    # The town follows the postcode; without one it is the second of three parts or the last one.
-    after_code = re.search(r'\b\d{5}\s+([^\s,]+)', place)
+    # The town follows the postcode, up to a district behind a dash ("Bad Homburg vor der Höhe" stays whole);
+    # without one it is the second of three parts or the last one.
+    after_code = re.search(r'\b\d{5}\s+([^,(]+)', place)
     if after_code:
-        town = after_code.group(1)
+        town = re.split(r'\s+[-–]\s+', after_code.group(1))[0].strip()
     elif len(parts) >= 3:
         town = parts[1].split()[0]
     elif parts and (len(parts) > 1 or not has_street(place)):
