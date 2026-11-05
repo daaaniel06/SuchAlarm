@@ -394,6 +394,7 @@ class AreaInterfaceTests(unittest.IsolatedAsyncioTestCase):
         now = time.time()
         flat_search = dict(id=1, kind='wohnung', query='Darmstadt', max_price=130000, radius=0, excluded='',
                            sources=['immoscout24'], active=1, filters={'min_area': 40, 'min_rooms': 2})  # fmt: skip
+        warning = 'Seitenaufbau geändert? Zimmer fehlen bei allen Inseraten'
         product = dict(id=2, kind='preis', query='Spiel PS5', min_price=0, max_price=3500, include_shipping=1,
                        excluded='', sources=['ebay'], active=1, reference=None)  # fmt: skip
         state = dict(
@@ -405,7 +406,9 @@ class AreaInterfaceTests(unittest.IsolatedAsyncioTestCase):
                            title='Helle Wohnung', place='Karlstraße 22, 64283 Darmstadt, Kapellplatzviertel', price=101500,
                            estimated=True, area=55, rooms=2, status='matched', reasons=['Alle Filter erfüllt'],
                            first_seen=now, last_seen=now, start=False)],
-            saved=[], statuses=[], mail_log=[], paused=False, running=None, running_source=None, queued=[],
+            saved=[], statuses=[dict(search_id=1, source='immoscout24', checked_at=now, error=None,
+                                    count=6, unread=1, warning=warning)],
+            mail_log=[], paused=False, running=None, running_source=None, queued=[],
             sources=ALL_SOURCES, source_kinds=SOURCE_KINDS, choices=CHOICES, schedule=[],
             mail=dict(recipients=[], configured=False, error=None, pending=dict(preis=0, wohnung=0),
                       server=dict(sender='', host='', port=587, password_set=False, fixed=False),
@@ -443,6 +446,18 @@ class AreaInterfaceTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn('Kapellplatzviertel · 55 m² · 2 Zi.', row)
             self.assertIn('≈ 1.015,00', row)  # an estimated rent reads "≈ … €" in grey
             self.assertEqual(await page.locator('#offer-list .source-tag').first.inner_text(), 'ImmoScout24')
+            # A field hint stays beside a successful result, including the combined source status.
+            step = await page.evaluate("""async () => {
+                const { sourceSteps } = await import('/static/steps.js');
+                const { state } = await import('/static/page.js');
+                const search = state.searches.find(s => s.kind === 'wohnung');
+                return sourceSteps([search, search]).find(s => s.source === 'immoscout24');
+            }""")
+            self.assertEqual(step['step'], 'done')
+            # Across searches only which fields are missing: one search's "bei allen" is no claim about the sum.
+            self.assertEqual(step['text'].count('Seitenaufbau geändert? Zimmer fehlen'), 1)
+            self.assertNotIn('bei allen Inseraten', step['text'])
+            self.assertIn('1 nicht lesbar', step['text'])
             await page.keyboard.press('2')
             self.assertEqual(await page.locator('#offer-unit').inner_text(), 'Angebot')
             self.assertEqual(await page.locator('[data-area="preis"]').get_attribute('aria-pressed'), 'true')
@@ -457,6 +472,10 @@ class AreaInterfaceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await page.evaluate("localStorage.getItem('suchalarm.area')"), 'wohnung')
             await page.keyboard.press('Escape')
             await page.locator('[data-view="settings"]').first.click()
+            await page.locator('[data-settings-tab="sources"]').click()
+            source = page.locator('.source-field').filter(has=page.get_by_text('ImmoScout24', exact=True))
+            self.assertIn(warning, await source.inner_text())
+            self.assertEqual(await source.locator('.source-step.done').inner_text(), 'Aktiv')
             await page.locator('[data-settings-tab="data"]').click()
             await page.locator('#template-edit').click()
             await page.locator('#template-text').fill('Meine Bewerbung')

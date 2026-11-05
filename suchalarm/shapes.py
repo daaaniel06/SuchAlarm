@@ -1,7 +1,7 @@
 """Shapes of the values that pass between the core and the search kinds; kinds.py checks the kinds against them.
 A module of its own, so the kinds' modules can use them without importing kinds.py (which imports them)."""
 
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 from .store import Search
 
@@ -15,3 +15,4 @@ class PageCounts(TypedDict):
 
     listed: int
     unread: int | None
+    warning: NotRequired[str | None]

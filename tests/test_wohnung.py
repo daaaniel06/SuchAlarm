@@ -342,6 +342,22 @@ WG_DETAIL = """<h1><span>Schöne 82 m2 Wohnung</span></h1>
 <span class="section_panel_detail"> Odenwaldstr. 46 B <br> 64297 Darmstadt Eberstadt </div> <h2> Verfügbarkeit </h2> frei ab:</span></div><div><span class="section_panel_value"> 01.10.2026 </span>
 <div id="ad_description_text"><div id="freitext_0"><script>ads()</script> Ruhig, viel Grün. Nur mit WBS.</div></div><div class="panel">"""
 
+IMMOSCOUT_PAGE = {
+    'resultListItems': [
+        {
+            'type': 'EXPOSE_RESULT',
+            'item': {
+                'id': '171041588',
+                'title': 'Helle Wohnung',
+                'address': {'line': 'Gerlachstraße 41, 14480 Potsdam'},
+                'pictures': [{'urlScaleAndCrop': 'https://pictures.immobilienscout24.de/x.jpg/%WIDTH%x%HEIGHT%/q'}],
+                'attributes': [{'value': '748 €'}, {'value': '55,36 m²'}, {'value': '2 Zi.'}],
+            },
+        },
+        {'type': 'ADVERTISEMENT', 'item': {}},
+    ]
+}
+
 BAUVEREIN_MARKERS = {
     'objekte': [
         {'anbieterId': 1, 'lat': '49.8686', 'lon': '8.6566', 'vermarktungsart': 'MIETE_PACHT', 'nutzungsart': 'WOHNEN',
@@ -471,24 +487,7 @@ class ParserTests(unittest.TestCase):
         )  # no swap_s filter: it would drop every ad that leaves the field empty
 
     def test_immoscout_search_and_detail(self):
-        data = {
-            'resultListItems': [
-                {
-                    'type': 'EXPOSE_RESULT',
-                    'item': {
-                        'id': '171041588',
-                        'title': 'Helle Wohnung',
-                        'address': {'line': 'Gerlachstraße 41, 14480 Potsdam'},
-                        'pictures': [
-                            {'urlScaleAndCrop': 'https://pictures.immobilienscout24.de/x.jpg/%WIDTH%x%HEIGHT%/q'}
-                        ],
-                        'attributes': [{'value': '748 €'}, {'value': '55,36 m²'}, {'value': '2 Zi.'}],
-                    },
-                },
-                {'type': 'ADVERTISEMENT', 'item': {}},
-            ]
-        }
-        card = portals.immoscout_parse(data)[0]
+        card = portals.immoscout_parse(IMMOSCOUT_PAGE)[0]
         self.assertEqual((card['coldRent'], card['area'], card['rooms']), (748, 55.36, 2))
         self.assertEqual(card['imageSource'], 'https://pictures.immobilienscout24.de/x.jpg/480x360/q')
         excluded = {**PROFILE, 'radius': 10, 'exclusions': ['WBS', 'Tauschwohnung']}
@@ -1205,6 +1204,121 @@ class UnreadTests(TempData):
         with store.db() as conn:  # a stock page adds what it missed
             pages.more_unread(conn, flat_search['id'], 'immoscout24', 2)
             self.assertEqual(status.of(conn, flat_search['id'], 'immoscout24')['unread'], 2)
+
+
+class FieldWarningTests(TempData):
+    def test_normal_portal_fixtures_have_no_field_warning(self):
+        cards = {
+            'immoscout24': portals.immoscout_parse(IMMOSCOUT_PAGE),
+            'kleinanzeigen-wohnung': portals.kleinanzeigen_parse(KLEINANZEIGEN_PAGE),
+            'wg-gesucht': portals.wg_parse(WG_LIST) + portals.wg_parse(fixture('wg-gesucht', 'list-2026-11.html')),
+            'immowelt': portals.immowelt_cards(json.loads(fixture('immowelt', 'list.json'))),
+            'ohne-makler': portals.om_parse(fixture('ohne-makler', 'list.html')),
+            'immobilien-de': portals.id_parse(fixture('immobilien-de', 'list.html')),
+            'bauverein': portals.bauverein_parse(BAUVEREIN_MARKERS),
+            'nhw': portals.nhw_parse(NHW_PAGE),
+        }
+        self.assertEqual(cards.keys(), sources.LISTS.keys())
+        self.assertEqual(cards.keys(), sources.CARD_FIELDS.keys())
+        for source, found in cards.items():
+            with self.subTest(source=source):
+                listings = [Listing.from_card(source, card) for card in found]
+                for listing in listings:
+                    for field in sources.CARD_FIELDS[source]:
+                        self.assertNotIn(getattr(listing, field), (None, ''), (listing.title, field))
+                self.assertIsNone(sources.field_warning(source, listings * 5))
+
+    def test_field_warning_needs_ten_cards_and_ninety_percent_missing(self):
+        complete = flat(source='wg-gesucht')
+        missing = replace(complete, rooms=None)
+        for listings, extent in (
+            ([], None),
+            ([missing] * 9, None),  # five private ads saying only "VB" are no layout change
+            ([missing] * 10, 'allen'),
+            ([missing] * 17 + [complete] * 3, None),
+            ([missing] * 18 + [complete] * 2, 'fast allen'),
+        ):
+            with self.subTest(cards=len(listings), extent=extent):
+                warning = sources.field_warning('wg-gesucht', listings)
+                expected = f'Seitenaufbau geändert? Zimmer fehlen bei {extent} Inseraten' if extent else None
+                self.assertEqual(warning, expected)
+
+    def test_wg_layout_warning_keeps_hits_and_clears_on_a_clean_result(self):
+        normal = fixture('wg-gesucht', 'list-2026-11.html')
+        normal = ''.join(
+            normal.replace('14314991', str(15000000 + 2 * n)).replace('14311839', str(15000001 + 2 * n))
+            for n in range(5)
+        )
+        changed = re.sub(r'\btitle="[^"]*-Zimmer-[^"]*·[^"]*"', 'data-details="unknown"', normal)
+        changed = changed.replace('top-image-card', 'unknown-image')
+        broken = portals.wg_parse(changed)
+        self.assertEqual(len(broken), 10)
+        self.assertTrue(all(not card['rooms'] and not card['place'] and not card['imageSource'] for card in broken))
+        flat_search = self.stored_search(sources=['wg-gesucht'])
+
+        def check(cards):
+            with patch.object(sources, 'cards', new=AsyncMock(return_value=(cards, len(cards)))):
+                result = asyncio.run(sources._page('wg-gesucht', flat_search))
+            with patch.object(sources, 'fetch', new=AsyncMock(return_value=result)):
+                asyncio.run(worker.check(flat_search))
+            with store.db() as conn:
+                return status.of(conn, flat_search['id'], 'wg-gesucht')
+
+        shown = check(broken)
+        self.assertEqual(shown['warning'], 'Seitenaufbau geändert? Zimmer, Ortsangaben fehlen bei allen Inseraten')
+        self.assertIsNone(shown['error'])
+        self.assertEqual((shown['count'], shown['failures'], shown['unread']), (10, 0, 0))
+        self.assertEqual(len(catalog.listings(flat_search)), 10)
+        self.assertIsNone(check(portals.wg_parse(normal))['warning'])
+
+    def test_further_page_warning_lasts_until_the_next_regular_result(self):
+        flat_search = self.stored_search()
+        listings = [replace(LISTING, place='Darmstadt', url=f'{LISTING.url}{n}') for n in range(100)]
+        pages.save_result(flat_search, 'immoscout24', listings, len(listings), time.time())
+        warning = 'Seitenaufbau geändert? Zimmer fehlen bei allen Inseraten'
+        with patch.object(
+            sources, 'more', new=AsyncMock(return_value=([], {'listed': 5, 'unread': 0, 'warning': warning}))
+        ):
+            asyncio.run(pages.more_step())
+        with store.db() as conn:
+            self.assertEqual(status.of(conn, flat_search['id'], 'immoscout24')['warning'], warning)
+            pages.more_unread(conn, flat_search['id'], 'immoscout24', 0)
+            self.assertEqual(status.of(conn, flat_search['id'], 'immoscout24')['warning'], warning)
+        pages.save_result(flat_search, 'immoscout24', listings[:5], 5, time.time())
+        with store.db() as conn:
+            self.assertIsNone(status.of(conn, flat_search['id'], 'immoscout24')['warning'])
+
+    def test_field_warning_checks_the_page_before_local_place_filters(self):
+        flat_search = self.stored_search()
+        cards = [
+            dict(
+                url=f'https://www.immobilienscout24.de/expose/{n}',
+                coldRent=900,
+                area=60,
+                place='Darmstadt' if n < 5 else 'Frankfurt',
+                rooms=None if n < 5 else 2,
+            )
+            for n in range(10)
+        ]
+        with patch.object(sources, 'cards', new=AsyncMock(return_value=(cards, len(cards)))):
+            found, counts = asyncio.run(sources.fetch('immoscout24', flat_search))
+        self.assertEqual(len(found), 5)
+        self.assertTrue(all(listing.rooms is None for listing in found))
+        self.assertEqual(counts['listed'], 10)
+        self.assertIsNone(counts['warning'])
+
+    def test_existing_source_status_gets_warning_column(self):
+        flat_search = self.stored_search()
+        pages.save_result(flat_search, 'immoscout24', [], 0, time.time())
+        with store.db() as conn:
+            conn.execute('ALTER TABLE source_status DROP COLUMN warning')
+            conn.execute(f'PRAGMA user_version={len(store.MIGRATIONS) - 1}')
+        store.init()
+        store.init()  # migrations also remain safe on the next startup
+        with store.db() as conn:
+            shown = status.of(conn, flat_search['id'], 'immoscout24')
+        self.assertIsNone(shown['warning'])
+        self.assertEqual((shown['count'], shown['started']), (0, 1))
 
 
 class ConnectionTests(TempData):

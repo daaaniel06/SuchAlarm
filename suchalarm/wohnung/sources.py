@@ -59,6 +59,44 @@ PAGE_SIZES = {
 }
 
 
+# Only fields present on every normal fixture card; photos and move-in dates are optional.
+CARD_FIELDS = {
+    'immoscout24': ('cold_rent', 'area', 'rooms', 'place'),
+    'kleinanzeigen-wohnung': ('cold_rent',),  # sellers may omit size, rooms and place
+    'wg-gesucht': ('rent', 'area', 'rooms', 'place'),
+    'immowelt': ('area', 'rooms', 'place'),  # some rooms only name warm rent
+    'ohne-makler': ('cold_rent', 'area', 'rooms', 'place'),
+    'immobilien-de': ('cold_rent', 'place'),  # rooms may lack size and room count
+    'bauverein': ('rent', 'area', 'rooms', 'place'),
+    'nhw': ('rent', 'cold_rent', 'area', 'rooms', 'place'),
+}
+FIELD_LABELS = {
+    'rent': 'Mietangaben',
+    'cold_rent': 'Kaltmieten',
+    'area': 'Flächenangaben',
+    'rooms': 'Zimmer',
+    'place': 'Ortsangaben',
+}
+
+
+FIELD_CHECK_CARDS = 10  # a smaller page may well be five private ads that all say only "VB"
+
+
+def field_warning(source, listings):
+    """Warn when at least 90% of FIELD_CHECK_CARDS or more cards lack a normally supplied field."""
+    if len(listings) < FIELD_CHECK_CARDS:
+        return None
+    missing = [
+        (FIELD_LABELS[field], sum(getattr(listing, field) in (None, '') for listing in listings))
+        for field in CARD_FIELDS[source]
+    ]
+    missing = [(label, count) for label, count in missing if count * 10 >= len(listings) * 9]
+    if not missing:
+        return None
+    extent = 'allen' if all(count == len(listings) for _, count in missing) else 'fast allen'
+    return f'Seitenaufbau geändert? {", ".join(label for label, _ in missing)} fehlen bei {extent} Inseraten'
+
+
 def unread(source, page, read, total):
     """How many offers PAGE should hold by the portal's own count TOTAL (for the whole query) but the parser did
     not READ; None where the portal names no count. A page holds a full page size, the last one the rest."""
@@ -439,7 +477,7 @@ async def cards(source, search, page=1):
     return await LISTS[source](profile(search), page)
 
 
-@cadence.shared_search(cache_version=3)  # 3: counts as a dict (listed, unread)
+@cadence.shared_search(cache_version=4)  # 4: field warnings alongside the page counts
 async def fetch(source, search):
     """(listings, counts) of one portal query; the decorator shares, caches and times it, select() filters per
     search. COUNTS: how many the page held ('listed', tells pages.py whether it was full) and how many of the
@@ -461,7 +499,10 @@ async def _page(source, search, page=1):
     missed = unread(source, page, len(found), total)
     if missed:
         log.warning('%s: page %s lists %s offers the parser could not read', source, page, missed)
-    return listings, {'listed': len(listings), 'unread': missed}
+    warning = field_warning(source, listings)
+    if warning:
+        log.warning('%s: page %s: %s', source, page, warning)
+    return listings, {'listed': len(listings), 'unread': missed, 'warning': warning}
 
 
 def select(listings, search):
