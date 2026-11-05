@@ -119,6 +119,11 @@ class CategoryTests(unittest.TestCase):
         self.assertEqual(normalized('Xbox One Spiel'), 'xbox one spiel')  # the next word keeps its space
         named = dict(game, query='Resident Evil Requiem PS5')  # the platform in the query is asked for once
         self.assertTrue(title_fits('kleinanzeigen', 'Resident Evil Requiem PS5', named))
+        remake = dict(query='Resident Evil 2', filters={'platform': 'switch2'})
+        for source in ('kleinanzeigen', 'vinted'):  # Vinted filters the platform itself, Kleinanzeigen does not
+            with self.subTest(source=source):
+                self.assertTrue(title_fits(source, 'Resident Evil 2 Switch 2', remake))
+                self.assertFalse(title_fits(source, 'Resident Evil 4 Switch 2', remake))  # the 2 is the console's
 
     def test_shipping_search_drops_explicit_pickup_only_cards(self):
         for source, url in (
