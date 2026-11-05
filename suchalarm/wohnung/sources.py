@@ -79,9 +79,12 @@ FIELD_LABELS = {
 }
 
 
+FIELD_CHECK_CARDS = 10  # a smaller page may well be five private ads that all say only "VB"
+
+
 def field_warning(source, listings):
-    """Warn when at least 90% of five or more cards lack a normally supplied field."""
-    if len(listings) < 5:
+    """Warn when at least 90% of FIELD_CHECK_CARDS or more cards lack a normally supplied field."""
+    if len(listings) < FIELD_CHECK_CARDS:
         return None
     missing = [
         (FIELD_LABELS[field], sum(getattr(listing, field) in (None, '') for listing in listings))

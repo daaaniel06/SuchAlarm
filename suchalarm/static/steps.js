@@ -70,7 +70,10 @@ export function sourceSteps(searches, all = false) {
     const sum = key => done.reduce((total, x) => total + x[key], 0);
     const checked = Math.min(...done.map(x => x.checked)),
       unread = Math.max(0, ...done.map(x => x.unread || 0)),
-      warning = [...new Set(done.map(x => x.warning).filter(Boolean))].join(' · ');
+      // Each search's hint speaks of its own cards: across searches only which fields are missing.
+      warning = [
+        ...new Set(done.map(x => x.warning?.replace(/ bei (?:fast )?allen Inseraten$/, '')).filter(Boolean)),
+      ].join(' · ');
     return [
       { source, ...withInfo({ step: 'done', ...doneText(sum('found'), sum('hits'), checked) }, unread, warning) },
     ];

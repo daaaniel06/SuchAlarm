@@ -1228,15 +1228,15 @@ class FieldWarningTests(TempData):
                         self.assertNotIn(getattr(listing, field), (None, ''), (listing.title, field))
                 self.assertIsNone(sources.field_warning(source, listings * 5))
 
-    def test_field_warning_needs_five_cards_and_ninety_percent_missing(self):
+    def test_field_warning_needs_ten_cards_and_ninety_percent_missing(self):
         complete = flat(source='wg-gesucht')
         missing = replace(complete, rooms=None)
         for listings, extent in (
             ([], None),
-            ([missing] * 4, None),
-            ([missing] * 5, 'allen'),
-            ([missing] * 8 + [complete] * 2, None),
-            ([missing] * 9 + [complete], 'fast allen'),
+            ([missing] * 9, None),  # five private ads saying only "VB" are no layout change
+            ([missing] * 10, 'allen'),
+            ([missing] * 17 + [complete] * 3, None),
+            ([missing] * 18 + [complete] * 2, 'fast allen'),
         ):
             with self.subTest(cards=len(listings), extent=extent):
                 warning = sources.field_warning('wg-gesucht', listings)
@@ -1247,12 +1247,12 @@ class FieldWarningTests(TempData):
         normal = fixture('wg-gesucht', 'list-2026-11.html')
         normal = ''.join(
             normal.replace('14314991', str(15000000 + 2 * n)).replace('14311839', str(15000001 + 2 * n))
-            for n in range(3)
+            for n in range(5)
         )
         changed = re.sub(r'\btitle="[^"]*-Zimmer-[^"]*·[^"]*"', 'data-details="unknown"', normal)
         changed = changed.replace('top-image-card', 'unknown-image')
         broken = portals.wg_parse(changed)
-        self.assertEqual(len(broken), 6)
+        self.assertEqual(len(broken), 10)
         self.assertTrue(all(not card['rooms'] and not card['place'] and not card['imageSource'] for card in broken))
         flat_search = self.stored_search(sources=['wg-gesucht'])
 
@@ -1267,8 +1267,8 @@ class FieldWarningTests(TempData):
         shown = check(broken)
         self.assertEqual(shown['warning'], 'Seitenaufbau geändert? Zimmer, Ortsangaben fehlen bei allen Inseraten')
         self.assertIsNone(shown['error'])
-        self.assertEqual((shown['count'], shown['failures'], shown['unread']), (6, 0, 0))
-        self.assertEqual(len(catalog.listings(flat_search)), 6)
+        self.assertEqual((shown['count'], shown['failures'], shown['unread']), (10, 0, 0))
+        self.assertEqual(len(catalog.listings(flat_search)), 10)
         self.assertIsNone(check(portals.wg_parse(normal))['warning'])
 
     def test_further_page_warning_lasts_until_the_next_regular_result(self):
