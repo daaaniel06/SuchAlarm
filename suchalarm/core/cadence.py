@@ -451,6 +451,21 @@ def _record_success(key, source, offers, reference, cache_version):
     outcome(source, 'page', False)
 
 
+def _within_interval(source, search, row, now, cache_version, cached_parser):
+    """The stored result of the query while its interval runs, or None to ask the provider. Raises Deferred while
+    the provider is paused for a manual check, or while the query waits or retries ("Jetzt prüfen" (MANUAL)
+    asks anew unless the stored result is younger than the click)."""
+    requested = MANUAL.get()
+    if requested and (paused := blocked_until(source)):
+        raise Deferred(paused)
+    force = requested and (not row or row['at'] < requested)
+    if not row or row['next_at'] <= now or force:
+        return None
+    if row['state'] != 'ok' or not row['value']:
+        raise Deferred(row['next_at'])
+    return _cached_result(source, search, row, cache_version, cached_parser)
+
+
 def shared_search(call=None, *, cache_version=1, cached_parser=None):
     """Decorator for a provider fetch: one portal request per normalized query (Provider.key), shared by
     every search with the same query. Each search's own filters are applied locally (Provider.select).
@@ -469,16 +484,9 @@ def shared_search(call=None, *, cache_version=1, cached_parser=None):
         key, now = query_key(source, search), time.time()
         with db() as conn:
             row = conn.execute('SELECT * FROM queries WHERE key=?', (key,)).fetchone()
-        requested = MANUAL.get()
-        if requested and (paused := blocked_until(source)):
-            raise Deferred(paused)
-        force = requested and (not row or row['at'] < requested)
-        if row and row['next_at'] > now and not force:
-            if row['state'] != 'ok' or not row['value']:
-                raise Deferred(row['next_at'])
-            if (cached := _cached_result(source, search, row, cache_version, cached_parser)) is not None:
-                offers, reference = cached
-                return PROVIDERS[source].select(offers, search), reference
+        if (cached := _within_interval(source, search, row, now, cache_version, cached_parser)) is not None:
+            offers, reference = cached
+            return PROVIDERS[source].select(offers, search), reference
         seen = {'stage': 'Abruf vorbereiten'}
         token = LAST_PAGE.set(seen)
         try:

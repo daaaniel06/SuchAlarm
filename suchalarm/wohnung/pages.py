@@ -7,7 +7,7 @@ import json
 import logging
 import time
 import uuid
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 
 from .. import store
 from ..core import cadence
@@ -28,6 +28,19 @@ STOCK_PAGES = 50  # a new search takes in the whole stock; this only stops a por
 MORE_TRIES = 2
 
 
+@dataclass(frozen=True)
+class Page:
+    """One result page of a portal for a search: NUMBER (1 the newest), its LISTINGS after the search's own place
+    filter, how many offers the portal's page held before it (LISTED) and how many of the portal's own count its
+    parser missed (UNREAD, None where the portal names no count)."""
+
+    source: str
+    number: int
+    listings: list[Listing]
+    listed: int
+    unread: int | None = None
+
+
 def save_result(search, source, listings, listed, now, unread=None):
     """Store a successful result (LISTED: how many offers the portal's page held before select(); UNREAD: how many
     of the portal's own count the parser missed, sources.unread); queue
@@ -38,17 +51,17 @@ def save_result(search, source, listings, listed, now, unread=None):
     missing there may just have moved down, so it stays until cleanup() finds it unseen for KEEP_LISTINGS.
     The first result, and a page 1 that read_stock_again() asked for, is starting stock.
     Returns the URLs of genuinely new listings (not the starting stock)."""
-    sid = search['id']
+    sid, page = search['id'], Page(source, 1, listings, listed, unread)
     with store.db() as conn:
         job = _job(conn, sid, source)
         reading_stock = job is not None and bool(job['stock'])
         stock = _first_result(conn, sid, source) or (reading_stock and job['page'] == 1)
-        unseen = _save_page(conn, search, source, listings, now, stock)
+        unseen = _save_page(conn, search, page, now, stock)
         if source in WHOLE_STOCK:
             _drop_let(conn, sid, source, listings)
         source_ok(conn, sid, source, now, len(listings), unread)
         if stock or not reading_stock:  # the reading of the stock goes on behind a regular check
-            _queue_next(conn, sid, source, 1, listings, listed, unseen, stock, unread)
+            _queue_next(conn, sid, page, unseen, stock)
     return set() if stock else unseen
 
 
@@ -56,14 +69,14 @@ def save_more(search, job, listings, listed, now, unread=None):
     """Store the further result page that JOB (a more_pages row) asked for. Its unseen flats are starting
     stock while a search takes in the stock, otherwise they count like any new ones. Returns the URLs of
     new ones."""
-    sid, source = search['id'], job['source']
+    sid, page = search['id'], Page(job['source'], job['page'], listings, listed, unread)
     with store.db() as conn:
         if not _current(conn, job):
             return set()  # a regular check or an edit decided anew while the page loaded
-        more_unread(conn, sid, source, unread)
+        more_unread(conn, sid, page.source, unread)
         stock = bool(job['stock'])
-        unseen = _save_page(conn, search, source, listings, now, stock)
-        _queue_next(conn, sid, source, job['page'], listings, listed, unseen, stock, unread)
+        unseen = _save_page(conn, search, page, now, stock)
+        _queue_next(conn, sid, page, unseen, stock)
     return set() if stock else unseen
 
 
@@ -102,11 +115,11 @@ def _first_result(conn, sid, source):
     return not known and not started(conn, sid, source)
 
 
-def _save_page(conn, search, source, listings, now, stock):
-    """Store one result page; returns the URLs not seen before. With STOCK they join the starting stock,
+def _save_page(conn, search, page, now, stock):
+    """Store one result PAGE; returns the URLs not seen before. With STOCK they join the starting stock,
     ranked below everything known in the portal's order (newest first), so the stock read page by page
     lists the freshest flats first."""
-    sid = search['id']
+    sid, source, listings = search['id'], page.source, page.listings
     seen = dict(conn.execute('SELECT url, first_seen FROM listings WHERE search_id=? AND source=?', (sid, source)))
     unseen = {item.url for item in listings if item.url not in seen}
     if stock:
@@ -114,7 +127,7 @@ def _save_page(conn, search, source, listings, now, stock):
         oldest = min(seen.values(), default=now)
         ranked = [url for url in dict.fromkeys(item.url for item in listings) if url in unseen]
         seen |= {url: oldest - 1 - position for position, url in enumerate(ranked)}
-    _store(conn, sid, source, listings, seen, profile(search), now, sources.centre(search))
+    _store(conn, search, page, seen, now)
     return unseen
 
 
@@ -127,8 +140,11 @@ def _drop_let(conn, sid, source, listings):
     )
 
 
-def _store(conn, sid, source, listings, seen, wanted, now, middle=None):
-    """Write listings (SEEN: url -> first_seen); queue missing details of fitting listings beyond the stock."""
+def _store(conn, search, page, seen, now):
+    """Write the PAGE's listings (SEEN: url -> first_seen); queue missing details of fitting listings beyond the
+    stock."""
+    sid, source, listings = search['id'], page.source, page.listings
+    wanted, middle = profile(search), sources.centre(search)
     before = {
         url: Listing(**json.loads(body))
         for url, body in conn.execute('SELECT url, body FROM listings WHERE search_id=? AND source=?', (sid, source))
@@ -161,18 +177,20 @@ def _mark_cheaper(conn, sid, urls, now):
     conn.executemany('DELETE FROM start_offers WHERE search_id=? AND url=?', [(sid, url) for url in urls])
 
 
-def _queue_next(conn, sid, source, page, listings, listed, unseen, stock, unread):
-    """Queue the page after PAGE, or end the reading. Only a page that was full (LISTED offers before the
-    search's own place filter, plus UNREAD offers) can have one behind it. While a search takes in its STOCK,
-    reading goes on as long as pages bring flats not seen yet (a page of only other places' offers says nothing about the end);
-    otherwise only after a page of nothing but new flats, which may have pushed more down."""
-    full = source in sources.PAGED and listed + (unread or 0) >= sources.PAGE_SIZES.get(source, FULL_PAGE)
+def _queue_next(conn, sid, page, unseen, stock):
+    """Queue the page after PAGE, or end the reading. Only a page that was full (its listed offers before the
+    search's own place filter, plus the unread ones) can have one behind it. While a search takes in its STOCK,
+    reading goes on as long as pages bring flats not seen yet (a page of only other places' offers says nothing
+    about the end); otherwise only after a page of nothing but new flats, which may have pushed more down."""
+    source, listings = page.source, page.listings
+    size = sources.PAGE_SIZES.get(source, FULL_PAGE)
+    full = source in sources.PAGED and page.listed + (page.unread or 0) >= size
     if stock:
         more, last = full and (bool(unseen) or not listings), STOCK_PAGES
     else:
         more, last = full and bool(listings) and unseen == {item.url for item in listings}, MAX_PAGE
-    if more and page < last:
-        _queue(conn, sid, source, page + 1, stock)
+    if more and page.number < last:
+        _queue(conn, sid, source, page.number + 1, stock)
         return
     if more and stock:
         log.warning('Reading the stock of %s stopped after %s pages; narrow the search to see the rest', source, last)
