@@ -131,13 +131,27 @@ CATEGORIES: dict[str, dict[str, Any]] = {
         filters=['platform'],
         portal={'ebay': '139973', 'kleinanzeigen': '227', 'vinted': '3026'},
     ),
+    # Consoles have a section of their own at each provider, so games stay out without guessing at title words
+    # ("Elden Ring Xbox Series X"). Section IDs and the platform filters there checked live on 05.11.2026.
+    'konsolen': dict(
+        label='Konsolen',
+        hint='PlayStation, Xbox, Switch',
+        delivery='versand',
+        sources=['ebay', 'kleinanzeigen', 'vinted', 'idealo'],
+        excluded='defekt, Bastler, Konsolenhülle, Poster, Plakat, Affiche, Mauspad, Mousepad, Tapis de souris, Schild, '
+        'Targa, Bilderrahmen, Cadre, Flagge, Drapeau, Figur, Figurine, Sticker',
+        negotiable=False,
+        free=False,
+        radius=0,
+        filters=['platform'],
+        portal={'ebay': '139971', 'kleinanzeigen': '279', 'vinted': '3025'},
+    ),
     'elektronik': dict(
         label='Elektronik',
         hint='Handy, Laptop, Kopfhörer',
         delivery='versand',
         sources=['ebay', 'kleinanzeigen', 'vinted', 'idealo'],
-        # Whoever looks for a console wants no games; titles naming only the game ("Elden Ring Xbox Series X") slip through.
-        excluded='defekt, Bastler, Spiel, Spiele, Videospiel, Videospiele, Games, USK, PEGI',
+        excluded='defekt, Bastler',
         negotiable=False,
         free=False,
         radius=0,

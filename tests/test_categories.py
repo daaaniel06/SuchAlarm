@@ -221,21 +221,24 @@ class CategoryTests(unittest.TestCase):
         # Other compounds are only excluded when explicitly included in the search's words.
         self.assertTrue(title_fits('ebay', 'Spiel Downloadcode', {'query': 'Spiel', 'excluded': 'Code'}))
 
-    def test_electronics_drop_games_video_games_keep_them(self):
-        def search(category, query):
-            return dict(query=query, category=category, excluded=CATEGORIES[category]['excluded'])
-
-        console = search('elektronik', 'Xbox Series X')
-        for title in ('Xbox Series X 1TB', 'Xbox Series X Konsole ohne Spiele', 'Xbox Series X Spielekonsole'):
-            with self.subTest(kept=title):
-                self.assertTrue(title_fits('ebay', title, console))
-        for title in ('Forza Horizon 5 Spiel Xbox Series X', 'Xbox Series X Games Paket', 'Halo Xbox Series X USK 16'):
-            with self.subTest(dropped=title):
-                self.assertFalse(title_fits('ebay', title, console))
-        # Not recognised: a title naming only the game and the platform reads like a console.
-        self.assertTrue(title_fits('ebay', 'Elden Ring Xbox Series X', console))
-        self.assertTrue(title_fits('ebay', 'Elden Ring Spiel Xbox Series X', search('videospiele', 'Elden Ring')))
-        self.assertTrue(title_fits('ebay', 'Regal für Spiele', search('moebel', 'Regal')))
+    def test_consoles_search_the_console_sections_and_name_no_game_words(self):
+        portal = {key: value['portal'] for key, value in CATEGORIES.items()}
+        self.assertEqual(portal['konsolen'], {'ebay': '139971', 'kleinanzeigen': '279', 'vinted': '3025'})
+        self.assertEqual(portal['videospiele'], {'ebay': '139973', 'kleinanzeigen': '227', 'vinted': '3026'})
+        self.assertEqual(CATEGORIES['konsolen']['filters'], ['platform'])
+        self.assertEqual(CATEGORIES['elektronik']['excluded'], 'defekt, Bastler')
+        game_words = {'spiel', 'spiele', 'videospiel', 'videospiele', 'games', 'usk', 'pegi'}
+        for key in ('konsolen', 'elektronik'):
+            with self.subTest(category=key):
+                words = {w.strip().lower() for w in CATEGORIES[key]['excluded'].split(',')}
+                self.assertFalse(words & game_words)
+        console = dict(query='Xbox Series X', category='konsolen', filters={'platform': 'xbox-series'})
+        self.assertIn('/k0c279', search_url('kleinanzeigen', wanted_words('kleinanzeigen', console), console))
+        self.assertEqual(
+            parse_qs(urlsplit(search_url('ebay', wanted_words('ebay', console), console)).query)['_sacat'], ['139971']
+        )
+        vinted = parse_qs(urlsplit(search_url('vinted', wanted_words('vinted', console), console)).query)
+        self.assertEqual((vinted['catalog[]'], vinted['video_game_platform_ids[]']), (['3025'], ['1291']))
 
     def test_old_searches_keep_their_cache_key(self):
         old = dict(query='Spiel PS5', max_price=3500, include_shipping=True, excluded='')
