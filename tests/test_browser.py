@@ -454,7 +454,9 @@ class AreaInterfaceTests(unittest.IsolatedAsyncioTestCase):
                 return sourceSteps([search, search]).find(s => s.source === 'immoscout24');
             }""")
             self.assertEqual(step['step'], 'done')
-            self.assertEqual(step['text'].count(warning), 1)
+            # Across searches only which fields are missing: one search's "bei allen" is no claim about the sum.
+            self.assertEqual(step['text'].count('Seitenaufbau geändert? Zimmer fehlen'), 1)
+            self.assertNotIn('bei allen Inseraten', step['text'])
             self.assertIn('1 nicht lesbar', step['text'])
             await page.keyboard.press('2')
             self.assertEqual(await page.locator('#offer-unit').inner_text(), 'Angebot')
