@@ -757,6 +757,16 @@ class ParserTests(unittest.TestCase):
             [(1300, 82, 3, '2026-10-01', []), (800, 30, 1, '2026-10-01', ['Befristet'])],
         )
         self.assertEqual(cards[0]['place'], 'Odenwaldstr. 46 B, Darmstadt, Eberstadt')
+        # The live layout of 05.11.2026: another subtitle class, pictures loaded lazily (data-src).
+        live = portals.wg_parse(fixture('wg-gesucht', 'list-2026-11.html'))
+        self.assertEqual(
+            [(c['rent'], c['area'], c['rooms'], c['place'], c['traits']) for c in live],
+            [
+                (860, 48, 2, 'Musterweg 1, Darmstadt', []),
+                (880, 65, 2, 'Beispielstraße 2, Darmstadt, Hessen -', ['Befristet']),
+            ],
+        )
+        self.assertTrue(all(c['imageSource'].startswith('https://img.wg-gesucht.de/') for c in live))
         detail = portals.wg_detail(WG_DETAIL)
         self.assertEqual((detail['rent'], detail['coldRent'], detail['traits']), (1300, 1100, ['WBS']))
         self.assertNotIn('ads()', detail['text'])
