@@ -18,6 +18,7 @@ from ..domain import (
     published_at,
     rooms,
 )
+from .common import heating_included, warm_from_parts
 
 log = logging.getLogger('suchalarm')
 
@@ -142,12 +143,8 @@ def _immoscout_image(item):
 
 
 def _warm(cold, costs, heating):
-    """Warm rent from its parts when an offer names no total: only with the service charges and the
-    heating known (an amount, or "in Nebenkosten enthalten")."""
-    costs, heat = number(costs), number(heating)
-    if cold is None or costs is None or (heat is None and 'enthalten' not in (heating or '').casefold()):
-        return None
-    return cold + costs + (heat or 0)
+    """Warm rent from its parts when an offer names no total ("Heizkosten: in Nebenkosten enthalten")."""
+    return warm_from_parts(cold, number(costs), number(heating), heating_included(heating))
 
 
 def immoscout_detail_url(url):

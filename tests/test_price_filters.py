@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from suchalarm import scheduler, store
 from suchalarm.core import cadence
+from suchalarm.preis import sources
 from suchalarm.preis.prices import Offer, buyer_fee, eligible, portal_price_bounds
 from suchalarm.preis.sources import ebay_in_germany, parse_rows, search_url
 from suchalarm.preis.worker import judged
@@ -90,6 +91,31 @@ class PriceFilterTests(unittest.IsolatedAsyncioTestCase):
             search_url('idealo', search['query'], search), search_url('idealo', search['query'], self.search)
         )
         self.assertEqual(cadence.query_key('idealo', search), cadence.query_key('idealo', self.search))
+
+    def test_idealo_used_shop_offers_are_not_new_price_references(self):
+        base = dict(
+            title=self.search['query'],
+            url='https://www.idealo.de/preisvergleich/OffersOfProduct/1_x.html',
+            currency='EUR',
+            price='20',
+            shippingAmount='0',
+        )
+        for condition in ('UsedCondition', 'RefurbishedCondition', 'DamagedCondition'):
+            with self.subTest(condition=condition):
+                used = dict(base, condition=f'https://schema.org/{condition}')
+                data = dict(structured=[used], text='Spiel')
+                offers, reference = sources.idealo_result(data, None, None, self.search)
+                self.assertEqual(len(offers), 1)
+                self.assertIsNone(reference)
+                data['structured'].append(dict(base, condition='https://schema.org/NewCondition', price='40'))
+                _, reference = sources.idealo_result(data, None, None, self.search)
+                self.assertEqual(reference['price'], 4000)
+
+    def test_cached_shipping_page_repair_drops_pickup_only_cards(self):
+        row = dict(title=self.search['query'], url='https://www.ebay.de/itm/123', price='30 €', shipping='Nur Abholung')
+        with patch.object(cadence, 'historical_page', return_value=dict(rows=[row])):
+            result = sources.repair_cached('ebay', dict(self.search, delivery='versand'), {}, time.time())
+        self.assertEqual(result['offers'], [])
 
     def test_cache_keys_follow_actual_provider_filters(self):
         other = dict(self.search, min_price=3000)

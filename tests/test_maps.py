@@ -40,6 +40,10 @@ class QueryTests(unittest.TestCase):
         )
         self.assertEqual(maps.queries('64283 Darmstadt - Bessungen'), ['64283 Darmstadt', 'Darmstadt'])
         self.assertEqual(maps.queries('15230 Frankfurt (Oder)'), ['15230 Frankfurt', 'Frankfurt'])
+        self.assertEqual(
+            maps.queries('Wiesbaden, Rudolf-Dyckerhoff-Straße 21'),
+            ['Rudolf-Dyckerhoff-Straße 21, Wiesbaden', 'Wiesbaden'],
+        )  # NHW: the town first
         self.assertEqual(maps.queries(''), [])
         self.assertTrue(maps.has_street('Karlstraße 22, 64283 Darmstadt'))
         self.assertFalse(maps.has_street('64283 Darmstadt'))

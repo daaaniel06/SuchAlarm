@@ -37,6 +37,7 @@ FREE_SHIPPING = re.compile(
 # Context that makes a mention useless: "kein kostenloser Versand", "ab 4 €", "Rückversand", ranges.
 _FREE_NEGATED = re.compile(r'\b(?:kein[er]?|nicht|ohne)\s*$')
 _FREE_QUALIFIED = re.compile(r'\s*(?:ab\b|from\b|(?:für\s+)?rück|returns?\b)')
+_FREE_MINIMUM = re.compile(rf'\b(?:(?:ab|über)\s*{_COST}|(?:mindest)?bestellwert\b)')
 _COST_VAGUE_BEFORE = re.compile(r'(?:\b(?:ca\.?|etwa|bis|kein|ohne|nicht)|[-–])\s*$')
 _COST_VAGUE_AFTER = re.compile(r'\s*(?:[-–]|bis\b|to\b|(?:für\s+)?rück|returns?\b)')
 _FROM_BEFORE = re.compile(r'\b(?:ab|from)\s*$')
@@ -56,7 +57,12 @@ def _free_mentions(text):
     found = False
     for match in FREE_SHIPPING.finditer(text):
         before, after = _around(text, match)
-        if _FREE_NEGATED.search(before) or _FREE_QUALIFIED.match(after):
+        if (
+            _FREE_NEGATED.search(before)
+            or _FREE_QUALIFIED.match(after)
+            # An order minimum in the same part of the card ("für Bestellungen ab 50 €"), not the next field.
+            or _FREE_MINIMUM.search(re.split(r'[·•|\n]', text[match.end() : match.end() + 65])[0])
+        ):
             return None
         found = True
     return found

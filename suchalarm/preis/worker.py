@@ -25,7 +25,6 @@ FRESH_USED = 3 * 3600  # a shop comparison only uses second-hand results this re
 SHIPPING_WAIT = 15 * 60  # a Vinted hit waits this long for its shipping lookup before it is mailed without
 HITS = 'offers'  # key of the hit rows in /api/state
 MODEL = Search  # the request body of a product search
-EMPTY_IS_SUSPICIOUS = False  # an empty product result is ordinary; a changed layout is caught by markup_changed
 # What the search editor offers; the providers' section IDs stay on the server.
 CHOICES = {
     'categories': {key: {k: v for k, v in value.items() if k != 'portal'} for key, value in CATEGORIES.items()},
@@ -82,6 +81,11 @@ async def fetch(source: str, search: store.Search) -> tuple[list[Offer], Row | N
     return await sources.fetch(source, search)
 
 
+def empty_is_suspicious(reference: Row | None) -> bool:
+    """An empty product result is ordinary; a changed layout is caught by markup_changed."""
+    return False
+
+
 def save(
     search: store.Search, source: str, offers: list[Offer], reference: Row | None, observed: float
 ) -> tuple[list[Offer], set[str]]:
@@ -129,13 +133,18 @@ def save_result(search, source, offers, reference, now):
                 for o in offers
             ],
         )
+        conn.executemany(
+            'INSERT OR IGNORE INTO negotiable_offers VALUES (?,?)',
+            [(sid, o.url) for o in offers if o.negotiable],
+        )
         # Vinted shipping still unknown in the starting point: a later shipping lookup must not mail it either.
         conn.executemany(
             'INSERT OR IGNORE INTO shipping_baselines VALUES (?,?)',
             [(sid, o.url) for o in offers if o.source == 'vinted' and o.shipping is None and o.url in baseline],
         )
         status.source_ok(conn, sid, source, now, len(offers))
-        if source == 'idealo' and reference:
+        # The shared fetch leaves exclusions out; its reference is judged per search here.
+        if source == 'idealo' and reference and title_fits(source, reference['title'], search):
             value = json.dumps(dict(reference, checked_at=now))
             conn.execute('INSERT OR REPLACE INTO idealo_references VALUES (?,?)', (sid, value))
         elif source == 'idealo':
@@ -299,6 +308,12 @@ def reset(conn: Connection, search_id: int, old: Mapping[str, Any], payload: Sea
     a paused search is not checked again on its own, so wiping them would empty its list."""
     changed = any(old[name] != payload.comparable(name) for name in SEARCH_FILTERS)
     dropped = [source for source in old['sources'] if source not in payload.sources]
+    if old['negotiable'] and not payload.negotiable:
+        conn.execute(
+            'DELETE FROM outbox WHERE search_id=? AND batch IS NULL '
+            'AND url IN (SELECT url FROM negotiable_offers WHERE search_id=?)',
+            (search_id, search_id),
+        )
     # A different query or price basis makes earlier reports incomparable.
     if (
         old['include_shipping'] != payload.include_shipping

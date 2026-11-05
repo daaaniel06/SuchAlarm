@@ -126,7 +126,7 @@ def out_of_area(search, source):
         lat, lon, _ = json.loads(known)
         if distance_km((lat, lon), portals.DARMSTADT) > portals.BAUVEREIN_REACH + p['radius']:
             return 'Nur Darmstadt und Umgebung'
-    if known and source == 'nhw':
+    if known and source == 'nhw' and not p['radius']:  # a radius may reach into Hesse; select() measures it
         state = json.loads(known)[2]
         if state and state != 'Hessen':
             return 'Nur in Hessen'

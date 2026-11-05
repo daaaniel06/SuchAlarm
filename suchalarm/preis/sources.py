@@ -199,6 +199,9 @@ UNAVAILABLE_PATTERNS = (
     r'\b(?:auktion|gebote?)\b',
 )
 UNAVAILABLE = re.compile('|'.join(UNAVAILABLE_PATTERNS), re.I)
+UNAVAILABLE_TITLE = re.compile(r'\b(?:verkauft|reserviert)\b', re.I)
+PICKUP_ONLY = re.compile(r'\bnur\s+abholung\b', re.I)
+USED_CONDITION = re.compile(r'(?:Used|Refurbished|Damaged)Condition$', re.I)
 # eBay's sales counters on listings still for sale ("Mehr als 10 verkauft", "Fast ausverkauft").
 SALES_COUNTER = re.compile(r'\b(?:mehr als\s+)?\d[\d.]*\s+verkauft\b|\bfast\s+ausverkauft\b', re.I)
 NEGOTIABLE = re.compile(r'\bVB\b')
@@ -233,6 +236,14 @@ def usable(source, row, title, url, search):
     if not title or not url or not title_fits(source, title, search):
         return False
     if source == 'ebay' and not ebay_in_germany(row):
+        return False
+    if UNAVAILABLE_TITLE.search(title):
+        return False
+    if (
+        source in ('ebay', 'kleinanzeigen')
+        and search.get('delivery', 'versand') == 'versand'
+        and PICKUP_ONLY.search(row.get('text', '') + ' ' + row.get('shipping', ''))
+    ):
         return False
     price_text, text = str(row.get('price', '')), row.get('text', '').replace('\xad', '')
     status = price_text + ' ' + status_text(row)
@@ -280,6 +291,7 @@ def parse_rows(source, data, search):
             seller[:MAX_SELLER],
             condition[:MAX_CONDITION],
             str(row.get('owner', '')),
+            bool(NEGOTIABLE.search(str(row.get('price', '')) + ' ' + status_text(row))),
         )
         # Keep idealo's shop alternatives: the shared cache serves searches with both shipping settings.
         key = (url, price, offer.shipping, offer.seller) if source == 'idealo' else url
@@ -377,7 +389,7 @@ def _cheapest_reference(rows):
 
 def _cheapest_total(offers):
     """The cheapest shop offer with known shipping, as a total: what buying it really costs."""
-    known = [o for o in offers if o.shipping is not None]
+    known = [o for o in offers if o.shipping is not None and not USED_CONDITION.search(o.condition)]
     if not known:
         return None
     best = min(known, key=lambda o: o.price + o.shipping)
@@ -409,7 +421,7 @@ def idealo_result(data, detail, product, search):
 def repair_cached(source, search, value, observed_at):
     if (search.get('delivery') == 'beides' and around(source, search)) or len(phrases(source, search)) > 1:
         return None  # several pages per result; not worth reassembling from the page cache
-    if source not in ('idealo', 'ebay', 'vinted'):
+    if source not in ('idealo', 'ebay', 'kleinanzeigen', 'vinted'):
         return value
     try:
         data = cadence.historical_page(source, search_url(source, wanted_words(source, search), search), observed_at)
@@ -434,7 +446,7 @@ def repair_cached(source, search, value, observed_at):
     return {'offers': [asdict(o) for o in offers], 'reference': reference}
 
 
-@cadence.shared_search(cache_version=7, cached_parser=repair_cached)
+@cadence.shared_search(cache_version=8, cached_parser=repair_cached)
 async def fetch(source, search):
     """(offers, idealo reference) of one provider query; the decorator shares, caches and times it."""
     return await _visit(source, search)
@@ -510,7 +522,7 @@ def shippable(source, row):
     """Whether a card from the nationwide search can be sent: Kleinanzeigen says "Versand möglich"
     (or names a cost); on eBay everything except "Nur Abholung"."""
     text = ' '.join((row.get('text', '') + ' ' + row.get('shipping', '')).split())
-    if re.search(r'\bnur abholung\b', text, re.I):
+    if PICKUP_ONLY.search(text):
         return False
     if source == 'kleinanzeigen':
         return (

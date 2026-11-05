@@ -8,6 +8,7 @@ from ..shapes import MailEntry
 from . import sources
 from .catalog import DETAIL_WINDOW, cents, completed, listings, mailable, offer, twins_by_url
 from .domain import match, profile, warm_rent
+from .tables import DONE, FAILED, GONE, PENDING
 
 DETAIL_WAIT = 15 * 60  # a matching listing waits this long for its detail page before it is mailed without
 
@@ -21,6 +22,12 @@ QUEUE_SQL = (
     'AND NOT EXISTS (SELECT 1 FROM outbox x WHERE x.search_id=l.search_id AND x.url=l.url) '
     'AND NOT EXISTS (SELECT 1 FROM hidden h WHERE h.search_id=l.search_id AND h.url=l.url)'
 )
+
+
+def _worth_a_mail(item, verdict, state, reported):
+    """The one rule for queueing and for sending: the flat fits with nothing left to wait for, and its rent is
+    below what was last mailed for it (REPORTED, cents; None if never)."""
+    return mailable(item, verdict, state) and (reported is None or (cents(warm_rent(item)) or 0) < reported)
 
 
 def _wanted(searches):
@@ -44,7 +51,7 @@ def queue_mails(now: float | None = None) -> None:
         recent = now - DETAIL_WINDOW
         for row in conn.execute(QUEUE_SQL, (recent, recent)).fetchall():
             search = searches.get(row['search_id'])
-            if search is None or (row['state'] == 'pending' and row['seen'] > now - DETAIL_WAIT):
+            if search is None or (row['state'] == PENDING and row['seen'] > now - DETAIL_WAIT):
                 continue  # the detail page decides; a paused portal must not hold a clear match for hours
             if (row['search_id'], row['url']) in followers:
                 # Another portal's copy of a flat that is mailed through its fitting listing: only known.
@@ -52,11 +59,9 @@ def queue_mails(now: float | None = None) -> None:
                 continue
             item = completed(row)
             verdict, _ = match(item, *wanted[search['id']])
-            if not mailable(item, verdict, row['state']):
-                continue  # looked at again while it is recent: a changed search may still want it
+            if not _worth_a_mail(item, verdict, row['state'], row['reported']):
+                continue  # looked at again while it is recent: a changed search or a lower rent may still count
             price = cents(warm_rent(item)) or 0
-            if row['reported'] is not None and price >= row['reported']:
-                continue  # already mailed at this rent or a lower one
             if search['active'] and mailing:
                 store.queue(conn, search['id'], item.url, price, now)
             else:
@@ -81,11 +86,11 @@ def take_pending(conn: Connection) -> list[MailEntry]:
         'FROM outbox x '
         'JOIN searches s ON s.id=x.search_id AND s.kind=? '
         'LEFT JOIN listings l ON l.search_id=x.search_id AND l.url=x.url '
-        "LEFT JOIN listing_details d ON d.url=x.url AND d.state IN ('done','failed') "
+        'LEFT JOIN listing_details d ON d.url=x.url AND d.state IN (?,?,?) '
         'LEFT JOIN hidden h ON h.search_id=x.search_id AND h.url=x.url '
         'LEFT JOIN notifications n ON n.search_id=x.search_id AND n.url=x.url '
         'WHERE x.batch IS NULL ORDER BY x.created_at',
-        ('wohnung',),
+        ('wohnung', DONE, FAILED, GONE),
     ).fetchall()
     for row in rows:
         search = searches.get(row['search_id'])
@@ -98,9 +103,8 @@ def take_pending(conn: Connection) -> list[MailEntry]:
         ):
             item = completed(row)
             verdict, reasons = match(item, *wanted[search['id']])
-            # A fall in rent queued for the digest is no news once the rent rose again before it went out.
-            dearer = row['reported'] is not None and (cents(warm_rent(item)) or 0) >= row['reported']
-            if mailable(item, verdict, row['state']) and not dearer:
+            # Judged again: a fall in rent queued for the digest is no news once the rent rose again.
+            if _worth_a_mail(item, verdict, row['state'], row['reported']):
                 found = offer(item, verdict, reasons)
                 found['twins'] = twins.get(search['id'], {}).get(row['url'], [])
                 entries.append((search, found, found['price'] or 0))

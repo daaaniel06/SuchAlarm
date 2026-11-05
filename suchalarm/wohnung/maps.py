@@ -57,6 +57,11 @@ def has_street(place):
 def queries(place):
     """Address first, then the postcode, then the town: the best match that exists wins."""
     parts = [part.strip() for part in re.sub(r'\(.*?\)', '', place).split(',') if part.strip()]
+    # NHW names the town first ("Wiesbaden, Rudolf-Dyckerhoff-Straße 21"): the street goes first.
+    street_at = next((i for i, part in enumerate(parts) if i and has_street(part)), None)
+    if street_at and not has_street(parts[0]):
+        parts = [parts[street_at], *parts[:street_at], *parts[street_at + 1 :]]
+        place = ', '.join(parts)
     postcode = re.search(r'\b\d{5}\b', place)
     # The town follows the postcode, up to a district behind a dash ("Bad Homburg vor der Höhe" stays whole);
     # without one it is the second of three parts or the last one.

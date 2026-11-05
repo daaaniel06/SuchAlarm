@@ -37,6 +37,32 @@ def without_smtp_env():
 
 
 class DomainTests(unittest.TestCase):
+    def test_free_shipping_with_an_order_minimum_is_unknown(self):
+        for label in (
+            'Kostenloser Versand für Bestellungen ab 50 €',
+            'Versandkostenfrei ab 29 € Bestellwert',
+            'Gratis Versand für Bestellungen über 50 €',
+            'Kostenloser Versand bei 50 € Mindestbestellwert',
+        ):
+            with self.subTest(label=label):
+                self.assertIsNone(shipping(label))
+        self.assertEqual(shipping('Kostenloser Versand innerhalb Deutschlands'), 0)
+        self.assertEqual(shipping('Versand kostenlos · 80 € VB ab 70 €'), 0)  # "ab 70 €" belongs to the next field
+
+    def test_repeated_search_words_need_separate_title_occurrences(self):
+        self.assertFalse(matches('Resident Evil 4 Nintendo Switch 2', 'Resident Evil 2 Switch 2'))
+        self.assertTrue(matches('Resident Evil 2 Nintendo Switch 2', 'Resident Evil 2 Switch 2'))
+        self.assertFalse(matches('Spider-Man PS5', 'spiderman spiderman'))
+        self.assertTrue(matches('Spider-Man Spiderman PS5', 'spiderman spiderman'))
+        self.assertTrue(matches('iPhone13 iPhone 13', 'iphone 13 iphone 13'))
+
+    def test_sold_or_reserved_titles_are_unavailable(self):
+        base = dict(url='https://www.ebay.de/itm/123', price='30 €', status='', text='')
+        for title in ('Spiel Verkauft!', 'RESERVIERT Spiel'):
+            with self.subTest(title=title):
+                self.assertEqual(parse_rows('ebay', [dict(base, title=title)], {'query': 'Spiel'}), [])
+        self.assertEqual(len(parse_rows('ebay', [dict(base, title='Verkaufe Spiel')], {'query': 'Spiel'})), 1)
+
     def test_price_and_shipping(self):
         self.assertEqual(money('1.234,56 €'), 123456)
         self.assertEqual(money('34.95'), 3495)
@@ -207,6 +233,43 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
             await worker.send_digest()
         deliver.assert_not_called()
+
+    async def test_disabling_negotiable_drops_only_queued_vb_offers(self):
+        await update(1, ProductSearch(query='Spiel', max_price=3500, negotiable=True, sources=['ebay']))
+        self.search = store.search(1)
+        await self.found()  # the edited search's starting point
+        rows = [
+            dict(title='Spiel', url=self.offer.url, price='30 € VB', status='VB', shipping='Kostenloser Versand'),
+            dict(
+                title='Spiel', url='https://www.ebay.de/itm/2', price='30 €', status='', shipping='Kostenloser Versand'
+            ),
+        ]
+        await self.found(*parse_rows('ebay', rows, self.search))
+        self.assertEqual(self.count('outbox'), 2)
+        await update(1, ProductSearch(query='Spiel', max_price=3500, negotiable=False, sources=['ebay']))
+        self.assertEqual(self.count('outbox'), 1)
+        with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
+            await worker.send_digest()
+        body = deliver.call_args.args[0].get_body(('plain',)).get_content()
+        self.assertNotIn(self.offer.url, body)
+        self.assertIn(rows[1]['url'], body)
+
+    async def test_shared_idealo_reference_respects_each_search_exclusions(self):
+        reference = dict(
+            price=2500, title='Spiel refurbished', url='https://www.idealo.de/preisvergleich/OffersOfProduct/1_x.html'
+        )
+        await update(1, ProductSearch(query='Spiel', max_price=3500, sources=['idealo'], excluded='refurbished'))
+        self.search = store.search(1)
+        visit = AsyncMock(return_value=([], reference))
+        with patch.object(sources, '_visit', visit), patch.object(cadence, 'ready_at', return_value=0):
+            await worker.check(self.search)
+            self.assertEqual(self.count('idealo_references'), 0)
+            await update(1, ProductSearch(query='Spiel', max_price=3500, sources=['idealo']))
+            self.search = store.search(1)
+            await worker.check(self.search)
+        self.assertEqual(self.count('idealo_references'), 1)
+        visit.assert_awaited_once()
+        self.assertEqual(visit.call_args.args[1]['excluded'], '')
 
     async def test_dedup_and_further_drop(self):
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:

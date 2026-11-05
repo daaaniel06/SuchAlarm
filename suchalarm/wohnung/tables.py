@@ -3,6 +3,10 @@
 from .. import store
 
 TABLES = ('listings', 'listing_details', 'more_pages', 'separated')
+
+# listing_details.state: queued (also while retrying), read, given up after details.DETAIL_ATTEMPTS, or gone (the
+# portal answers 404: it deleted the listing).
+PENDING, DONE, FAILED, GONE = 'pending', 'done', 'failed', 'gone'
 PER_SEARCH = ('listings', 'more_pages', 'separated')  # detail pages are per URL and go with cleanup()
 
 

@@ -17,6 +17,7 @@ from ..domain import (
     number,
     rooms,
 )
+from .common import warm_from_parts
 
 log = logging.getLogger('suchalarm')
 
@@ -132,8 +133,7 @@ def bauverein_detail(data):
         # "Gesamtmiete" is cold rent plus service charges; heating comes on top unless it is included.
         total = number(str(prices.get('gesamtmiete') or prices.get('gesamtpreis') or ''))
         included = str(prices.get('heizkosten_enthalten')).casefold() in ('true', '1')
-        heating = 0 if included else number(str(prices.get('heizkosten') or '')) or 0
-        warm = None if total is None else total + heating
+        warm = warm_from_parts(total, 0, number(str(prices.get('heizkosten') or '')), included)
     return {
         'rent': money(warm),
         'coldRent': money(cold),

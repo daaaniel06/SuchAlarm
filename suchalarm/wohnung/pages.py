@@ -27,6 +27,10 @@ STOCK_PAGES = 50  # a new search takes in the whole stock; this only stops a por
 
 MORE_TRIES = 2
 
+# more_pages.stock: 0 a page behind a burst of new flats, 1 the starting stock, REREAD the stock read again after
+# the portal's own limits changed: there every full page counts, since a page of known flats proves no end.
+REREAD = 2
+
 
 @dataclass(frozen=True)
 class Page:
@@ -61,7 +65,7 @@ def save_result(search, source, listings, listed, now, unread=None):
             _drop_let(conn, sid, source, listings)
         source_ok(conn, sid, source, now, len(listings), unread)
         if stock or not reading_stock:  # the reading of the stock goes on behind a regular check
-            _queue_next(conn, sid, page, unseen, stock)
+            _queue_next(conn, sid, page, unseen, stock, reread=bool(job) and job['stock'] == REREAD)
     return set() if stock else unseen
 
 
@@ -76,7 +80,7 @@ def save_more(search, job, listings, listed, now, unread=None):
         more_unread(conn, sid, page.source, unread)
         stock = bool(job['stock'])
         unseen = _save_page(conn, search, page, now, stock)
-        _queue_next(conn, sid, page, unseen, stock)
+        _queue_next(conn, sid, page, unseen, stock, reread=job['stock'] == REREAD)
     return set() if stock else unseen
 
 
@@ -85,7 +89,7 @@ def read_stock_again(conn, sid, changed):
     result reads the stock again from page 1, so they join the starting stock instead of being mailed."""
     for source in changed:
         if source in sources.PAGED:
-            _queue(conn, sid, source, 1, stock=True)
+            _queue(conn, sid, source, 1, stock=REREAD)
 
 
 def _queue(conn, sid, source, page, stock):
@@ -177,20 +181,21 @@ def _mark_cheaper(conn, sid, urls, now):
     conn.executemany('DELETE FROM start_offers WHERE search_id=? AND url=?', [(sid, url) for url in urls])
 
 
-def _queue_next(conn, sid, page, unseen, stock):
+def _queue_next(conn, sid, page, unseen, stock, reread=False):
     """Queue the page after PAGE, or end the reading. Only a page that was full (its listed offers before the
     search's own place filter, plus the unread ones) can have one behind it. While a search takes in its STOCK,
     reading goes on as long as pages bring flats not seen yet (a page of only other places' offers says nothing
-    about the end); otherwise only after a page of nothing but new flats, which may have pushed more down."""
+    about the end), and to the last full page when it is REREAD; otherwise only after a page of nothing but new
+    flats, which may have pushed more down."""
     source, listings = page.source, page.listings
     size = sources.PAGE_SIZES.get(source, FULL_PAGE)
     full = source in sources.PAGED and page.listed + (page.unread or 0) >= size
     if stock:
-        more, last = full and (bool(unseen) or not listings), STOCK_PAGES
+        more, last = full and (bool(unseen) or not listings or reread), STOCK_PAGES
     else:
         more, last = full and bool(listings) and unseen == {item.url for item in listings}, MAX_PAGE
     if more and page.number < last:
-        _queue(conn, sid, source, page.number + 1, stock)
+        _queue(conn, sid, source, page.number + 1, REREAD if reread else stock)
         return
     if more and stock:
         log.warning('Reading the stock of %s stopped after %s pages; narrow the search to see the rest', source, last)

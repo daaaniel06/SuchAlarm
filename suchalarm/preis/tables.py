@@ -3,7 +3,7 @@
 from .. import store
 from .titles import clean_title
 
-TABLES = ('offers', 'shipping_baselines', 'idealo_references', 'hidden_titles')
+TABLES = ('offers', 'shipping_baselines', 'idealo_references', 'hidden_titles', 'negotiable_offers')
 
 
 def _create(conn):
@@ -51,4 +51,13 @@ def _forgotten_words(conn):
     )
 
 
-MIGRATIONS = (_create, _move, _clean_titles, _hidden_titles, _forgotten_words)
+def _negotiable_offers(conn):
+    """Known VB offers, removed with their offer; older snapshots never recorded this flag."""
+    conn.execute(
+        'CREATE TABLE IF NOT EXISTS preis.negotiable_offers '
+        '(search_id INTEGER, url TEXT NOT NULL, PRIMARY KEY(search_id,url), '
+        'FOREIGN KEY(search_id,url) REFERENCES offers(search_id,url) ON DELETE CASCADE)'
+    )
+
+
+MIGRATIONS = (_create, _move, _clean_titles, _hidden_titles, _forgotten_words, _negotiable_offers)

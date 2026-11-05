@@ -1,5 +1,6 @@
 import asyncio
 import json
+import subprocess
 import time
 import unittest
 from pathlib import Path
@@ -16,6 +17,49 @@ from suchalarm.wohnung import sources as flat_sources
 
 
 class BrowserExtractionTests(unittest.IsolatedAsyncioTestCase):
+    def test_idealo_shipping_uses_the_german_destination(self):
+        def detail(country, rate):
+            row = dict(shippingRate=dict(currency='EUR', value=rate))
+            if country:
+                row['shippingDestination'] = dict(addressCountry=country)
+            return row
+
+        cases = (
+            ([detail('AT', '0'), detail('DE', '4.99')], '4.99'),
+            ([detail('AT', '0'), detail('CH', '5')], None),
+            ([detail(None, '0'), detail('AT', '5')], None),
+            ([detail(None, '3.99')], '3.99'),
+            ([detail('AT', '0')], None),
+        )
+        products = [
+            {
+                '@type': 'Product',
+                'name': 'Spiel',
+                'offers': dict(
+                    price='30', priceCurrency='EUR', availability='https://schema.org/InStock', shippingDetails=details
+                ),
+            }
+            for details, _ in cases
+        ]
+        # This branch reads JSON-LD only: no layout or browser is needed to exercise the real extractor.
+        script = """
+            const extract = eval(process.argv[1]);
+            globalThis.location = {href: 'https://www.idealo.de/'};
+            const results = JSON.parse(process.argv[2]).map(product => {
+                globalThis.document = {
+                    querySelectorAll: selector => selector === 'script[type="application/ld+json"]'
+                        ? [{textContent: JSON.stringify(product)}] : [],
+                    querySelector: () => null,
+                };
+                return extract('idealo').structured[0].shippingAmount;
+            });
+            process.stdout.write(JSON.stringify(results));
+        """
+        result = subprocess.run(
+            ['node', '-e', script, EXTRACT, json.dumps(products)], check=True, capture_output=True, text=True
+        )
+        self.assertEqual(json.loads(result.stdout), [expected for _, expected in cases])
+
     async def test_ebay_extracts_the_whole_requested_page_including_its_cheapest_offer(self):
         page_size = int(parse_qs(urlparse(search_url('ebay', 'Spiel')).query)['_ipg'][0])
         self.assertEqual(page_size, 240)
@@ -56,7 +100,7 @@ class BrowserExtractionTests(unittest.IsolatedAsyncioTestCase):
                     )
                     data = await page.evaluate(EXTRACT, 'kleinanzeigen')
                     self.assertEqual(data['rows'][0]['shipping'], label)
-                    offer = parse_rows('kleinanzeigen', data['rows'], dict(query='Ecksofa'))[0]
+                    offer = parse_rows('kleinanzeigen', data['rows'], dict(query='Ecksofa', delivery='abholung'))[0]
                     self.assertEqual((offer.price, offer.shipping), (10000, expected))
             await browser.close()
 

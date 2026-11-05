@@ -47,7 +47,7 @@ Suchalarm vereint zwei Bereiche in einer App, umschaltbar oben in der Oberfläch
 - **Eine Suche, alle Portale:** Ort oder PLZ mit Umkreis, Höchstmiete warm, Mindestfläche und -zimmer, Einzugszeitraum.
 - **Störendes raus:** WBS, befristet, Tauschwohnung und WG-Zimmer ausblendbar, dazu eigene Ausschlusswörter.
 - **Duplikate erkannt:** dasselbe Inserat auf mehreren Portalen erscheint einmal, auch wenn nur das Foto gleich ist.
-- **Warmmiete im Blick:** angegebene Warmmiete aus der Detailseite; fehlt sie, schätzt Suchalarm sie aus der Kaltmiete. Immowelts eigene Schätzung zählt nicht.
+- **Warmmiete im Blick:** angegebene Warmmiete aus der Detailseite, oder Kaltmiete plus Nebenkosten plus Heizung, wenn alles genannt ist („in Nebenkosten enthalten“ zählt, „nicht enthalten“ nicht). Fehlt ein Teil, schätzt Suchalarm sie aus der Kaltmiete und zeigt sie als geschätzt. Immowelts eigene Schätzung zählt nicht.
 - **Detailblatt:** Fakten, Karte, Bewerbung mit Vorlage und Merkliste „Beworben“.
 
 ### Preise für Gebrauchtwaren

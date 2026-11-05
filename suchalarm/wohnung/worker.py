@@ -29,7 +29,6 @@ log = logging.getLogger('suchalarm')
 
 # The steps of the shared check loop (worker.check); see preis/worker.py.
 
-EMPTY_IS_SUSPICIOUS = True  # a portal that suddenly lists nothing usually changed its layout
 HITS = 'listings'  # key of the hit rows in /api/state
 MODEL = FlatSearch  # the request body of a flat search
 CHOICES = {'flat_radii': FLAT_RADII, 'traits': TRAITS}  # what the flat editor offers
@@ -52,6 +51,12 @@ def rests(search: store.Search, source: str) -> str | None:
 
 async def fetch(source: str, search: store.Search) -> tuple[list[Listing], PageCounts]:
     return await sources.fetch(source, search)
+
+
+def empty_is_suspicious(counts: PageCounts) -> bool:
+    """A portal that suddenly lists nothing usually changed its layout, unless it said so itself (its own count is
+    0) or its page held offers that only lie outside the search's place."""
+    return counts['listed'] == 0 and counts['unread'] is None
 
 
 def save(search: store.Search, source: str, listings: list[Listing], counts: PageCounts, observed: float) -> set[str]:

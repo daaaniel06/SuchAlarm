@@ -16,7 +16,7 @@ from suchalarm.preis.categories import CATEGORIES
 from suchalarm.preis.prices import Offer, eligible, select_offers, too_cheap
 from suchalarm.preis.queries import vehicle
 from suchalarm.preis.sources import parse_rows, place_of, search_url
-from suchalarm.preis.titles import title_fits, wanted_words
+from suchalarm.preis.titles import normalized, title_fits, wanted_words
 
 
 class CategoryTests(unittest.TestCase):
@@ -107,6 +107,30 @@ class CategoryTests(unittest.TestCase):
         self.assertTrue(
             title_fits('vinted', 'Mario Kart World Switch 2', dict(switch, filters={'platform': 'switch2'}))
         )
+
+    def test_compact_platform_labels_reject_other_platforms(self):
+        game = dict(query='Resident Evil Requiem', filters={'platform': 'ps5'})
+        for label in ('Switch2', 'XboxSeriesX', 'XboxOne'):
+            with self.subTest(label=label):
+                self.assertFalse(title_fits('ebay', f'Resident Evil Requiem {label}', game))
+        switch = dict(game, filters={'platform': 'switch'})
+        self.assertFalse(title_fits('vinted', 'Resident Evil Requiem Switch2', switch))
+        self.assertTrue(title_fits('vinted', 'Resident Evil Requiem PS5', game))
+        self.assertEqual(normalized('Xbox One Spiel'), 'xbox one spiel')  # the next word keeps its space
+
+    def test_shipping_search_drops_explicit_pickup_only_cards(self):
+        for source, url in (
+            ('ebay', 'https://www.ebay.de/itm/123'),
+            ('kleinanzeigen', 'https://www.kleinanzeigen.de/s-anzeige/sofa/123-88-3331'),
+        ):
+            row = dict(title='Ecksofa', url=url, price='100 €', shipping='Nur Abholung', text='')
+            with self.subTest(source=source):
+                self.assertEqual(parse_rows(source, [row], dict(self.sofa, delivery='versand')), [])
+                self.assertEqual(len(parse_rows(source, [row], self.sofa)), 1)
+                self.assertEqual(len(parse_rows(source, [row], dict(self.sofa, delivery='beides'))), 1)
+                self.assertEqual(
+                    len(parse_rows(source, [dict(row, shipping='')], dict(self.sofa, delivery='versand'))), 1
+                )
 
     def test_switch_2_at_ebay_requires_the_explicit_platform_even_for_exclusive_games(self):
         for query in ('Mario Kart World', 'Resident Evil 2'):

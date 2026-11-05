@@ -9,6 +9,7 @@ from .. import store
 from ..core import images
 from . import duplicates, sources
 from .domain import SOURCES, Listing, match, profile, warm_rent
+from .tables import DONE, FAILED, GONE, PENDING
 
 STALE = 86400  # a listing unseen this long is shown as "zuletzt gesehen" (rows.js); its twin leads instead
 
@@ -34,10 +35,13 @@ def offer(item, verdict, reasons):
 
 
 def mailable(item, verdict, detail_state):
-    """Matched, or unclear only because no detail page can tell more about the description."""
+    """Matched, or unclear with nothing left to learn: the detail page was read or given up, or the portal has
+    none. Never a listing the portal deleted."""
+    if detail_state == GONE:
+        return False
     if verdict == 'matched':
         return True
-    return verdict == 'unclear' and (item.source not in sources.DETAILS or detail_state == 'failed')
+    return verdict == 'unclear' and (item.source not in sources.DETAILS or detail_state in (DONE, FAILED))
 
 
 def listings(search, conn=None):
@@ -57,8 +61,10 @@ def listings(search, conn=None):
         separated = apart(search['id'], reader)
     result, now = [], time.time()
     for row in rows:
+        if row['detail_state'] == GONE:
+            continue  # deleted on the portal
         item = Listing(**json.loads(row['body']))
-        if row['detail_state'] == 'done':
+        if row['detail_state'] == DONE:
             item = item.with_detail(json.loads(row['detail']))
         verdict, reasons = match(item, wanted, middle)
         result.append(
@@ -151,7 +157,7 @@ def _detail_state(row, source, now):
     if source not in sources.DETAILS:
         return 'none'
     state = row['detail_state']
-    if state == 'pending' and row['asked_at'] < now - DETAIL_WINDOW:
+    if state == PENDING and row['asked_at'] < now - DETAIL_WINDOW:
         return 'available'  # too old for detail_step: asking again queues it anew
     return state or 'available'
 
@@ -160,4 +166,4 @@ def completed(row):
     """The listing of ROW, completed by its detail page once that is read. A page queued to be read again
     (another rent) no longer counts: until then the card does."""
     item = Listing(**json.loads(row['body']))
-    return item.with_detail(json.loads(row['detail'])) if row['state'] == 'done' else item
+    return item.with_detail(json.loads(row['detail'])) if row['state'] == DONE else item

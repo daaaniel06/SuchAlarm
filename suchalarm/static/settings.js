@@ -269,8 +269,11 @@ function mailChanged() {
   const mine = saving;
   mine.then(async () => {
     if (saving !== mine) return;
-    delete $('mail-form').dataset.saving;
+    // A poll sent before the save must not bring old recipients back: the form waits for the answer after it.
     await refresh();
+    if (saving !== mine) return;
+    delete $('mail-form').dataset.saving;
+    renderMailStatus();
   });
 }
 function addRecipient() {
