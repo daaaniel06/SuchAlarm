@@ -12,7 +12,7 @@ import uuid
 from contextlib import suppress
 from dataclasses import dataclass
 
-from . import mailer, scheduler, status, store
+from . import mailer, mailserver, scheduler, status, store
 from .core import cadence, images
 from .kinds import KINDS
 
@@ -96,7 +96,7 @@ OF_KIND = 'search_id IN (SELECT id FROM searches WHERE kind=?)'
 
 
 def _forget_outbox(conn, kind):
-    """Mails are off: what waits only counts as known, so switching them on later sends no flood."""
+    """Mails are off or unconfigured: pending hits count as known, so enabling later sends no flood."""
     conn.execute(
         'INSERT OR REPLACE INTO notifications SELECT search_id, url, price, created_at FROM outbox '
         f'WHERE batch IS NULL AND {OF_KIND}',
@@ -186,7 +186,10 @@ async def send_digest(now=None):
     """Per search kind one mail for everything pending, following its rhythm; never resent after an
     uncertain outcome."""
     now = time.time() if now is None else now
-    if not mailer.configured():
+    if not mailserver.configured():
+        with store.db() as conn:
+            for kind in KINDS:
+                _forget_outbox(conn, kind)
         return
     for kind in KINDS:
         await _send_kind(kind, now)

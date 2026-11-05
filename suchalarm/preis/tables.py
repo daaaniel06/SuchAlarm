@@ -1,7 +1,7 @@
 """The tables of product searches in DATA_DIR/preis.db (store.register). Each entry runs once; only ever append."""
 
 from .. import store
-from .domain import clean_title
+from .titles import clean_title
 
 TABLES = ('offers', 'shipping_baselines', 'idealo_references', 'hidden_titles')
 

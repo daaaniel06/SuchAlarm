@@ -6,33 +6,20 @@ then take_pending and explain for the mail, idle, queue_mails and cleanup for th
 
 import json
 import time
+from collections.abc import Collection, Mapping
+from sqlite3 import Connection
+from typing import Any
 
-from .. import status, store
+from .. import mailserver, status, store
 from ..core import images
+from ..shapes import MailEntry, MailSample, Row
 from . import delivery, learning, sources
 from . import mail as mail  # the kind's mail presentation (kinds.py)
-from .domain import (
-    BIKE_TYPES,
-    CATEGORIES,
-    FUELS,
-    GEARBOXES,
-    PICKUP_SOURCES,
-    PLATFORMS,
-    RADII,
-    Offer,
-    all_terms,
-    compared_price,
-    eligible,
-    free,
-    in_range,
-    search_fee,
-    title_fits,
-    too_cheap,
-    wanted_words,
-    with_shipping,
-)
-from .domain import SOURCES as SOURCES  # the kind's source labels (kinds.py)
+from .categories import BIKE_TYPES, CATEGORIES, FUELS, GEARBOXES, PICKUP_SOURCES, PLATFORMS, RADII
+from .categories import SOURCES as SOURCES
 from .models import SEARCH_FILTERS, Search
+from .prices import Offer, compared_price, eligible, free, in_range, search_fee, too_cheap, with_shipping
+from .titles import all_terms, title_fits, wanted_words
 
 FRESH_USED = 3 * 3600  # a shop comparison only uses second-hand results this recent
 SHIPPING_WAIT = 15 * 60  # a Vinted hit waits this long for its shipping lookup before it is mailed without
@@ -81,26 +68,28 @@ def judged(row, search):
 # Checking a search
 
 
-async def prepare(search):
-    """What hiding taught the search's category filters this check too (domain.excluded_words)."""
+async def prepare(search: store.Search) -> None:
+    """What hiding taught the search's category filters this check too (titles.taught_away)."""
     search['learned'] = learning.learned(search)
 
 
-def rests(search, source):
+def rests(search: store.Search, source: str) -> str | None:
     """Product providers never rest for a search."""
     return None
 
 
-async def fetch(source, search):
+async def fetch(source: str, search: store.Search) -> tuple[list[Offer], Row | None]:
     return await sources.fetch(source, search)
 
 
-def save(search, source, offers, reference, observed):
+def save(
+    search: store.Search, source: str, offers: list[Offer], reference: Row | None, observed: float
+) -> tuple[list[Offer], set[str]]:
     """Store a successful result; returns (offers, the starting point's URLs) for finish()."""
     return offers, save_result(search, source, offers, reference, observed)
 
 
-def finish(search, saved):
+def finish(search: store.Search, saved: list[tuple[list[Offer], set[str]]]) -> None:
     """After all sources: remember Vinted offers without shipping, queue what is new for the mail."""
     found = {offer.url: offer for offers, _ in saved for offer in offers}
     baseline = set().union(*(urls for _, urls in saved)) if saved else set()
@@ -156,9 +145,10 @@ def save_result(search, source, offers, reference, now):
 
 def enqueue(search, found, baseline):
     """New offers under the limit go to the outbox. The starting point, and anything found while mails
-    are off or the search is paused, only counts as known, so switching on later sends no flood."""
+    are off, no mailserver is configured or the search is paused, only counts as known,
+    so switching on later sends no flood."""
     mail = store.mail_settings()
-    mailing = search['active'] and mail['enabled'] and mail['recipients']
+    mailing = search['active'] and mail['enabled'] and mail['recipients'] and mailserver.configured()
     sid, now = search['id'], time.time()
     wanted = [offer for offer in found.values() if eligible(offer, search)]
     images.prioritize([offer.url for offer in wanted])
@@ -180,7 +170,7 @@ def enqueue(search, found, baseline):
 # Mail
 
 
-def take_pending(conn):
+def take_pending(conn: Connection) -> list[MailEntry]:
     """Outbox rows still worth a mail, as (search, offer, price), oldest first. Rows that are not
     (search gone or paused, offer gone, hidden, out of range, already reported) are deleted."""
     searches = {s['id']: s for s in store.read_searches(conn, 'preis')}
@@ -203,6 +193,7 @@ def take_pending(conn):
             search
             and search['active']
             and not row['hidden']
+            and price is not None  # unknown shipping that counts: no comparable price
             and in_range(price, search, free(row['price'], search))
             and title_fits(row['source'], row['title'], search)
             and not (row['reported'] is not None and price >= row['reported'])
@@ -228,7 +219,7 @@ def used_floor(conn, search, now):
     return min((p for p in prices if p is not None and p >= search.get('min_price', 0)), default=None)
 
 
-def explain(conn, entries, now):
+def explain(conn: Connection, entries: list[MailEntry], now: float) -> None:
     """A real shop offer cheaper than every current second-hand hit says so, with the saving."""
     for search, offer, price in entries:
         floor = used_floor(conn, search, now) if offer['source'] == 'idealo' else None
@@ -239,16 +230,16 @@ def explain(conn, entries, now):
 # Background work of the loop
 
 
-async def idle():
+async def idle() -> None:
     """One Vinted shipping lookup when no search is due."""
     await update_shipping()
 
 
-def queue_mails():
+def queue_mails() -> None:
     """Product offers are queued as soon as they are found (finish)."""
 
 
-def cleanup():
+def cleanup() -> int:
     """Nothing kept beyond the stored results."""
     return 0
 
@@ -303,7 +294,7 @@ async def update_shipping():
 # The API
 
 
-def reset(conn, search_id, old, payload):
+def reset(conn: Connection, search_id: int, old: Mapping[str, Any], payload: Search) -> None:
     """Drop what an edit makes invalid. Pausing a search or dropping a source keeps the remaining hits:
     a paused search is not checked again on its own, so wiping them would empty its list."""
     changed = any(old[name] != payload.comparable(name) for name in SEARCH_FILTERS)
@@ -324,7 +315,7 @@ def reset(conn, search_id, old, payload):
         conn.execute('DELETE FROM idealo_references WHERE search_id=?', (search_id,))
 
 
-def search_url(source, search):
+def search_url(source: str, search: store.Search) -> str | None:
     """The provider's result page of a search, for the settings; None while Kleinanzeigen lacks the location ID."""
     try:
         return sources.search_url(source, wanted_words(source, search), search)
@@ -332,12 +323,12 @@ def search_url(source, search):
         return None
 
 
-def extras(searches):
+def extras(searches: list[store.Search]) -> dict[str, Any]:
     """The words hiding taught each category, shown in the editor to take back."""
     return {'learned': learning.by_category(searches)}
 
 
-def hits(searches, hidden):
+def hits(searches: list[store.Search], hidden: Collection[tuple[int, str]]) -> list[Row]:
     """Stored offers of these searches without junk below a search's minimum price and without hidden ones.
     Each search gets its idealo new price as 'reference' (None without one)."""
     by_id = {s['id']: s for s in searches}
@@ -357,13 +348,13 @@ def hits(searches, hidden):
     return images.enrich(offers)
 
 
-def saved(rows, searches):
+def saved(rows: list[Row], searches: list[store.Search]) -> list[Row]:
     """The kind's watch-list snapshots as the page shows them, judged by their search like hits."""
     by_id = {s['id']: s for s in searches}
     return [judged(row, by_id.get(row['search_id'])) for row in rows]
 
 
-def bookmark(conn, search, url):
+def bookmark(conn: Connection, search: store.Search, url: str) -> bool:
     """Keep a snapshot on the watch list; False if the offer is gone."""
     return bool(
         conn.execute(
@@ -374,12 +365,12 @@ def bookmark(conn, search, url):
     )
 
 
-def samples(searches, limit):
+def samples(searches: list[store.Search], limit: int) -> list[MailSample]:
     """Recent offers that match their search, so a test mail shows the real layout."""
     by_id = {s['id']: s for s in searches}
     with store.db() as conn:
         rows = [dict(r) for r in conn.execute('SELECT * FROM offers ORDER BY last_seen DESC LIMIT 200')]
-    found = []
+    found: list[MailSample] = []
     for offer in rows:
         search = by_id.get(offer['search_id'])
         if search and in_range(compared(offer, search), search, free(offer['price'], search)):
@@ -389,6 +380,6 @@ def samples(searches, limit):
     return found
 
 
-def clear(conn):
+def clear(conn: Connection) -> int:
     """Forget every stored offer; the record of reported offers stays, so nothing is mailed twice."""
     return conn.execute('DELETE FROM offers').rowcount

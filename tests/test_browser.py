@@ -8,7 +8,7 @@ from urllib.parse import parse_qs, urlparse
 from playwright.async_api import async_playwright
 
 from suchalarm.app import CHOICES
-from suchalarm.preis.domain import SOURCES
+from suchalarm.preis.categories import SOURCES
 from suchalarm.preis.sources import EXTRACT, parse_rows, search_url
 from suchalarm.preis.worker import judged
 from suchalarm.wohnung import portals
@@ -118,7 +118,7 @@ class BrowserExtractionTests(unittest.IsolatedAsyncioTestCase):
             await page.goto('https://www.vinted.de/items/12345')
             data = await page.evaluate(EXTRACT, 'vinted')
             self.assertTrue(data['vintedDetail'])
-            from suchalarm.preis.domain import shipping
+            from suchalarm.preis.money import shipping
 
             self.assertEqual(shipping(data['vintedShipping'], allow_from=True), 0)
             await page.set_content(

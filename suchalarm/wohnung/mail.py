@@ -12,7 +12,7 @@ WORDS = {
     'many': 'neue Wohnungen',
     'tagline': 'passend zu deiner Wohnungssuche',
     'button': 'Inserat öffnen ↗',
-    'footer': 'Miete, Lage und Verfügbarkeit im Inserat prüfen; eine geschätzte Warmmiete ist Kaltmiete plus etwa 3 € je m².',
+    'footer': 'Miete, Lage und Verfügbarkeit im Inserat prüfen; eine geschätzte Warmmiete ist Kaltmiete plus etwa 3 € je m², ohne bekannte Fläche plus 25 %.',
     'footer_plain': 'Miete, Lage und Verfügbarkeit im Inserat prüfen.',
 }
 

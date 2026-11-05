@@ -9,6 +9,8 @@ import re
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 
+from ..core.text import excluded_word
+
 SOURCES = {
     'immoscout24': 'ImmoScout24',
     'kleinanzeigen-wohnung': 'Kleinanzeigen',
@@ -408,49 +410,106 @@ def excluded_district(place, districts):
     return next((name for name in districts if re.search(rf'(?<!\w){re.escape(name)}(?!\w)', place, re.I)), None)
 
 
+def _exclude_wanted(listing, profile, centre):
+    return ['Gesuch, kein Angebot'] if wanted_ad(listing) else None
+
+
+def _exclude_home(listing, profile, centre):
+    return [f'Nicht in {home_area(profile)}'] if outside_home(listing, profile) else None
+
+
+def _exclude_radius(listing, profile, centre):
+    if (km := beyond_radius(listing, profile, centre)) is not None:
+        return [f'{km:.1f} km von der Mitte (bis {profile["radius"]} km)'.replace('.', ',')]
+    return None
+
+
+def _exclude_district(listing, profile, centre):
+    if district := excluded_district(listing.place, profile.get('excludedDistricts', [])):
+        return [f'Ortsteil „{district}“ ausgeschlossen']
+    return None
+
+
+def _exclude_traits(listing, profile, centre):
+    excluded = set(profile['exclusions']) & set(listing.traits)
+    return sorted(excluded) if excluded else None
+
+
+def _exclude_words(listing, profile, centre):
+    word = excluded_word(f'{listing.title}\n{listing.text}', profile.get('excludeWords', []))
+    return [f'Enthält „{word}“'] if word else None
+
+
+def _exclude_late_move(listing, profile, centre):
+    available = listing.available_from
+    if available and profile.get('moveInBy') and available > profile['moveInBy']:
+        return [f'Frei erst ab {_day(available)}']
+    return None
+
+
+def _exclude_early_move(listing, profile, centre):
+    available = listing.available_from
+    if available and profile.get('moveInFrom') and available < profile['moveInFrom']:
+        return [f'Schon ab {_day(available)} frei']
+    return None
+
+
+def _exclude_rent(listing, profile, centre):
+    rent = warm_rent(listing)
+    if rent is not None and rent > profile['maxRent']:
+        return ['Warmmiete zu hoch' if listing.rent is not None else 'Warmmiete (geschätzt) zu hoch']
+    return None
+
+
+def _exclude_area(listing, profile, centre):
+    return ['Fläche zu klein'] if listing.area is not None and listing.area < profile['minArea'] else None
+
+
+def _exclude_rooms(listing, profile, centre):
+    return ['Zu wenige Zimmer'] if listing.rooms is not None and listing.rooms < profile['minRooms'] else None
+
+
+# First exclusion wins, including when several rules apply to the same listing.
+EXCLUSION_RULES = (
+    _exclude_wanted,
+    _exclude_home,
+    _exclude_radius,
+    _exclude_district,
+    _exclude_traits,
+    _exclude_words,
+    _exclude_late_move,
+    _exclude_early_move,
+    _exclude_rent,
+    _exclude_area,
+    _exclude_rooms,
+)
+
+
+def _missing_facts(listing, profile):
+    missing = []
+    if warm_rent(listing) is None:
+        missing.append('Miete fehlt')
+    for value, minimum, label in (
+        (listing.area, profile['minArea'], 'Fläche'),
+        (listing.rooms, profile['minRooms'], 'Zimmer'),
+    ):
+        if value is None and minimum:  # without a minimum a missing value rules nothing out
+            missing.append(label + ' fehlt')
+    if (profile['exclusions'] or profile.get('excludeWords')) and not listing.exclusions_known:
+        missing.append('Beschreibung noch nicht geprüft')
+    return missing
+
+
 def match(listing, profile, centre=None):
     """("matched" | "unclear" | "excluded", reasons) of one listing for one search.
 
     The portal search applies place, radius and its own filters; the radius is checked again here for
     portals that ignore it. CENTRE is the searched place's centre, None if not looked up yet.
     """
-    if wanted_ad(listing):
-        return 'excluded', ['Gesuch, kein Angebot']
-    if outside_home(listing, profile):
-        return 'excluded', [f'Nicht in {home_area(profile)}']
-    if (km := beyond_radius(listing, profile, centre)) is not None:
-        return 'excluded', [f'{km:.1f} km von der Mitte (bis {profile["radius"]} km)'.replace('.', ',')]
-    if district := excluded_district(listing.place, profile.get('excludedDistricts', [])):
-        return 'excluded', [f'Ortsteil „{district}“ ausgeschlossen']
-    excluded = set(profile['exclusions']) & set(listing.traits)
-    if excluded:
-        return 'excluded', sorted(excluded)
-    text = f'{listing.title}\n{listing.text}'.casefold()
-    word = next((word for word in profile.get('excludeWords', []) if word.casefold() in text), None)
-    if word:
-        return 'excluded', [f'Enthält „{word}“']
-    available = listing.available_from
-    if available and profile.get('moveInBy') and available > profile['moveInBy']:
-        return 'excluded', [f'Frei erst ab {_day(available)}']
-    if available and profile.get('moveInFrom') and available < profile['moveInFrom']:
-        return 'excluded', [f'Schon ab {_day(available)} frei']
-    missing = []
-    rent = warm_rent(listing)
-    if rent is not None and rent > profile['maxRent']:
-        return 'excluded', ['Warmmiete zu hoch' if listing.rent is not None else 'Warmmiete (geschätzt) zu hoch']
-    if rent is None:
-        missing.append('Miete fehlt')
-    for value, minimum, label, reason in (
-        (listing.area, profile['minArea'], 'Fläche', 'Fläche zu klein'),
-        (listing.rooms, profile['minRooms'], 'Zimmer', 'Zu wenige Zimmer'),
-    ):
-        if value is None:
-            if minimum:  # without a minimum a missing value rules nothing out
-                missing.append(label + ' fehlt')
-        elif value < minimum:
-            return 'excluded', [reason]
-    if (profile['exclusions'] or profile.get('excludeWords')) and not listing.exclusions_known:
-        missing.append('Beschreibung noch nicht geprüft')
+    for rule in EXCLUSION_RULES:
+        if (reasons := rule(listing, profile, centre)) is not None:
+            return 'excluded', reasons
+    missing = _missing_facts(listing, profile)
     return ('unclear', missing) if missing else ('matched', ['Alle Filter erfüllt'])
 
 

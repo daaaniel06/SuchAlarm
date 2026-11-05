@@ -1,7 +1,7 @@
 // Small shared pieces of the page: element lookup, icons, links, source names, new-since-last-visit and
 // list pages. Read-only use of the app state (app.js).
 
-import { DEFAULT_KIND, HITS, escapeHtml, flatPasses, isFresh, kindOf, raw } from './logic.js';
+import { DEFAULT_KIND, HITS, escapeHtml, flatPasses, html, isFresh, kindOf, raw } from './logic.js';
 import { render, state } from './page.js';
 
 export const $ = id => document.getElementById(id);
@@ -89,14 +89,32 @@ export function keepDrawn(node) {
 // Long lists come in pages of 30.
 const PAGE_SIZE = 30;
 export const pages = { offers: 0, saved: 0 }; // the open page of each list
-const chevron = '<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>';
+const chevron = raw('<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>');
 export function paged(key, list) {
   const count = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
   const page = (pages[key] = Math.min(pages[key], count - 1)); // the list may shrink under an open page
   setHtml(
     $(`${key}-pager`),
     count > 1
-      ? `<button class="round-button" data-page="${key}:-1" aria-label="Vorherige Seite" ${page === 0 ? 'disabled' : ''}>${chevron}</button><span>${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, list.length)} von ${list.length}</span><button class="round-button next" data-page="${key}:1" aria-label="Nächste Seite" ${page === count - 1 ? 'disabled' : ''}>${chevron}</button>`
+      ? html`
+          <button
+            class="round-button"
+            data-page="${key}:-1"
+            aria-label="Vorherige Seite"
+            ${page === 0 ? 'disabled' : ''}
+          >
+            ${chevron}
+          </button>
+          <span>${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, list.length)} von ${list.length}</span>
+          <button
+            class="round-button next"
+            data-page="${key}:1"
+            aria-label="Nächste Seite"
+            ${page === count - 1 ? 'disabled' : ''}
+          >
+            ${chevron}
+          </button>
+        `
       : '',
   );
   return list.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);

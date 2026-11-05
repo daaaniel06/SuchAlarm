@@ -19,7 +19,7 @@ from .domain import WHOLE_STOCK, Listing, cheaper, could_match, other_rent, prof
 log = logging.getLogger('suchalarm')
 
 
-FULL_PAGE = 15  # a portal page that held at least this many offers may have more behind it
+FULL_PAGE = 15  # fallback for portals without a known page size
 
 MAX_PAGE = 3
 
@@ -48,7 +48,7 @@ def save_result(search, source, listings, listed, now, unread=None):
             _drop_let(conn, sid, source, listings)
         source_ok(conn, sid, source, now, len(listings), unread)
         if stock or not reading_stock:  # the reading of the stock goes on behind a regular check
-            _queue_next(conn, sid, source, 1, listings, listed, unseen, stock)
+            _queue_next(conn, sid, source, 1, listings, listed, unseen, stock, unread)
     return set() if stock else unseen
 
 
@@ -63,7 +63,7 @@ def save_more(search, job, listings, listed, now, unread=None):
         more_unread(conn, sid, source, unread)
         stock = bool(job['stock'])
         unseen = _save_page(conn, search, source, listings, now, stock)
-        _queue_next(conn, sid, source, job['page'], listings, listed, unseen, stock)
+        _queue_next(conn, sid, source, job['page'], listings, listed, unseen, stock, unread)
     return set() if stock else unseen
 
 
@@ -161,12 +161,12 @@ def _mark_cheaper(conn, sid, urls, now):
     conn.executemany('DELETE FROM start_offers WHERE search_id=? AND url=?', [(sid, url) for url in urls])
 
 
-def _queue_next(conn, sid, source, page, listings, listed, unseen, stock):
+def _queue_next(conn, sid, source, page, listings, listed, unseen, stock, unread):
     """Queue the page after PAGE, or end the reading. Only a page that was full (LISTED offers before the
-    search's own place filter) can have one behind it. While a search takes in its STOCK, reading goes on as
-    long as pages bring flats not seen yet (a page of only other places' offers says nothing about the end);
+    search's own place filter, plus UNREAD offers) can have one behind it. While a search takes in its STOCK,
+    reading goes on as long as pages bring flats not seen yet (a page of only other places' offers says nothing about the end);
     otherwise only after a page of nothing but new flats, which may have pushed more down."""
-    full = source in sources.PAGED and listed >= FULL_PAGE
+    full = source in sources.PAGED and listed + (unread or 0) >= sources.PAGE_SIZES.get(source, FULL_PAGE)
     if stock:
         more, last = full and (bool(unseen) or not listings), STOCK_PAGES
     else:

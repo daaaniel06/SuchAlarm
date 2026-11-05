@@ -18,11 +18,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import actions, mailer, maillinks, scheduler, status, store, worker
+from . import actions, mailer, maillinks, mailserver, scheduler, status, store, worker
 from .core import cadence, images
 from .kinds import DEFAULT as DEFAULT_KIND
 from .kinds import KINDS, ROUTERS
 from .models import AnySearch, Applied, Bookmark, Hide, MailServer, MailSettings, Preferences, Template
+from .shapes import MailSample
 
 STATIC = Path(__file__).with_name('static')
 # What the search editors offer, from every kind.
@@ -156,7 +157,7 @@ def _area_mail(settings):
 
 def _mail_server():
     """What the page shows of the mail server; whether a password is saved, never the password."""
-    current = mailer.server()
+    current = mailserver.server()
     return {
         'sender': current.address,
         'host': current.host,
@@ -193,7 +194,7 @@ async def state():
     extras = {key: value for name, kind in KINDS.items() for key, value in kind.extras(own[name]).items()}
     mail = {
         'recipients': store.mail_settings(settings)['recipients'],
-        'configured': mailer.configured(),
+        'configured': mailserver.configured(),
         'server': _mail_server(),
         'error': settings.get('mail_error'),
         'pending': pending,
@@ -380,7 +381,7 @@ async def mail_settings(payload: MailSettings):
 
 @app.put('/api/mail/server')
 async def mail_server(payload: MailServer):
-    if mailer.server().fixed:
+    if mailserver.server().fixed:
         raise HTTPException(409, 'Der Mailserver ist in der compose.yml festgelegt.')
     saved = store.mail_server()
     # The saved password only ever goes to the server and mailbox it was entered for; otherwise anyone
@@ -396,7 +397,7 @@ async def mail_server(payload: MailServer):
 
 def _sample_entries(limit=2):
     """Recent offers that match their search, so a test mail shows the real layout."""
-    samples: list[tuple[dict, dict]] = []
+    samples: list[MailSample] = []
     for name, kind in KINDS.items():
         if len(samples) < limit:
             samples += kind.samples(store.searches(name), limit - len(samples))

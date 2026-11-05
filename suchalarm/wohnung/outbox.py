@@ -1,8 +1,10 @@
 """Mail queue: new listings go out once their detail page is read (or cannot be)."""
 
 import time
+from sqlite3 import Connection
 
-from .. import store
+from .. import mailserver, store
+from ..shapes import MailEntry
 from . import sources
 from .catalog import DETAIL_WINDOW, cents, completed, listings, mailable, offer, twins_by_url
 from .domain import match, profile, warm_rent
@@ -26,13 +28,13 @@ def _wanted(searches):
     return {sid: (profile(search), sources.centre(search)) for sid, search in searches.items()}
 
 
-def queue_mails(now=None):
+def queue_mails(now: float | None = None) -> None:
     """New listings whose check is complete go to the outbox if they fit, and so do known ones whose rent fell
-    below what was last mailed. While mails are off or the search is paused they only count as known, so
-    switching on later sends no flood."""
+    below what was last mailed. While mails are off, no mailserver is configured or the search is paused,
+    they only count as known, so switching on later sends no flood."""
     now = time.time() if now is None else now
     mail = store.mail_settings(kind='wohnung')
-    mailing = mail['enabled'] and mail['recipients']
+    mailing = mail['enabled'] and mail['recipients'] and mailserver.configured()
     searches = {s['id']: s for s in store.searches('wohnung')}
     wanted = _wanted(searches)
     followers = {
@@ -61,7 +63,7 @@ def queue_mails(now=None):
                 store.remember_reported(conn, search['id'], item.url, price, now)
 
 
-def take_pending(conn):
+def take_pending(conn: Connection) -> list[MailEntry]:
     """Outbox rows of flat searches still worth a mail, as (search, offer, price), oldest first.
     Rows that are not (search gone or paused, listing gone, hidden, no longer fitting, another portal's copy of
     a flat mailed through its fitting listing) are deleted."""

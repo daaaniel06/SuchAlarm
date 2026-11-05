@@ -5,6 +5,7 @@ import time
 import unittest
 from dataclasses import replace
 from types import SimpleNamespace
+from typing import ClassVar
 from unittest.mock import AsyncMock, patch
 
 from invisible_playwright._pw.async_api import Error as PlaywrightError
@@ -13,7 +14,9 @@ from suchalarm import mailer, store
 from suchalarm.core import browser, cadence
 from suchalarm.preis import delivery, sources
 from suchalarm.preis import worker as products
-from suchalarm.preis.domain import HOSTS, Offer, eligible, select_offers, shipping
+from suchalarm.preis.categories import HOSTS
+from suchalarm.preis.money import shipping
+from suchalarm.preis.prices import Offer, eligible, select_offers
 from suchalarm.preis.sources import load_page, parse_rows, row_shipping
 
 
@@ -21,7 +24,7 @@ class SourceLoadingTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         # Request budgets and the page cache live in DATA_DIR; every test gets its own.
         self.tmp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {'DATA_DIR': self.tmp.name})
+        self.env = patch.dict(os.environ, {'DATA_DIR': self.tmp.name, **getattr(self, 'MAIL_ENV', {})})
         self.env.start()
 
     def tearDown(self):
@@ -507,6 +510,8 @@ class RouteGuardTests(unittest.IsolatedAsyncioTestCase):
 
 
 class DeliveryQueueTests(unittest.IsolatedAsyncioTestCase):
+    MAIL_ENV: ClassVar[dict[str, str]] = {'SMTP_HOST': 'smtp.example', 'SMTP_FROM': 'a@example.com'}
+
     setUp = SourceLoadingTests.setUp
     tearDown = SourceLoadingTests.tearDown
 

@@ -8,7 +8,8 @@ from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
 from suchalarm.core import cadence
-from suchalarm.preis.domain import SOURCES, Offer
+from suchalarm.preis.categories import SOURCES
+from suchalarm.preis.prices import Offer
 from suchalarm.wohnung.domain import SOURCES as FLAT_SOURCES
 
 

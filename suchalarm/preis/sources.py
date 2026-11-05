@@ -7,23 +7,11 @@ from urllib.parse import quote, urlencode
 from ..core import browser, cadence, images
 from ..core.browser import EMPTY, Unreadable, check_response
 from . import delivery
-from .domain import (
-    HOSTS,
-    Offer,
-    around,
-    canonical,
-    clean_title,
-    kleinanzeigen_attributes,
-    money,
-    phrases,
-    platform_ids,
-    portal_price_bounds,
-    section,
-    shipping,
-    title_fits,
-    vehicle_fits,
-    wanted_words,
-)
+from .categories import HOSTS
+from .money import money, shipping
+from .prices import Offer, portal_price_bounds
+from .queries import around, canonical, kleinanzeigen_attributes, section, vehicle_fits
+from .titles import clean_title, phrases, platform_ids, title_fits, wanted_words
 
 DEFAULT_CARD_LIMIT = 100
 PAGE_SIZES = {'ebay': 240}
@@ -33,63 +21,82 @@ EXTRACT = f'source => ({EXTRACT_SCRIPT})(source, {json.dumps(PAGE_SIZES)}[source
 
 
 def search_url(source, query, search=None):
-    search = search or {}
+    return LISTS.get(source, idealo_url)(query, search or {})
+
+
+def euros(cents):
+    return f'{cents // 100}.{cents % 100:02d}'
+
+
+def ebay_url(query, search):
+    source = 'ebay'
     minimum, maximum = portal_price_bounds(source, search)
     category, place = section(source, search), around(source, search)
+    # Best Match keeps the searched game on page one; price order fills it with
+    # cheap unrelated titles. The app sorts matching offers by price itself.
+    params = {
+        '_nkw': query,
+        '_ipg': str(PAGE_SIZES['ebay']),
+        'LH_BIN': '1',
+        '_sop': '12',
+        'LH_ItemCondition': '2750|3000|4000|5000|6000',
+        'LH_LocatedIn': '1',
+        '_salic': '77',
+    }
+    if category:
+        params['_sacat'] = category
+    if platforms := platform_ids(source, search):
+        # eBay's own filter links encode the value twice ("Sony%2520PlayStation%25205").
+        params['Plattform'] = quote('|'.join(platforms), safe='')
+    if place:
+        # Around a postcode instead of all of Germany; the cards then say "… km von <PLZ>".
+        del params['LH_LocatedIn'], params['_salic']
+        params.update({'LH_PrefLoc': '99', '_stpos': place[0], '_sadis': str(place[1]), '_fspt': '1'})
+    if minimum:
+        params['_udlo'] = euros(minimum)
+    if maximum is not None:
+        params['_udhi'] = euros(maximum)
+    return 'https://www.ebay.de/sch/i.html?' + urlencode(params)
 
-    def euros(cents):
-        return f'{cents // 100}.{cents % 100:02d}'
 
-    if source == 'ebay':
-        # Best Match keeps the searched game on page one; price order fills it with
-        # cheap unrelated titles. The app sorts matching offers by price itself.
-        params = {
-            '_nkw': query,
-            '_ipg': str(PAGE_SIZES['ebay']),
-            'LH_BIN': '1',
-            '_sop': '12',
-            'LH_ItemCondition': '2750|3000|4000|5000|6000',
-            'LH_LocatedIn': '1',
-            '_salic': '77',
-        }
-        if category:
-            params['_sacat'] = category
-        if platforms := platform_ids(source, search):
-            # eBay's own filter links encode the value twice ("Sony%2520PlayStation%25205").
-            params['Plattform'] = quote('|'.join(platforms), safe='')
-        if place:
-            # Around a postcode instead of all of Germany; the cards then say "… km von <PLZ>".
-            del params['LH_LocatedIn'], params['_salic']
-            params.update({'LH_PrefLoc': '99', '_stpos': place[0], '_sadis': str(place[1]), '_fspt': '1'})
-        if minimum:
-            params['_udlo'] = euros(minimum)
-        if maximum is not None:
-            params['_udhi'] = euros(maximum)
-        return 'https://www.ebay.de/sch/i.html?' + urlencode(params)
-    if source == 'kleinanzeigen':
-        price = (
-            f'preis:{minimum // 100 if minimum else ""}:{maximum // 100 if maximum is not None else ""}/'
-            if minimum or maximum is not None
-            else ''
-        )
-        slug = quote(query.replace(' ', '-'), safe='')
-        # Newest first: checked every 15 minutes, every new offer is on page one at least once.
-        return f'https://www.kleinanzeigen.de/s-{price}{slug}/k0{kleinanzeigen_code(category, place, search)}?sortingField=SORTING_DATE'
-    if source == 'vinted':
-        # Native relevance prevents cheap unrelated games from filling the first page.
-        # The app sorts the matching offers by item/total price after extraction.
-        params = {'search_text': query, 'currency': 'EUR'}
-        if category:
-            params['catalog[]'] = category
-        if minimum:
-            params['price_from'] = euros(minimum)
-        if maximum is not None:
-            params['price_to'] = euros(maximum)
-        platforms = platform_ids(source, search)
-        if platforms:
-            params['video_game_platform_ids[]'] = platforms
-        return 'https://www.vinted.de/catalog?' + urlencode(params, doseq=True)
+def kleinanzeigen_url(query, search):
+    source = 'kleinanzeigen'
+    minimum, maximum = portal_price_bounds(source, search)
+    category, place = section(source, search), around(source, search)
+    price = (
+        f'preis:{minimum // 100 if minimum else ""}:{maximum // 100 if maximum is not None else ""}/'
+        if minimum or maximum is not None
+        else ''
+    )
+    slug = quote(query.replace(' ', '-'), safe='')
+    # Newest first: checked every 15 minutes, every new offer is on page one at least once.
+    return f'https://www.kleinanzeigen.de/s-{price}{slug}/k0{kleinanzeigen_code(category, place, search)}?sortingField=SORTING_DATE'
+
+
+def vinted_url(query, search):
+    source = 'vinted'
+    minimum, maximum = portal_price_bounds(source, search)
+    category = section(source, search)
+    # Native relevance prevents cheap unrelated games from filling the first page.
+    # The app sorts the matching offers by item/total price after extraction.
+    params = {'search_text': query, 'currency': 'EUR'}
+    if category:
+        params['catalog[]'] = category
+    if minimum:
+        params['price_from'] = euros(minimum)
+    if maximum is not None:
+        params['price_to'] = euros(maximum)
+    platforms = platform_ids(source, search)
+    if platforms:
+        params['video_game_platform_ids[]'] = platforms
+    return 'https://www.vinted.de/catalog?' + urlencode(params, doseq=True)
+
+
+def idealo_url(query, search):
     return 'https://www.idealo.de/preisvergleich/MainSearchProductCategory.html?' + urlencode({'q': query})
+
+
+LISTS = {'ebay': ebay_url, 'kleinanzeigen': kleinanzeigen_url, 'vinted': vinted_url, 'idealo': idealo_url}
 
 
 def kleinanzeigen_code(category, place, search):

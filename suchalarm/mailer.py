@@ -6,18 +6,17 @@ cache or the provider drops them; an offer without a cached picture simply has n
 
 import io
 import logging
-import os
 import smtplib
 import ssl
-from dataclasses import dataclass
 from email.message import EmailMessage
-from email.utils import formataddr, make_msgid, parseaddr
+from email.utils import make_msgid
 from html import escape
 from pathlib import Path
 
 from PIL import Image
 
-from . import kinds, mailhtml, maillinks, store
+from . import kinds, mailhtml, maillinks
+from .mailserver import configured, server
 
 log = logging.getLogger('suchalarm')
 
@@ -28,57 +27,6 @@ class DeliveryError(Exception):
     def __init__(self, message, maybe_sent):
         super().__init__(message)
         self.maybe_sent = maybe_sent
-
-
-@dataclass(frozen=True)
-class Server:
-    """Where mails go out: from SMTP_* in compose.yml, which wins, or else from the settings page."""
-
-    host: str
-    port: int
-    security: str
-    user: str
-    password: str
-    sender: str  # the From header
-    fixed: bool  # set in compose.yml; the page shows it but cannot change it
-
-    @property
-    def address(self):
-        return parseaddr(self.sender)[1]
-
-
-def security_for(port):
-    """Port 465 speaks TLS from the start; every other port upgrades with STARTTLS."""
-    return 'ssl' if port == 465 else 'starttls'
-
-
-def server():
-    env = os.environ
-    if env.get('SMTP_HOST'):
-        return Server(
-            host=env['SMTP_HOST'],
-            port=int(env.get('SMTP_PORT', '587')),
-            security=env.get('SMTP_SECURITY', 'starttls'),
-            user=env.get('SMTP_USER', ''),
-            password=env.get('SMTP_PASSWORD', ''),
-            sender=env.get('SMTP_FROM', ''),
-            fixed=True,
-        )
-    saved = store.mail_server()
-    return Server(
-        host=saved['host'],
-        port=saved['port'],
-        security=security_for(saved['port']),
-        user=saved['sender'],  # the mailbox logs in with its own address
-        password=saved['password'],
-        sender=formataddr(('Suchalarm', saved['sender'])) if saved['sender'] else '',
-        fixed=False,
-    )
-
-
-def configured(current=None):
-    current = current or server()
-    return bool(current.host and current.sender)
 
 
 UNREACHABLE = 'Mailserver nicht erreichbar – Host und Port prüfen.'
