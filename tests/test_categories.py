@@ -221,6 +221,22 @@ class CategoryTests(unittest.TestCase):
         # Other compounds are only excluded when explicitly included in the search's words.
         self.assertTrue(title_fits('ebay', 'Spiel Downloadcode', {'query': 'Spiel', 'excluded': 'Code'}))
 
+    def test_electronics_drop_games_video_games_keep_them(self):
+        def search(category, query):
+            return dict(query=query, category=category, excluded=CATEGORIES[category]['excluded'])
+
+        console = search('elektronik', 'Xbox Series X')
+        for title in ('Xbox Series X 1TB', 'Xbox Series X Konsole ohne Spiele', 'Xbox Series X Spielekonsole'):
+            with self.subTest(kept=title):
+                self.assertTrue(title_fits('ebay', title, console))
+        for title in ('Forza Horizon 5 Spiel Xbox Series X', 'Xbox Series X Games Paket', 'Halo Xbox Series X USK 16'):
+            with self.subTest(dropped=title):
+                self.assertFalse(title_fits('ebay', title, console))
+        # Not recognised: a title naming only the game and the platform reads like a console.
+        self.assertTrue(title_fits('ebay', 'Elden Ring Xbox Series X', console))
+        self.assertTrue(title_fits('ebay', 'Elden Ring Spiel Xbox Series X', search('videospiele', 'Elden Ring')))
+        self.assertTrue(title_fits('ebay', 'Regal für Spiele', search('moebel', 'Regal')))
+
     def test_old_searches_keep_their_cache_key(self):
         old = dict(query='Spiel PS5', max_price=3500, include_shipping=True, excluded='')
         new = dict(old, category='sonstiges', delivery='versand', plz='', radius=0, negotiable=False, filters={})

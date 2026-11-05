@@ -136,7 +136,8 @@ CATEGORIES: dict[str, dict[str, Any]] = {
         hint='Handy, Laptop, Kopfhörer',
         delivery='versand',
         sources=['ebay', 'kleinanzeigen', 'vinted', 'idealo'],
-        excluded='defekt, Bastler',
+        # Whoever looks for a console wants no games; titles naming only the game ("Elden Ring Xbox Series X") slip through.
+        excluded='defekt, Bastler, Spiel, Spiele, Videospiel, Videospiele, Games, USK, PEGI',
         negotiable=False,
         free=False,
         radius=0,
