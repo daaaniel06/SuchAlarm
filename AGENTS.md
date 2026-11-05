@@ -11,6 +11,6 @@
 - Gesperrte Quellen als gestört anzeigen, niemals als erfolgreiche Null-Treffer-Suche.
 - Keine Käufe oder Nachrichten an Verkäufer.
 - Tests: .venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v, Frontend: npm test. Browser-Test (Extraktions-JS) benötigt Playwright Chromium aus requirements-dev.txt; die App selbst nutzt invisible_playwright.
-- Vor jedem Commit: ./scripts/check.sh (--fix formatiert vorher): ruff, mypy, prettier, eslint, alle Tests. Der Deploy-Test prüft ruff und mypy.
+- Vor jedem Commit: ./scripts/check.sh (--fix formatiert vorher): ruff, mypy, prettier, eslint, alle Tests.
 - Frontend sind ES-Module ohne Build: reine Logik in suchalarm/static/logic.js (Tests in tests/logic.test.js), geteilter Zustand, Serveraufrufe und render() in page.js (Setter statt Zuweisung), Rendern und Klicks in app.js, das nur importiert und von niemandem importiert wird, je Bereich ein Modul (hits, rows, swipe, searches, settings, editor, flat-editor, sheet für Detailblatt und Bewerbung, steps für den Quellenstatus), Kleinteile in ui.js. Eine Variable ändert nur ihr eigenes Modul (ESLint no-import-assign); exportiert wird nur, was ein anderes Modul importiert.
 - Abhängigkeiten in requirements.in ändern, dann pip-compile; requirements.txt nie von Hand.
