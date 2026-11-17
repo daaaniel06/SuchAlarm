@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs, urlsplit
 
 from fastapi.testclient import TestClient
-from tests.helpers import TempDataTest
 
 from suchalarm import store, worker
 from suchalarm.app import app
@@ -18,6 +17,7 @@ from suchalarm.preis.prices import Offer, eligible, select_offers, too_cheap
 from suchalarm.preis.queries import vehicle
 from suchalarm.preis.sources import parse_rows, place_of, search_url
 from suchalarm.preis.titles import normalized, title_fits, wanted_words
+from tests.helpers import TempDataTest
 
 
 class CategoryTests(unittest.TestCase):

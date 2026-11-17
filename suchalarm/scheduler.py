@@ -143,7 +143,7 @@ def _candidate(key, source, consumers, job, view):
     manual, statuses, now = view.manual, view.statuses, view.now
     row = cadence.query_state(source, consumers[0])
     clicked = [s for s in consumers if (s['id'], source) in manual]
-    fresh_cache = bool(row and row['state'] == 'ok' and row['next_at'] > now)
+    fresh_cache = bool(row and row['state'] == cadence.OK and row['next_at'] > now)
     blocked = cadence.blocked_until(source)
     manual_at = view.manual_runs.get(key, 0) if clicked else 0
 
@@ -172,7 +172,7 @@ def _candidate(key, source, consumers, job, view):
     if clicked and blocked and row and row['next_at'] > now:
         return result(max(now, job['not_before']), PRIORITY_FROM_CACHE, clicked)
     ready = max(cadence.query_due(source, row, now), cadence.ready_at(source, now=now), job['not_before'])
-    priority = PRIORITY_CONTINUING if row and row['state'] == 'continuing' else PRIORITY_DUE
+    priority = PRIORITY_CONTINUING if row and row['state'] == cadence.CONTINUING else PRIORITY_DUE
     return result(ready, priority, consumers)
 
 

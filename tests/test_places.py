@@ -2,11 +2,10 @@
 
 from unittest.mock import AsyncMock, patch
 
-from tests.helpers import AsyncTempDataTest
-
 from suchalarm.core import cadence
 from suchalarm.wohnung import sources
 from suchalarm.wohnung.domain import profile
+from tests.helpers import AsyncTempDataTest
 
 
 def flat_search(query='Darmstadt', **filters):

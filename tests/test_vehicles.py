@@ -7,13 +7,13 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
 from fastapi.testclient import TestClient
-from tests.helpers import TempDataTest
 
 from suchalarm.app import app
 from suchalarm.core import cadence
 from suchalarm.preis.queries import query_text
 from suchalarm.preis.sources import parse_rows, search_url
 from suchalarm.preis.titles import title_fits
+from tests.helpers import TempDataTest
 
 
 class VehicleTests(unittest.TestCase):

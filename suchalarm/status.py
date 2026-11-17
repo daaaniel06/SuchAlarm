@@ -138,7 +138,7 @@ def deferred(search, source, now):
         source_error(search, source, now, f'{reason} Pause bis {clock(until)}.', _shown_failures(search, source))
         return True
     state = cadence.query_state(source, search) if cadence.MANUAL.get() else None
-    if state and state['state'] == 'retrying':
+    if state and state['state'] == cadence.RETRYING:
         reason = cadence.last_error(source, search) or 'Browser-Abfrage fehlgeschlagen. Später erneut versuchen.'
         source_error(search, source, now, reason, _shown_failures(search, source))
         return True

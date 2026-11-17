@@ -98,7 +98,7 @@ async def _serve_followers(job, completed):
         state = cadence.query_state(source, search)
         if status.share_error(first['id'], search, source):
             done = completed
-        elif state and state['state'] == 'ok' and state['next_at'] > time.time():
+        elif state and state['state'] == cadence.OK and state['next_at'] > time.time():
             done = await check(search, [source])
         else:
             done = completed

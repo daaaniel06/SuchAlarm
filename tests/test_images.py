@@ -130,6 +130,7 @@ class ImageCacheTests(unittest.IsolatedAsyncioTestCase):
             conn.executemany('INSERT INTO pictures(key,state,attempts,next_at) VALUES (?,?,?,?)', states)
             images._setup(conn)
             images._setup(conn)
+            self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], 1)  # once, not on every connection
             self.assertEqual(
                 conn.execute('SELECT key,state,attempts,next_at FROM pictures ORDER BY key').fetchall(),
                 sorted(

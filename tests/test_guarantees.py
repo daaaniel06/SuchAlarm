@@ -7,8 +7,6 @@ from pathlib import Path
 from typing import ClassVar
 from unittest.mock import AsyncMock, patch
 
-from tests.helpers import AsyncTempDataTest, TempDataTest
-
 from suchalarm import digest, mailer, status, store, worker
 from suchalarm.core import browser, cadence
 from suchalarm.preis import worker as products
@@ -17,6 +15,7 @@ from suchalarm.preis.prices import Offer, eligible
 from suchalarm.wohnung import portals
 from suchalarm.wohnung.domain import TRAITS, profile
 from suchalarm.wohnung.domain import query_text as flat_query
+from tests.helpers import AsyncTempDataTest, TempDataTest
 
 PACKAGE = Path(__file__).resolve().parent.parent / 'suchalarm'
 

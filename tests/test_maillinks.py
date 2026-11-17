@@ -5,10 +5,10 @@ from typing import ClassVar
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-from tests.helpers import TempDataTest
 
 from suchalarm import mailer, maillinks, store, worker
 from suchalarm.app import app
+from tests.helpers import TempDataTest
 
 URL = 'https://www.ebay.de/itm/1?x=1'
 OFFER = {'url': URL, 'title': 'iPhone 13', 'price': 30000, 'shipping': 0, 'source': 'ebay', 'seller': 'anna',

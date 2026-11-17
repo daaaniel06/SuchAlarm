@@ -1,13 +1,12 @@
 import json
 import unittest
 
-from tests.helpers import TempDataTest
-
 from suchalarm import store
 from suchalarm.preis import learning
 from suchalarm.preis.categories import CATEGORIES
 from suchalarm.preis.prices import Offer, select_offers
 from suchalarm.preis.titles import learned_words, taught_away, title_fits
+from tests.helpers import TempDataTest
 
 GAME = 'Resident Evil Requiem'
 POSTERS = [f'Affiche encadrée {GAME} {n}' for n in range(3)]

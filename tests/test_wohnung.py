@@ -13,8 +13,6 @@ from pathlib import Path
 from typing import ClassVar
 from unittest.mock import AsyncMock, patch
 
-from tests.helpers import TempDataTest
-
 from suchalarm import digest, migrations, status, store, worker
 from suchalarm.core import browser, cadence, http
 from suchalarm.core.browser import Unreadable
@@ -22,6 +20,7 @@ from suchalarm.models import TEMPLATE_CHARS
 from suchalarm.wohnung import catalog, details, domain, outbox, pages, portals, sources, tables
 from suchalarm.wohnung import worker as flats
 from suchalarm.wohnung.domain import Listing, Profile, match, profile
+from tests.helpers import TempDataTest
 
 PROFILE: Profile = {
     'city': 'Berlin',

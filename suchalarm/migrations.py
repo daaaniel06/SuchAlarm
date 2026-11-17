@@ -68,10 +68,13 @@ def _migrate_legacy(conn):
         conn.execute("INSERT OR IGNORE INTO settings(key,value) VALUES ('recipients',?)", (json.dumps(recipients),))
         conn.execute("DELETE FROM settings WHERE key='recipient'")
     # The old mail log becomes the delivery history.
+    from .digest import BATCH_SENT
+
     if not conn.execute('SELECT 1 FROM batches LIMIT 1').fetchone():
         conn.execute(
             'INSERT INTO batches(id,recipients,subject,count,status,error,created_at,sent_at) '
-            "SELECT 'log-' || id, '', subject, count, 'sent', NULL, sent_at, sent_at FROM mail_log"
+            "SELECT 'log-' || id, '', subject, count, ?, NULL, sent_at, sent_at FROM mail_log",
+            (BATCH_SENT,),
         )
 
 
@@ -233,13 +236,18 @@ def migrate(conn, schema, migrations):
 
 def recover_interrupted_delivery(conn):
     """A restart during delivery leaves an uncertain mail: known, so nothing comes twice, but not as sent."""
+    from . import digest, store
+
     conn.execute(
         'INSERT OR REPLACE INTO notifications(search_id,url,price,sent_at,reason) '
-        "SELECT search_id, url, price, created_at, 'uncertain' FROM outbox WHERE batch IS NOT NULL"
+        'SELECT search_id, url, price, created_at, ? FROM outbox WHERE batch IS NOT NULL',
+        (store.UNCERTAIN,),
     )
     conn.execute('DELETE FROM outbox WHERE batch IS NOT NULL')
     conn.execute(
-        "UPDATE batches SET status='unknown', error='Server wurde während des Versands neu gestartet.' "
-        "WHERE status='sending'"
+        "UPDATE batches SET status=?, error='Server wurde während des Versands neu gestartet.' WHERE status=?",
+        (digest.BATCH_UNKNOWN, digest.BATCH_SENDING),
     )
-    conn.execute("UPDATE deliveries SET status='uncertain' WHERE status='sending'")  # a retry cut off the same way
+    conn.execute(
+        'UPDATE deliveries SET status=? WHERE status=?', (digest.DELIVERY_UNCERTAIN, digest.DELIVERY_SENDING)
+    )  # a retry cut off the same way

@@ -14,7 +14,7 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, Final, Literal, TypedDict
 
 from . import migrations
 
@@ -269,10 +269,14 @@ def keep_waiting_only(conn, table, search_id):
 # Why a hit counts as known at its price; only a lower price mails it again. Only 'sent' is a mail the
 # server accepted: the history of notifications. 'known': starting stock, another portal's copy, or found
 # while mails were off. 'uncertain': the server may have taken the mail; never sent twice.
-REASONS = ('sent', 'known', 'uncertain')
+SENT: Final = 'sent'
+KNOWN: Final = 'known'
+UNCERTAIN: Final = 'uncertain'
+Reason = Literal['sent', 'known', 'uncertain']
+REASONS = (SENT, KNOWN, UNCERTAIN)
 
 
-def remember_reported(conn, search_id, url, price, when, reason='known'):
+def remember_reported(conn, search_id, url, price, when, reason: Reason = KNOWN):
     """A hit counts as known at PRICE for REASON (REASONS)."""
     conn.execute(
         'INSERT OR REPLACE INTO notifications(search_id,url,price,sent_at,reason) VALUES (?,?,?,?,?)',

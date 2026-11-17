@@ -13,7 +13,6 @@ from typing import ClassVar
 from unittest.mock import AsyncMock, Mock, patch
 
 from fastapi.testclient import TestClient
-from tests.helpers import AsyncTempDataTest, TempDataTest
 from PIL import Image
 
 from suchalarm import backups, digest, mailer, mailserver, migrations, scheduler, store, worker
@@ -27,6 +26,7 @@ from suchalarm.preis.prices import Offer, eligible, select_offers
 from suchalarm.preis.queries import canonical
 from suchalarm.preis.sources import parse_rows
 from suchalarm.preis.titles import clean_title, matches
+from tests.helpers import AsyncTempDataTest, TempDataTest
 
 PAYLOAD = dict(query='Resident Evil Requiem', max_price=3500, sources=['ebay'], include_shipping=False, active=False)
 

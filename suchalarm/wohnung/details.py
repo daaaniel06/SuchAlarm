@@ -117,8 +117,8 @@ def backfill_step(now=None):
             if cadence.ready_at(source, now=now) > now:
                 continue
             conn.execute(
-                "INSERT OR IGNORE INTO listing_details(url,source,state,created_at) VALUES (?,?,'pending',?)",
-                (row['url'], source, now),
+                'INSERT OR IGNORE INTO listing_details(url,source,state,created_at) VALUES (?,?,?,?)',
+                (row['url'], source, PENDING, now),
             )
             _backfilled[source] = now
             return row['url']
@@ -128,10 +128,10 @@ def backfill_step(now=None):
 def read_again(conn, source, urls, now):
     """Queue the detail pages of URLS (of SOURCE) like new ones, also those read before."""
     conn.executemany(
-        "INSERT INTO listing_details(url,source,state,created_at) VALUES (?,?,'pending',?) ON CONFLICT(url) DO "
-        "UPDATE SET state='pending', attempts=0, next_at=0, error=NULL, created_at=excluded.created_at, requested=0 "
-        "WHERE state!='pending'",
-        [(url, source, now) for url in urls],
+        'INSERT INTO listing_details(url,source,state,created_at) VALUES (?,?,?,?) ON CONFLICT(url) DO '
+        'UPDATE SET state=excluded.state, attempts=0, next_at=0, error=NULL, created_at=excluded.created_at, requested=0 '
+        'WHERE state!=?',
+        [(url, source, PENDING, now, PENDING) for url in urls],
     )
 
 
@@ -143,9 +143,9 @@ def request_detail(conn, url, now=None):
     if row is None or row['source'] not in sources.DETAILS:
         return False
     conn.execute(
-        "INSERT INTO listing_details(url,source,state,created_at,requested) VALUES (?,?,'pending',?,1) "
-        "ON CONFLICT(url) DO UPDATE SET state='pending', attempts=0, next_at=0, error=NULL, "
-        "created_at=excluded.created_at, requested=1 WHERE state!='done'",
-        (url, row['source'], now),
+        'INSERT INTO listing_details(url,source,state,created_at,requested) VALUES (?,?,?,?,1) '
+        'ON CONFLICT(url) DO UPDATE SET state=excluded.state, attempts=0, next_at=0, error=NULL, '
+        'created_at=excluded.created_at, requested=1 WHERE state!=?',
+        (url, row['source'], PENDING, now, DONE),
     )
     return True
