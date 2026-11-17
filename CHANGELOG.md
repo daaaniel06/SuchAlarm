@@ -1,5 +1,28 @@
 # Changelog
 
+## Unveröffentlicht (Branch claude/bugfixes)
+
+### Mails
+- Die Historie unterscheidet „versendet“ (vom Mailserver angenommen), „bekannt“ (Anfangsbestand, Funde bei abgeschalteten Mails, Kopie eines anderen Portals) und „unklar“ (Versand abgebrochen, auch durch Neustart). Unklare Mails werden weiterhin nie doppelt gesendet; ein späterer niedrigerer Preis kommt wieder per Mail.
+- Ein Fehler bei einer Quelle hält Mailversand und Backup nicht mehr auf.
+
+### Preise
+- Vinted-Versand „ab 2,49 €“ zählt als Untergrenze: App, Mailtext und Betreff schreiben den Preis mit „ab“.
+- Ein Preis wie „US $20.00 (EUR 18,50)“ wird als 18,50 € gelesen, nicht als 20 €.
+- Autos: Kilometerstand und Erstzulassung werden beim Angebot gespeichert. Wird „Erstzulassung ab“ oder „Kilometer bis“ geändert, prüft die nächste Mail wartende Treffer erneut statt sie zu verwerfen. Andere Änderungen, die nur der Anbieter anwendet (Kategorie, Abholung, PLZ, Umkreis, Kraftstoff, Getriebe), verwerfen wartende Treffer; vorher wurden sie trotzdem gemailt.
+
+### Wohnungen
+- Ein Kreis („Darmstadt-Dieburg (Kreis)“) ist eine eigene Ortsart. Eine Kreis-Suche ohne Umkreis behält die Wohnungen seiner Gemeinden (vorher alle verworfen); den Gesamtbestand von NHW und bauverein kann sie nicht zuordnen und nimmt ihn nicht. Die Ortsvorschläge zeigen „Stadt“ oder „Kreis“.
+- Gelöschte Inserate, deren Detailseite im Browser mit 404 antwortet, gelten als entfernt und werden nicht mehr gemailt.
+- Ortsnamen ohne PLZ werden für die Karte nicht mehr auf das erste Wort gekürzt („Bad Homburg vor der Höhe“ statt „Bad“).
+
+### Für beide
+- Ein abgestürzter Suchjob rückt ans Ende der Warteschlange, statt alle anderen Quellen zu blockieren.
+- Vorschaubilder haben eindeutige Zustände; nach drei Fehlversuchen aufgegebene Bilder belegen keinen Platz in der Warteschlange mehr, und eine Sperre des Bild-Servers verbraucht keinen Versuch.
+- Das tägliche Backup sichert alle Datenbankdateien ohne Schreibzugriff dazwischen.
+- Ein während des Speicherns neu getipptes Mail-Passwort wird nicht mehr gelöscht.
+- Neue Tests für die Regeln aus AGENTS.md (tests/test_guarantees.py).
+
 ## v1.1.0 (2026-10-29)
 
 ### Mails
