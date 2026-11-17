@@ -887,6 +887,13 @@ class ApiTests(TempDataTest):
         self.client = TestClient(app)
         worker.progress = worker.Progress()
 
+    def test_the_polled_state_travels_compressed(self):
+        for n in range(30):
+            self.client.post('/api/searches', json=dict(query=f'Spiel {n} PS5', max_price=5000, sources=['ebay']))
+        response = self.client.get('/api/state', headers={'Accept-Encoding': 'gzip'})
+        self.assertEqual(response.headers.get('content-encoding'), 'gzip')
+        self.assertEqual(len(response.json()['searches']), 30)
+
     def test_new_and_existing_searches_are_product_searches(self):
         self.client.post('/api/searches', json=dict(query='Spiel PS5', max_price=5000, sources=['ebay']))
         with store.db() as conn:
