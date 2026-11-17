@@ -152,6 +152,15 @@ class BrowserExtractionTests(unittest.IsolatedAsyncioTestCase):
             data = await page.evaluate(EXTRACT, 'vinted')
             offer = parse_rows('vinted', data['rows'], dict(query='Resident Evil Requiem'))[0]
             self.assertEqual((offer.owner, offer.condition), ('57997699', 'Sehr gut'))
+            # Live layout of 17.11.2026: the card title is only the brand, the link's title holds the item.
+            await page.set_content(
+                '<div data-testid="grid-item"><div data-testid="product-item-id-10774305059"><a href="https://www.vinted.de/items/10774305059-nintendo-switch-oled" data-testid="product-item-id-10774305059--overlay-link" title="Nintendo Switch Oled weiss mit Schutzglas &amp; Tasche in OVP., Marke: Nintendo, Zustand: Sehr gut, 210.00 €, 221.20 €"></a><p data-testid="product-item-id-10774305059--description-title">Nintendo</p><p data-testid="product-item-id-10774305059--description-subtitle">Sehr gut</p><p data-testid="product-item-id-10774305059--price-text">210,00&nbsp;€</p></div></div>'
+            )
+            data = await page.evaluate(EXTRACT, 'vinted')
+            self.assertEqual(data['rows'][0]['title'], 'Nintendo Switch Oled weiss mit Schutzglas & Tasche in OVP.')
+            self.assertEqual(
+                len(parse_rows('vinted', data['rows'], dict(query='Nintendo Switch OLED', max_price=25000))), 1
+            )
             await page.route(
                 'https://www.vinted.de/items/12345',
                 lambda route: route.fulfill(

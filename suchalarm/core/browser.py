@@ -56,8 +56,8 @@ def check_response(response):
         raise Blocked(
             f'Anbieter blockiert die Browser-Abfrage (HTTP {status}). Kein Verbindungsfehler; später erneut versuchen.'
         )
-    if status == 404:
-        raise NotFound('Anbieter antwortet mit HTTP 404.')
+    if status in (404, 410):
+        raise NotFound(f'Anbieter antwortet mit HTTP {status}.')
     raise RuntimeError(f'Anbieter antwortet mit HTTP {status}.')
 
 

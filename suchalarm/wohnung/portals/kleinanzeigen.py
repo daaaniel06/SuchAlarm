@@ -30,10 +30,12 @@ def kleinanzeigen_locations_url(query):
     return KLEINANZEIGEN + '/s-ort-empfehlungen.json?' + urlencode({'query': query})
 
 
-def kleinanzeigen_location(result, city):
+def kleinanzeigen_location(result, city, exact=False):
     """The place ID among Kleinanzeigen's suggestions ({"_0": "Deutschland", "_9668": "10115 Mitte", …}): the first
     whose name starts with CITY, else the first. The product search keeps its postcodes under the same key
-    (preis/sources.find_location, which takes the first starting with the postcode), so both pick alike."""
+    (preis/sources.find_location, which takes the first starting with the postcode), so both pick alike.
+    EXACT (a district, which Kleinanzeigen does not list): only a suggestion of that name, else None; the first
+    suggestion for "Darmstadt-Dieburg" is the town of Darmstadt, which is not in the district."""
     places = [
         (key.lstrip('_'), str(label))
         for key, label in (result or {}).items()
@@ -46,7 +48,7 @@ def kleinanzeigen_location(result, city):
         for place, label in places
         if label.casefold().startswith(city.casefold() + ' ') or label.casefold() == city.casefold()
     )
-    return next(named, places[0][0])
+    return next(named, None if exact else places[0][0])
 
 
 def kleinanzeigen_url(profile, location_id, page=1):

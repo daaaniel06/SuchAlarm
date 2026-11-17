@@ -40,8 +40,9 @@ def without_smtp_env():
 
 class DomainTests(unittest.TestCase):
     def test_browser_404_is_a_deleted_page_like_over_http(self):
-        with self.assertRaises(http.NotFound):
-            browser.check_response(SimpleNamespace(status=404))
+        for status in (404, 410):
+            with self.assertRaises(http.NotFound):
+                browser.check_response(SimpleNamespace(status=status))
         with self.assertRaises(RuntimeError) as other:
             browser.check_response(SimpleNamespace(status=500))
         self.assertNotIsInstance(other.exception, http.NotFound)

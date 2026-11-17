@@ -201,7 +201,9 @@ def out_of_area(search, source):
             return 'Sucht nur nach Ortsnamen, nicht nach Postleitzahl'
         if cadence.location('wg-gesucht', _key(_wg_place(p))) == UNKNOWN_PLACE:
             return 'Kennt diesen Ort nicht'
-    if source in ('ohne-makler', 'immobilien-de') and cadence.location(source, _key(place_query(p))) == UNKNOWN_PLACE:
+    looked_up_as = {'ohne-makler': 'ohne-makler', 'immobilien-de': 'immobilien-de', 'immowelt': 'immowelt',
+                    'kleinanzeigen-wohnung': 'kleinanzeigen'}  # fmt: skip
+    if source in looked_up_as and cadence.location(looked_up_as[source], _key(place_query(p))) == UNKNOWN_PLACE:
         return 'Kennt diesen Ort nicht'
     known = cadence.location('osm', _key(place_query(p)))
     if known and source == 'bauverein':
@@ -307,13 +309,16 @@ async def _kleinanzeigen(p, number=1):
                 found = json.loads(await response.text())  # Firefox shows JSON in its viewer, not as body text
             except ValueError:
                 raise browser.Unreadable('Ortssuche von Kleinanzeigen nicht lesbar.') from None
-            return portals.kleinanzeigen_location(found, query)
+            identifier = portals.kleinanzeigen_location(found, query, exact=is_district(p['place'] or {}))
+            return UNKNOWN_PLACE if identifier is None else identifier
 
         # The place lookup is a visit of its own in the site's budget; the list then waits for the next slot.
         looked_up = cadence.location('kleinanzeigen', _key(query)) is None
         if looked_up:
             cadence.book(source, 'page')
         identifier = await _location('kleinanzeigen', query, location)
+        if identifier == UNKNOWN_PLACE:
+            raise RuntimeError(f'Kleinanzeigen kennt den Ort „{query}“ nicht.')
         data = await browser.load_page(
             page,
             source,
@@ -364,13 +369,19 @@ async def _immowelt(p, number=1):
 
         async def location():
             response = await page.goto(portals.immowelt_place_url(query), timeout=browser.PAGE_TIMEOUT_MS)
-            browser.check_response(response)
+            try:
+                browser.check_response(response)
+            except browser.NotFound:
+                return UNKNOWN_PLACE  # no page for this place ("Darmstadt-Dieburg" answers 410)
             return portals.immowelt_location(page.url, query)
 
         looked_up = cadence.location(source, _key(query)) is None
         if looked_up:
             cadence.book(source, 'page')
-        address, request = portals.immowelt_search(await _location(source, query, location), p, number)
+        place = await _location(source, query, location)
+        if place == UNKNOWN_PLACE:
+            raise RuntimeError(f'Immowelt kennt den Ort „{query}“ nicht.')
+        address, request = portals.immowelt_search(place, p, number)
         data = await browser.load_page(
             page,
             source,

@@ -96,7 +96,7 @@ def manual_check(requested_at):
 # - Deferred: the budget does not allow it yet; nothing happened, nothing counts.
 # - Refused: the provider refuses (401/403/429, a security check): pause the provider, never count it
 #   against the thing asked for (a listing, a picture).
-# - NotFound: HTTP 404, the thing asked for is gone (a deleted listing, a page past the last).
+# - NotFound: HTTP 404 or 410, the thing asked for is gone (a deleted listing, a page past the last).
 # - any other RuntimeError: this request failed (a timeout, a 5xx, an unreadable page); retried later.
 
 
@@ -106,7 +106,8 @@ class Refused(RuntimeError):
 
 
 class NotFound(RuntimeError):
-    """HTTP 404: the provider does not know what was asked for (a deleted listing, a page past the last)."""
+    """HTTP 404 or 410: the provider does not know what was asked for (a deleted listing, a page past the last,
+    a place it has no page for)."""
 
 
 GENERIC_ERROR = 'Browser-Abfrage fehlgeschlagen oder Zeitlimit erreicht.'

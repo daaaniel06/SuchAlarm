@@ -503,6 +503,14 @@ class ParserTests(unittest.TestCase):
         )
         with self.assertRaises(RuntimeError):
             portals.kleinanzeigen_location({'_0': 'Deutschland'}, 'Xyz')
+        # Kleinanzeigen lists no districts; its first suggestion is another place (live 17.11.2026).
+        district = {'_0': 'Deutschland', '_4888': 'Darmstadt - Hessen', '_24053': 'Darme - Lingen (Ems)'}
+        self.assertIsNone(portals.kleinanzeigen_location(district, 'Darmstadt-Dieburg', exact=True))
+        self.assertEqual(portals.kleinanzeigen_location(district, 'Darmstadt-Dieburg'), '4888')  # a town: fuzzy
+        self.assertEqual(
+            portals.kleinanzeigen_location({'_0': 'Deutschland', '_4496': 'Dieburg - Hessen'}, 'Dieburg', exact=True),
+            '4496',
+        )
 
     def test_kleinanzeigen_search_url(self):
         swaps = {**PROFILE, 'radius': 10, 'minArea': 50, 'minRooms': 2.5, 'exclusions': ['Tauschwohnung']}
@@ -929,6 +937,14 @@ class PlaceTests(TempData):
         self.assertEqual(sources.select(stock, district), [dieburg, portal])
         self.assertTrue(sources.needs_district_area(district))
         self.assertFalse(sources.needs_district_area(dict(district, radius=10)))
+
+    def test_a_place_a_portal_does_not_know_rests_the_source(self):
+        flat_search = self.stored_search(query='Darmstadt-Dieburg', sources=['immowelt', 'kleinanzeigen-wohnung'])
+        for source, key in (('immowelt', 'immowelt'), ('kleinanzeigen-wohnung', 'kleinanzeigen')):
+            with self.subTest(source=source):
+                self.assertIsNone(sources.out_of_area(flat_search, source))
+                cadence.save_location(key, 'darmstadt-dieburg', sources.UNKNOWN_PLACE)
+                self.assertEqual(sources.out_of_area(flat_search, source), 'Kennt diesen Ort nicht')
 
     def test_a_radius_search_without_a_position_goes_by_the_town(self):
         """Distance only where the centre and the flat's spot are known; else the town decides, so a landlord's

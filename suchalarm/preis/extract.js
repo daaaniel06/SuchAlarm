@@ -140,7 +140,13 @@
     }
     return {
       shippingText,
-      title: title(card) || a?.title || '',
+      // Vinted's card title is only the brand since 11/2026; the link's title holds the item's own title
+      // before ", Marke: …, Zustand: …, 30.00 €".
+      title:
+        (source === 'vinted' && a?.title.split(/, (?:Marke|Zustand|Größe): /)[0].trim()) ||
+        title(card) ||
+        a?.title ||
+        '',
       price: text(card, c.price),
       url: a?.href || '',
       seller: source === 'ebay' ? ebaySeller(card) : text(card, c.seller),
