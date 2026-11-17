@@ -267,19 +267,40 @@ async def daily_backup():
         backup.due = time.time() + BACKUP_RETRY
 
 
+async def _guarded(name, step):
+    """Run one part of a pass; an unexpected error is logged and must not skip the parts after it (a broken
+    provider job never holds back the mail). Returns whether it went through."""
+    try:
+        await step()
+        return True
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        log.exception('Worker step %s failed', name)
+        return False
+
+
 async def run_once():
     """One step: a due job, or else the kinds' background work; then mail and backup. Returns the idle delay."""
     paused = store.paused()
     job, next_at = scheduler.plan(store.searches(), paused)
+    failed = False
     if job:
-        await _run_job(job)
+        failed = not await _guarded('job', lambda: _run_job(job))
     elif not paused:
+        for name, kind in KINDS.items():
+            # detail pages and shipping lookups, in free slots of the budget
+            failed |= not await _guarded(f'{name} idle', kind.idle)
+
+    async def queue_mails():
         for kind in KINDS.values():
-            await kind.idle()  # detail pages and shipping lookups, in free slots of the budget
-    for kind in KINDS.values():
-        kind.queue_mails()
-    await send_digest()
-    await daily_backup()
+            kind.queue_mails()
+
+    failed |= not await _guarded('queue mails', queue_mails)
+    failed |= not await _guarded('mail', send_digest)
+    await daily_backup()  # has its own retry clock
+    if failed:
+        return ERROR_PAUSE  # a repeating error must not spin the loop
     return 0 if job else max(0.1, min(IDLE_MAX, next_at - time.time()))
 
 

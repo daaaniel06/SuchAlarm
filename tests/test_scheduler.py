@@ -146,6 +146,18 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
             following, _ = scheduler.plan([first, second], False, later)
         self.assertNotEqual(following['key'], job['key'])
 
+    async def test_a_crashing_job_does_not_hold_back_the_mail(self):
+        self.search()
+        with (
+            patch('suchalarm.worker._run_job', new=AsyncMock(side_effect=ValueError('kaputt'))),
+            patch('suchalarm.worker.send_digest', new=AsyncMock()) as send,
+            patch('suchalarm.worker.daily_backup', new=AsyncMock()) as backup,
+        ):
+            delay = await worker.run_once()
+        send.assert_awaited_once()
+        backup.assert_awaited_once()
+        self.assertEqual(delay, worker.ERROR_PAUSE)
+
     async def test_manual_idealo_refreshes_now_then_keeps_automatic_twelve_hours(self):
         search = self.search(providers=('idealo',))
         actual = AsyncMock(return_value=([], None))
