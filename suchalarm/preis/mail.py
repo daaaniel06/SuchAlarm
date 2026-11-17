@@ -5,7 +5,7 @@ from html import escape
 from .. import mailhtml
 from ..fmt import amount
 from .categories import SOURCES
-from .prices import compared_price, search_fee, with_shipping
+from .prices import compared_price, price_is_minimum, search_fee, shipping_is_minimum, with_shipping
 
 WORDS = {
     'one': 'neues Angebot',
@@ -31,14 +31,16 @@ def price(search, offer):
 def price_text(search, offer):
     """0 only ever comes from a "Zu verschenken" listing."""
     value = price(search, offer)
-    return 'Zu verschenken' if value == 0 else amount(value)
+    if value == 0:
+        return 'Zu verschenken'
+    return ('ab ' if price_is_minimum(offer['source'], offer['shipping'], search) else '') + amount(value)
 
 
 def note(search, offer):
     """The shipping under the price."""
     if offer['shipping'] is None:
         return 'Versand unbekannt'
-    if offer['source'] == 'vinted':
+    if shipping_is_minimum(offer['source']):
         return f'Versand ab {amount(offer["shipping"])}'
     if offer['shipping'] == 0:
         return 'Versand frei'

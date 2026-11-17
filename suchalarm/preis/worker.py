@@ -18,7 +18,18 @@ from . import mail as mail  # the kind's mail presentation (kinds.py)
 from .categories import BIKE_TYPES, CATEGORIES, FUELS, GEARBOXES, PICKUP_SOURCES, PLATFORMS, RADII
 from .categories import SOURCES as SOURCES
 from .models import SEARCH_FILTERS, Search
-from .prices import Offer, compared_price, eligible, free, in_range, search_fee, too_cheap, with_shipping
+from .prices import (
+    Offer,
+    compared_price,
+    eligible,
+    free,
+    in_range,
+    price_is_minimum,
+    search_fee,
+    shipping_is_minimum,
+    too_cheap,
+    with_shipping,
+)
 from .titles import all_terms, title_fits, wanted_words
 
 FRESH_USED = 3 * 3600  # a shop comparison only uses second-hand results this recent
@@ -54,7 +65,8 @@ ANY_SEARCH = {'include_shipping': 1, 'include_fee': 1, 'min_price': 0, 'max_pric
 
 def judged(row, search):
     """ROW (an offer or watch-list snapshot) with what the page shows and filters by, so the price rules live
-    here only: COMPARED (None with unknown shipping that counts), FITS the search, WITH_SHIPPING for the note."""
+    here only: COMPARED (None with unknown shipping that counts), FITS the search, WITH_SHIPPING for the note,
+    MINIMUM (COMPARED is a lower bound, shown "ab …") and SHIPPING_FROM (the shipping is one)."""
     search = search or ANY_SEARCH
     price = compared(row, search)
     return dict(
@@ -62,6 +74,8 @@ def judged(row, search):
         compared=price,
         fits=in_range(price, search, free(row['price'], search)),
         with_shipping=with_shipping(row['source'], search),
+        minimum=price_is_minimum(row['source'], row['shipping'], search),
+        shipping_from=shipping_is_minimum(row['source']),
     )
 
 
