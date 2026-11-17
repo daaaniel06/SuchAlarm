@@ -118,7 +118,9 @@ def init():
         migrations.migrate(conn, 'main', migrations.MIGRATIONS)
         migrations.recover_interrupted_delivery(conn)
         # Signs the links in mails (maillinks.py); made here, as the delivery's open transaction could not.
-        conn.execute("INSERT OR IGNORE INTO settings VALUES ('link_secret', ?)", (secrets.token_urlsafe(32),))
+        conn.execute(
+            "INSERT OR IGNORE INTO settings(key,value) VALUES ('link_secret', ?)", (secrets.token_urlsafe(32),)
+        )
 
 
 # Searches
@@ -199,7 +201,7 @@ def hidden(conn):
 
 
 def hide(conn, search_id, url, now):
-    conn.execute('INSERT OR REPLACE INTO hidden VALUES (?,?,?)', (search_id, url, now))
+    conn.execute('INSERT OR REPLACE INTO hidden(search_id,url,hidden_at) VALUES (?,?,?)', (search_id, url, now))
 
 
 def unhide(conn, search_id=None, url=None):
@@ -317,7 +319,7 @@ def settings():
 
 
 def put_setting(conn, key, value):
-    conn.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', (key, value))
+    conn.execute('INSERT OR REPLACE INTO settings(key,value) VALUES (?,?)', (key, value))
 
 
 def delete_setting(conn, key):

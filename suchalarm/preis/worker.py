@@ -141,14 +141,16 @@ def save_result(search, source, offers, reference, now):
         # An offer already waiting for the mail is news, also in a starting point after an edit.
         baseline = current - waiting if not (seen.keys() - waiting) and not status.started(conn, sid, source) else set()
         # The app shows no "new" dot for this starting point either.
-        conn.executemany('INSERT OR IGNORE INTO start_offers VALUES (?,?)', [(sid, url) for url in baseline])
+        conn.executemany(
+            'INSERT OR IGNORE INTO start_offers(search_id,url) VALUES (?,?)', [(sid, url) for url in baseline]
+        )
         sent = dict(conn.execute('SELECT url, sent_at FROM notifications WHERE search_id=?', (sid,)))
         conn.executemany(
             'DELETE FROM offers WHERE search_id=? AND source=? AND url=?',
             [(sid, source, url) for url in seen if url in current or url not in waiting],
         )
         conn.executemany(
-            'INSERT INTO offers VALUES (?,?,?,?,?,?,?,?,?,?)',
+            'INSERT INTO offers(search_id,source,url,title,price,shipping,seller,condition,first_seen,last_seen) VALUES (?,?,?,?,?,?,?,?,?,?)',
             [
                 (
                     *(sid, o.source, o.url, o.title, o.price, o.shipping, o.seller, o.condition),
@@ -159,23 +161,23 @@ def save_result(search, source, offers, reference, now):
             ],
         )
         conn.executemany(
-            'INSERT OR IGNORE INTO negotiable_offers VALUES (?,?)',
+            'INSERT OR IGNORE INTO negotiable_offers(search_id,url) VALUES (?,?)',
             [(sid, o.url) for o in offers if o.negotiable],
         )
         conn.executemany(
-            'INSERT OR REPLACE INTO vehicle_facts VALUES (?,?,?,?)',
+            'INSERT OR REPLACE INTO vehicle_facts(search_id,url,km,year) VALUES (?,?,?,?)',
             [(sid, o.url, o.km, o.year) for o in offers if o.km is not None or o.year is not None],
         )
         # Vinted shipping still unknown in the starting point: a later shipping lookup must not mail it either.
         conn.executemany(
-            'INSERT OR IGNORE INTO shipping_baselines VALUES (?,?)',
+            'INSERT OR IGNORE INTO shipping_baselines(search_id,url) VALUES (?,?)',
             [(sid, o.url) for o in offers if o.source == 'vinted' and o.shipping is None and o.url in baseline],
         )
         status.source_ok(conn, sid, source, now, len(offers))
         # The shared fetch leaves exclusions out; its reference is judged per search here.
         if source == 'idealo' and reference and title_fits(source, reference['title'], search):
             value = json.dumps(dict(reference, checked_at=now))
-            conn.execute('INSERT OR REPLACE INTO idealo_references VALUES (?,?)', (sid, value))
+            conn.execute('INSERT OR REPLACE INTO idealo_references(search_id,value) VALUES (?,?)', (sid, value))
         elif source == 'idealo':
             conn.execute('DELETE FROM idealo_references WHERE search_id=?', (sid,))
     return baseline

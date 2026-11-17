@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import ClassVar
 from unittest.mock import AsyncMock, patch
 
+from helpers import TempDataTest
+
 from suchalarm import digest, migrations, status, store, worker
 from suchalarm.core import browser, cadence, http
 from suchalarm.core.browser import Unreadable
@@ -880,18 +882,8 @@ def without_markup(html):
     return re.sub(rf'\s(?:{hooks})="[^"]*"', '', html)
 
 
-class TempData(unittest.TestCase):
-    MAIL_ENV: ClassVar[dict[str, str]] = {}
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {'DATA_DIR': self.tmp.name, **self.MAIL_ENV})
-        self.env.start()
-        store.init()
-
-    def tearDown(self):
-        self.env.stop()
-        self.tmp.cleanup()
+class TempData(TempDataTest):
+    ENV: ClassVar[dict[str, str]] = {}
 
     def stored_search(self, **changes):
         values = search(**changes)
@@ -1918,7 +1910,7 @@ class BrowserExtractTests(unittest.TestCase):
 
 
 class ApiAndMailTests(TempData):
-    MAIL_ENV: ClassVar[dict[str, str]] = {'SMTP_HOST': 'smtp.example', 'SMTP_FROM': 'a@example.com'}
+    ENV: ClassVar[dict[str, str]] = {'SMTP_HOST': 'smtp.example', 'SMTP_FROM': 'a@example.com'}
 
     def setUp(self):
         super().setUp()

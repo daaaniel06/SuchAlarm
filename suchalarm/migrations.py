@@ -57,7 +57,7 @@ def _migrate_legacy(conn):
     # eBay UI labels in old title snapshots: preis/tables.py cleans them.
     # The idealo new price moved out of the key-value settings into a table that follows its search.
     conn.execute(
-        'INSERT OR IGNORE INTO idealo_references SELECT s.id, x.value FROM settings x JOIN searches s '
+        'INSERT OR IGNORE INTO idealo_references(search_id,value) SELECT s.id, x.value FROM settings x JOIN searches s '
         "ON x.key = 'reference:' || s.id WHERE x.value != 'null'"
     )
     conn.execute("DELETE FROM settings WHERE key LIKE 'reference:%'")
@@ -65,7 +65,7 @@ def _migrate_legacy(conn):
     old = conn.execute("SELECT value FROM settings WHERE key='recipient'").fetchone()
     if old:
         recipients = [old['value']] if old['value'] else []
-        conn.execute("INSERT OR IGNORE INTO settings VALUES ('recipients',?)", (json.dumps(recipients),))
+        conn.execute("INSERT OR IGNORE INTO settings(key,value) VALUES ('recipients',?)", (json.dumps(recipients),))
         conn.execute("DELETE FROM settings WHERE key='recipient'")
     # The old mail log becomes the delivery history.
     if not conn.execute('SELECT 1 FROM batches LIMIT 1').fetchone():

@@ -146,7 +146,7 @@ def separate(conn, search_id, url):
     leader = flat['same_as'] or flat['url']
     group = [row for row in rows if row['url'] == leader or row['same_as'] == leader]
     conn.executemany(
-        'INSERT OR IGNORE INTO separated VALUES (?,?,?)',
+        'INSERT OR IGNORE INTO separated(search_id,url,other) VALUES (?,?,?)',
         [(search_id, url, row['url']) for row in group if row['url'] != url],
     )
     return True

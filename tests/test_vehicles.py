@@ -7,8 +7,8 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
 from fastapi.testclient import TestClient
+from helpers import TempDataTest
 
-from suchalarm import store
 from suchalarm.app import app
 from suchalarm.core import cadence
 from suchalarm.preis.queries import query_text
@@ -152,18 +152,11 @@ class VehicleTests(unittest.TestCase):
         self.assertEqual([o.price for o in parse_rows('kleinanzeigen', [row, old], car)], [659900])
 
 
-class VehicleApiTests(unittest.TestCase):
+class VehicleApiTests(TempDataTest):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {'DATA_DIR': self.tmp.name})
-        self.env.start()
-        store.init()
+        super().setUp()
         self.client = TestClient(app)
         self.base = dict(query='Golf', max_price=1500000, sources=['kleinanzeigen'], plz='10115', radius=100)
-
-    def tearDown(self):
-        self.env.stop()
-        self.tmp.cleanup()
 
     def test_filters_are_validated_and_belong_to_their_category(self):
         filters = {'fuel': 'diesel', 'gearbox': 'manuell', 'bike_type': 'ebike', 'year_from': 2015}

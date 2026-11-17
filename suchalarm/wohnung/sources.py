@@ -309,7 +309,9 @@ async def _immoscout(p: Profile, page=1):
         entries = await http.get_json('immoscout24', portals.immoscout_locations_url(query))
         return portals.immoscout_region(entries, query)
 
-    geopath, looked_up = (place['geopath'], False) if place.get('geopath') else await _resolve_place('immoscout24', p, region)
+    geopath, looked_up = (
+        (place['geopath'], False) if place.get('geopath') else await _resolve_place('immoscout24', p, region)
+    )
     coords = (await locate(query))[:2] if p['radius'] else None
     url = portals.immoscout_url(p, geopath, coords, page)
     return await http.get_json('immoscout24', url, headers, portals.IMMOSCOUT_BODY, follow=looked_up)
@@ -577,7 +579,7 @@ def select(listings, search):
             and not (area and listing.lat is not None and inside(area, listing.lat, listing.lon))
         ):
             continue
-        if listing.source in ('bauverein', 'nhw') and p['radius']:
+        if listing.source in WHOLE_STOCK and p['radius']:
             spot = (listing.lat, listing.lon) if listing.lat is not None else None
             if not portals.near(place_query(p), p['radius'], middle, listing.place, spot):
                 continue

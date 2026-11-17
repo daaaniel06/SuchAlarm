@@ -1,10 +1,9 @@
 import json
-import os
-import tempfile
 import time
-import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+
+from helpers import AsyncTempDataTest
 
 from suchalarm import scheduler, store, worker
 from suchalarm.core import cadence
@@ -12,16 +11,8 @@ from suchalarm.preis import sources
 from suchalarm.preis.prices import Offer
 
 
-class SchedulerTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {'DATA_DIR': self.tmp.name})
-        self.env.start()
-        store.init()
-
+class SchedulerTests(AsyncTempDataTest):
     def tearDown(self):
-        self.env.stop()
-        self.tmp.cleanup()
         worker.progress = worker.Progress()
 
     def search(self, query='Spiel PS5', providers=('ebay',), active=True):
@@ -36,7 +27,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         search, source = job['searches'][0], job['source']
         with cadence.db() as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO queries VALUES (?,?,?,?,0,'ok',?)",
+                "INSERT OR REPLACE INTO queries(key,source,at,next_at,failures,state,value) VALUES (?,?,?,?,0,'ok',?)",
                 (
                     job['key'],
                     source,

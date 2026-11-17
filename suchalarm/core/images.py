@@ -92,7 +92,7 @@ def remember(source, pictures):
                 pending += 1
             else:
                 conn.execute('UPDATE pictures SET seen=? WHERE key=?', (now, key))
-            conn.execute('INSERT OR REPLACE INTO offers VALUES (?,?,?)', (url, key, now))
+            conn.execute('INSERT OR REPLACE INTO offers(url,key,seen) VALUES (?,?,?)', (url, key, now))
 
 
 def enrich(offers):

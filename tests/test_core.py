@@ -9,9 +9,11 @@ import unittest
 from contextlib import contextmanager
 from dataclasses import replace
 from types import SimpleNamespace
+from typing import ClassVar
 from unittest.mock import AsyncMock, Mock, patch
 
 from fastapi.testclient import TestClient
+from helpers import AsyncTempDataTest, TempDataTest
 from PIL import Image
 
 from suchalarm import backups, digest, mailer, mailserver, migrations, scheduler, store, worker
@@ -168,18 +170,15 @@ class DomainTests(unittest.TestCase):
         self.assertEqual(parse_rows('ebay', [dict(base, title='Spiel PS5 defekt')], search), [])
 
 
-class WorkerTests(unittest.IsolatedAsyncioTestCase):
+class WorkerTests(AsyncTempDataTest):
+    ENV: ClassVar[dict[str, str]] = {'SMTP_HOST': 'smtp.example', 'SMTP_FROM': 'a@example.com'}
+
     async def asyncSetUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(
-            os.environ, {'DATA_DIR': self.tmp.name, 'SMTP_HOST': 'smtp.example', 'SMTP_FROM': 'a@example.com'}
-        )
-        self.env.start()
-        store.init()
+        await super().asyncSetUp()
         with store.db() as conn:
             conn.execute("INSERT INTO searches(query,max_price,sources) VALUES ('Spiel',3500,'[\"ebay\"]')")
-            conn.execute("INSERT INTO settings VALUES ('recipients','[\"a@example.com\"]')")
-            conn.execute("INSERT INTO settings VALUES ('mail_enabled','1')")
+            conn.execute("INSERT INTO settings(key,value) VALUES ('recipients','[\"a@example.com\"]')")
+            conn.execute("INSERT INTO settings(key,value) VALUES ('mail_enabled','1')")
             # The source was read before: new offers are news, not the starting point.
             conn.execute(
                 "INSERT INTO source_status(search_id,source,checked_at,error,count,started) VALUES (1,'ebay',1,NULL,0,1)"
@@ -188,8 +187,6 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         self.offer = Offer('ebay', 'https://www.ebay.de/itm/12345', 'Spiel', 3000, 0)
 
     async def asyncTearDown(self):
-        self.env.stop()
-        self.tmp.cleanup()
         worker.progress = worker.Progress()
 
     async def found(self, *offers):
@@ -202,7 +199,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
 
     def setting(self, key, value):
         with store.db() as conn:
-            conn.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', (key, value))
+            conn.execute('INSERT OR REPLACE INTO settings(key,value) VALUES (?,?)', (key, value))
 
     async def test_starting_point_is_not_news(self):
         with store.db() as conn:
@@ -593,7 +590,9 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_restart_during_delivery_is_known_but_not_sent(self):
         with store.db() as conn:
-            conn.execute("INSERT INTO outbox VALUES (1,'https://www.ebay.de/itm/12345',3000,1,'b1')")
+            conn.execute(
+                "INSERT INTO outbox(search_id,url,price,created_at,batch) VALUES (1,'https://www.ebay.de/itm/12345',3000,1,'b1')"
+            )
             conn.execute(
                 'INSERT INTO batches(id,recipients,subject,count,status,created_at) '
                 "VALUES ('b1','a@example.com','x',1,'sending',1)"
@@ -640,7 +639,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
                 "INSERT OR REPLACE INTO pictures(key,source,remote,state,filename,seen) VALUES ('k','ebay','https://i.ebayimg.com/x.jpg',?,?,1)",
                 (state, name if state == 'ready' else None),
             )
-            conn.execute("INSERT OR REPLACE INTO offers VALUES (?,'k',1)", (url,))
+            conn.execute("INSERT OR REPLACE INTO offers(url,key,seen) VALUES (?,'k',1)", (url,))
 
     async def test_pictures_travel_inside_the_mail(self):
         self.picture(self.offer.url)
@@ -732,7 +731,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_hidden_offers_are_never_mailed(self):
         with store.db() as conn:
-            conn.execute('INSERT INTO hidden VALUES (1,?,1)', (self.offer.url,))
+            conn.execute('INSERT INTO hidden(search_id,url,hidden_at) VALUES (1,?,1)', (self.offer.url,))
         await self.found(self.offer)
         self.assertEqual(self.count('outbox'), 0)
 
@@ -825,8 +824,10 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_idealo_reference_moves_into_its_own_table_and_follows_the_search(self):
         with store.db() as conn:
-            conn.execute("INSERT INTO settings VALUES ('reference:1','{\"price\":4000}')")
-            conn.execute("INSERT INTO settings VALUES ('reference:99','{\"price\":1}')")  # orphan of a deleted search
+            conn.execute("INSERT INTO settings(key,value) VALUES ('reference:1','{\"price\":4000}')")
+            conn.execute(
+                "INSERT INTO settings(key,value) VALUES ('reference:99','{\"price\":1}')"
+            )  # orphan of a deleted search
         self.restart_old_version()
         with store.db() as conn:
             self.assertEqual(
@@ -880,18 +881,11 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(names, ['2026-01-08', '2026-01-09', time.strftime('%Y-%m-%d')])
 
 
-class ApiTests(unittest.TestCase):
+class ApiTests(TempDataTest):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {'DATA_DIR': self.tmp.name})
-        self.env.start()
-        store.init()
+        super().setUp()
         self.client = TestClient(app)
         worker.progress = worker.Progress()
-
-    def tearDown(self):
-        self.env.stop()
-        self.tmp.cleanup()
 
     def test_new_and_existing_searches_are_product_searches(self):
         self.client.post('/api/searches', json=dict(query='Spiel PS5', max_price=5000, sources=['ebay']))
@@ -969,12 +963,15 @@ class ApiTests(unittest.TestCase):
         sid = self.client.post('/api/searches', json=payload).json()['id']
         with store.db() as conn:
             for source, url in (('ebay', 'https://www.ebay.de/itm/1'), ('vinted', 'https://www.vinted.de/items/2')):
-                conn.execute("INSERT INTO offers VALUES (?,?,?,'Spiel PS5',3000,0,'','',1,1)", (sid, source, url))
+                conn.execute(
+                    "INSERT INTO offers(search_id,source,url,title,price,shipping,seller,condition,first_seen,last_seen) VALUES (?,?,?,'Spiel PS5',3000,0,'','',1,1)",
+                    (sid, source, url),
+                )
                 conn.execute(
                     'INSERT INTO source_status(search_id,source,checked_at,error,count) VALUES (?,?,1,NULL,1)',
                     (sid, source),
                 )
-            conn.execute('INSERT INTO idealo_references VALUES (?,\'{"price":4000}\')', (sid,))
+            conn.execute('INSERT INTO idealo_references(search_id,value) VALUES (?,\'{"price":4000}\')', (sid,))
 
         def kept():
             state = self.client.get('/api/state').json()
@@ -1005,7 +1002,8 @@ class ApiTests(unittest.TestCase):
     def offer(self, sid, url, price, notified=False):
         with store.db() as conn:
             conn.execute(
-                "INSERT INTO offers VALUES (?,'ebay',?,'Resident Evil Requiem',?,0,'','',1,1)", (sid, url, price)
+                "INSERT INTO offers(search_id,source,url,title,price,shipping,seller,condition,first_seen,last_seen) VALUES (?,'ebay',?,'Resident Evil Requiem',?,0,'','',1,1)",
+                (sid, url, price),
             )
             if notified:
                 conn.execute(
@@ -1146,7 +1144,7 @@ class ApiTests(unittest.TestCase):
         self.offer(sid, 'https://www.ebay.de/itm/9', 300)
         self.offer(sid, 'https://www.ebay.de/itm/8', 900)
         with store.db() as conn:
-            conn.execute("INSERT INTO start_offers VALUES (?,'https://www.ebay.de/itm/8')", (sid,))
+            conn.execute("INSERT INTO start_offers(search_id,url) VALUES (?,'https://www.ebay.de/itm/8')", (sid,))
         self.assertEqual([(o['price'], o['start']) for o in self.state()['offers']], [(900, True)])
 
     def test_watch_list_keeps_a_snapshot(self):
@@ -1183,7 +1181,8 @@ class ApiTests(unittest.TestCase):
             url = f'https://www.ebay.de/itm/9{n}'
             with store.db() as conn:
                 conn.execute(
-                    "INSERT INTO offers VALUES (?,'ebay',?,?,900,0,'','',1,1)", (sid, url, f'Poster gerahmt {n}')
+                    "INSERT INTO offers(search_id,source,url,title,price,shipping,seller,condition,first_seen,last_seen) VALUES (?,'ebay',?,?,900,0,'','',1,1)",
+                    (sid, url, f'Poster gerahmt {n}'),
                 )
             self.client.post('/api/hidden', json={'search_id': sid, 'url': url, 'hidden': True})
         self.assertEqual(self.state()['learned'], {category: ['gerahmt', 'poster']})
@@ -1288,19 +1287,9 @@ if __name__ == '__main__':
     unittest.main()
 
 
-class NestedConnectionTests(unittest.TestCase):
+class NestedConnectionTests(TempDataTest):
     """A second connection that would wait for the first one's write lock in the same thread fails at once:
     waiting can never end there, and it would stand the whole app still (the event loop) for 20 seconds."""
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {'DATA_DIR': self.tmp.name})
-        self.env.start()
-        store.init()
-
-    def tearDown(self):
-        self.env.stop()
-        self.tmp.cleanup()
 
     def test_a_second_writer_inside_a_writing_transaction_fails_at_once(self):
         start = time.monotonic()

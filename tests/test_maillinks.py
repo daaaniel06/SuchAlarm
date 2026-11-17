@@ -1,10 +1,11 @@
 import os
 import re
-import tempfile
 import unittest
+from typing import ClassVar
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from helpers import TempDataTest
 
 from suchalarm import mailer, maillinks, store, worker
 from suchalarm.app import app
@@ -14,20 +15,15 @@ OFFER = {'url': URL, 'title': 'iPhone 13', 'price': 30000, 'shipping': 0, 'sourc
          'condition': 'Gebraucht'}  # fmt: skip
 
 
-class MailLinkTests(unittest.TestCase):
+class MailLinkTests(TempDataTest):
+    ENV: ClassVar[dict[str, str]] = {'APP_URL': 'https://alarm.example/'}
+
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {'DATA_DIR': self.tmp.name, 'APP_URL': 'https://alarm.example/'})
-        self.env.start()
-        store.init()
+        super().setUp()
         self.client = TestClient(app)
         worker.progress = worker.Progress()
         payload = dict(query='iPhone 13', max_price=40000, sources=['ebay'])
         self.sid = self.client.post('/api/searches', json=payload).json()['id']
-
-    def tearDown(self):
-        self.env.stop()
-        self.tmp.cleanup()
 
     def path(self, link):
         return link.removeprefix('https://alarm.example')
@@ -77,7 +73,10 @@ class MailLinkTests(unittest.TestCase):
 
     def test_save_puts_the_hit_on_the_watch_list(self):
         with store.db() as conn:
-            conn.execute("INSERT INTO offers VALUES (?,'ebay',?,'iPhone 13',30000,0,'','',1,1)", (self.sid, URL))
+            conn.execute(
+                "INSERT INTO offers(search_id,source,url,title,price,shipping,seller,condition,first_seen,last_seen) VALUES (?,'ebay',?,'iPhone 13',30000,0,'','',1,1)",
+                (self.sid, URL),
+            )
         self.assertIn('Gemerkt.', self.client.post(self.path(maillinks.link('save', s=self.sid, u=URL))).text)
         with store.db() as conn:
             self.assertTrue(store.is_saved(conn, URL))
@@ -85,7 +84,10 @@ class MailLinkTests(unittest.TestCase):
     def test_nothing_to_undo_when_it_was_already_so(self):
         """A hit saved in the app stays saved: no Rückgängig that would take it off the watch list."""
         with store.db() as conn:
-            conn.execute("INSERT INTO offers VALUES (?,'ebay',?,'iPhone 13',30000,0,'','',1,1)", (self.sid, URL))
+            conn.execute(
+                "INSERT INTO offers(search_id,source,url,title,price,shipping,seller,condition,first_seen,last_seen) VALUES (?,'ebay',?,'iPhone 13',30000,0,'','',1,1)",
+                (self.sid, URL),
+            )
         self.client.post('/api/saved', json={'search_id': self.sid, 'url': URL, 'saved': True})
         page = self.client.post(self.path(maillinks.link('save', s=self.sid, u=URL))).text
         self.assertIn('das war schon so', page)

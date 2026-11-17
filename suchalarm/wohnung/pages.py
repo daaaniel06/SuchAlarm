@@ -128,7 +128,9 @@ def _save_page(conn, search, page, now, stock):
     seen = dict(conn.execute('SELECT url, first_seen FROM listings WHERE search_id=? AND source=?', (sid, source)))
     unseen = {item.url for item in listings if item.url not in seen}
     if stock:
-        conn.executemany('INSERT OR IGNORE INTO start_offers VALUES (?,?)', [(sid, url) for url in unseen])
+        conn.executemany(
+            'INSERT OR IGNORE INTO start_offers(search_id,url) VALUES (?,?)', [(sid, url) for url in unseen]
+        )
         oldest = min(seen.values(), default=now)
         ranked = [url for url in dict.fromkeys(item.url for item in listings) if url in unseen]
         seen |= {url: oldest - 1 - position for position, url in enumerate(ranked)}

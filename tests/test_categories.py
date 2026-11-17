@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs, urlsplit
 
 from fastapi.testclient import TestClient
+from helpers import TempDataTest
 
 from suchalarm import store, worker
 from suchalarm.app import app
@@ -431,12 +432,9 @@ class CategoryTests(unittest.TestCase):
         )  # new price: query only
 
 
-class CategoryApiTests(unittest.TestCase):
+class CategoryApiTests(TempDataTest):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {'DATA_DIR': self.tmp.name})
-        self.env.start()
-        store.init()
+        super().setUp()
         self.client = TestClient(app)
         worker.progress = worker.Progress()
         self.payload = dict(
@@ -449,10 +447,6 @@ class CategoryApiTests(unittest.TestCase):
             radius=25,
             negotiable=True,
         )
-
-    def tearDown(self):
-        self.env.stop()
-        self.tmp.cleanup()
 
     def test_other_spellings_are_cleaned_and_limited(self):
         created = self.client.post(

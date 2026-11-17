@@ -35,7 +35,7 @@ class ImageCacheTests(unittest.IsolatedAsyncioTestCase):
                 "INSERT INTO pictures(key,source,remote,state,seen,priority) VALUES (?,'ebay',?,'queued',?,?)",
                 (key, 'https://i.ebayimg.com/' + key + '.jpg', seen, priority),
             )
-            conn.execute('INSERT INTO offers VALUES (?,?,?)', (url, key, seen))
+            conn.execute('INSERT INTO offers(url,key,seen) VALUES (?,?,?)', (url, key, seen))
 
     def test_only_provider_cdns_over_https(self):
         self.assertTrue(images.valid('ebay', 'https://i.ebayimg.com/images/g/x/s-l300.jpg'))

@@ -405,7 +405,7 @@ class SavedShippingTests(unittest.IsolatedAsyncioTestCase):
         value = {'offers': [], 'reference': None}
         with cadence.db() as conn:
             conn.execute(
-                "INSERT INTO queries VALUES (?,?,?,?,0,'ok',?)",
+                "INSERT INTO queries(key,source,at,next_at,failures,state,value) VALUES (?,?,?,?,0,'ok',?)",
                 (cadence.query_key('idealo', search), 'idealo', now, now + 43200, json.dumps(value)),
             )
         with patch('suchalarm.core.browser.InvisiblePlaywright') as browser:
@@ -433,7 +433,7 @@ class SavedShippingTests(unittest.IsolatedAsyncioTestCase):
         cadence.save_page('ebay', sources.search_url('ebay', search['query'], search), dict(self.listing(), rows=[row]))
         with cadence.db() as conn:
             conn.execute(
-                "INSERT INTO queries VALUES (?,?,?,?,0,'ok',?)",
+                "INSERT INTO queries(key,source,at,next_at,failures,state,value) VALUES (?,?,?,?,0,'ok',?)",
                 (
                     cadence.query_key('ebay', search),
                     'ebay',
@@ -630,7 +630,8 @@ class DeliveryQueueTests(unittest.IsolatedAsyncioTestCase):
         }
         with cadence.db() as conn:
             conn.execute(
-                "INSERT INTO queries VALUES ('test','vinted',?,?,0,'ok',?)", (now, now + 1800, json.dumps(value))
+                "INSERT INTO queries(key,source,at,next_at,failures,state,value) VALUES ('test','vinted',?,?,0,'ok',?)",
+                (now, now + 1800, json.dumps(value)),
             )
         await delivery.step({offer.url}, AsyncMock(return_value=249))
         with cadence.db() as conn:
@@ -647,12 +648,12 @@ class DeliveryQueueTests(unittest.IsolatedAsyncioTestCase):
             conn.execute("INSERT INTO searches(id,query,max_price,sources) VALUES (1,'Spiel',4000,'[\"vinted\"]')")
             for i in (1, 2):
                 conn.execute(
-                    "INSERT INTO offers VALUES (1,'vinted',?,'Spiel',3000,NULL,'','',1,1)",
+                    "INSERT INTO offers(search_id,source,url,title,price,shipping,seller,condition,first_seen,last_seen) VALUES (1,'vinted',?,'Spiel',3000,NULL,'','',1,1)",
                     (f'https://www.vinted.de/items/{i}',),
                 )
-            conn.execute("INSERT INTO shipping_baselines VALUES (1,'https://www.vinted.de/items/1')")
-            conn.execute("INSERT INTO settings VALUES ('mail_enabled','1')")
-            conn.execute("INSERT INTO settings VALUES ('recipients','[\"test@example.com\"]')")
+            conn.execute("INSERT INTO shipping_baselines(search_id,url) VALUES (1,'https://www.vinted.de/items/1')")
+            conn.execute("INSERT INTO settings(key,value) VALUES ('mail_enabled','1')")
+            conn.execute("INSERT INTO settings(key,value) VALUES ('recipients','[\"test@example.com\"]')")
         for i in (1, 2):
             with patch('suchalarm.preis.delivery.step', return_value=(f'https://www.vinted.de/items/{i}', 249)):
                 await products.update_shipping()

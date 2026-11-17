@@ -1,12 +1,13 @@
 """The rules of AGENTS.md as tests of their own: each one guards a class of errors, not one implementation."""
 
 import ast
-import os
-import tempfile
 import time
 import unittest
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import AsyncMock, patch
+
+from helpers import AsyncTempDataTest, TempDataTest
 
 from suchalarm import digest, mailer, status, store, worker
 from suchalarm.core import browser, cadence
@@ -59,19 +60,9 @@ class StructureTests(unittest.TestCase):
                 self.assertFalse(literals & {'preis', 'wohnung'})
 
 
-class SharedResultTests(unittest.TestCase):
+class SharedResultTests(TempDataTest):
     """Searches with the same query key share one provider request and its cached result: whatever changes the
     request (its URL) must change the key, or a search would get another search's result."""
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {'DATA_DIR': self.tmp.name})
-        self.env.start()
-        store.init()
-
-    def tearDown(self):
-        self.env.stop()
-        self.tmp.cleanup()
 
     def assert_key_follows_request(self, pairs, request, key):
         for label, a, b in pairs:
@@ -142,29 +133,22 @@ class PriceTests(unittest.TestCase):
         self.assertFalse(eligible(offer, dict(min_price=0, max_price=999999, include_shipping=True)))
 
 
-class FlowTests(unittest.IsolatedAsyncioTestCase):
+class FlowTests(AsyncTempDataTest):
     """Find, send, restart: what the mail history says at each step."""
 
+    ENV: ClassVar[dict[str, str]] = {'SMTP_HOST': 'smtp.example', 'SMTP_FROM': 'a@example.com'}
+
     async def asyncSetUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(
-            os.environ, {'DATA_DIR': self.tmp.name, 'SMTP_HOST': 'smtp.example', 'SMTP_FROM': 'a@example.com'}
-        )
-        self.env.start()
-        store.init()
+        await super().asyncSetUp()
         with store.db() as conn:
             conn.execute("INSERT INTO searches(query,max_price,sources) VALUES ('Spiel',3500,'[\"ebay\"]')")
-            conn.execute("INSERT INTO settings VALUES ('recipients','[\"a@example.com\"]')")
-            conn.execute("INSERT INTO settings VALUES ('mail_enabled','1')")
+            conn.execute("INSERT INTO settings(key,value) VALUES ('recipients','[\"a@example.com\"]')")
+            conn.execute("INSERT INTO settings(key,value) VALUES ('mail_enabled','1')")
             conn.execute(
                 "INSERT INTO source_status(search_id,source,checked_at,error,count,started) VALUES (1,'ebay',1,NULL,0,1)"
             )
         self.search = store.searches()[0]
         self.offer = Offer('ebay', 'https://www.ebay.de/itm/12345', 'Spiel', 3000, 0)
-
-    async def asyncTearDown(self):
-        self.env.stop()
-        self.tmp.cleanup()
 
     async def found(self, *offers, error=None):
         fetch = AsyncMock(side_effect=error) if error else AsyncMock(return_value=(list(offers), None))

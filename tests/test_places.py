@@ -1,11 +1,9 @@
 """A portal's own place search: asked once per place, kept for good, an unknown place rests the source."""
 
-import os
-import tempfile
-import unittest
 from unittest.mock import AsyncMock, patch
 
-from suchalarm import store
+from helpers import AsyncTempDataTest
+
 from suchalarm.core import cadence
 from suchalarm.wohnung import sources
 from suchalarm.wohnung.domain import profile
@@ -15,17 +13,7 @@ def flat_search(query='Darmstadt', **filters):
     return dict(id=1, kind='wohnung', query=query, max_price=150000, radius=0, filters=filters)
 
 
-class ResolvePlaceTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {'DATA_DIR': self.tmp.name})
-        self.env.start()
-        store.init()
-
-    def tearDown(self):
-        self.env.stop()
-        self.tmp.cleanup()
-
+class ResolvePlaceTests(AsyncTempDataTest):
     async def test_a_found_place_is_asked_once_and_booked_as_a_visit(self):
         p, lookup = profile(flat_search()), AsyncMock(return_value='4868')
         with patch('suchalarm.core.cadence.book') as book:

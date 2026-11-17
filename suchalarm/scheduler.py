@@ -35,9 +35,13 @@ def request(search, only=None):
                 retry = max(retry, run['finished_at'] + cadence.MANUAL_COOLDOWN - now)
                 continue
             else:
-                conn.execute('INSERT OR REPLACE INTO manual_runs VALUES (?,?,0)', (key, now))
+                conn.execute(
+                    'INSERT OR REPLACE INTO manual_runs(key,requested_at,finished_at) VALUES (?,?,0)', (key, now)
+                )
                 started += 1
-            conn.execute('INSERT OR IGNORE INTO manual VALUES (?,?,?)', (search['id'], source, key))
+            conn.execute(
+                'INSERT OR IGNORE INTO manual(search_id,source,key) VALUES (?,?,?)', (search['id'], source, key)
+            )
     return dict(
         queued=bool(started or pending), started=bool(started), already_running=pending, retry_after=int(retry + 0.999)
     )
@@ -103,7 +107,10 @@ def _sync_manual(conn, by_id, now):
             del manual[(sid, source)]
     _finish_orphaned_runs(conn, now)
     # Existing pending requests from an older version become one fresh manual run.
-    conn.executemany('INSERT OR IGNORE INTO manual_runs VALUES (?,?,0)', [(key, now) for key in set(manual.values())])
+    conn.executemany(
+        'INSERT OR IGNORE INTO manual_runs(key,requested_at,finished_at) VALUES (?,?,0)',
+        [(key, now) for key in set(manual.values())],
+    )
     runs = {r['key']: r['requested_at'] for r in conn.execute('SELECT * FROM manual_runs WHERE finished_at=0')}
     return manual, runs
 
@@ -125,7 +132,7 @@ def _sync_jobs(conn, consumers):
     for key, (source, _) in consumers.items():
         if key not in jobs:
             position += 1
-            conn.execute('INSERT INTO jobs VALUES (?,?,?,0)', (key, source, position))
+            conn.execute('INSERT INTO jobs(key,source,position,not_before) VALUES (?,?,?,0)', (key, source, position))
             jobs[key] = dict(key=key, source=source, position=position, not_before=0)
     conn.executemany('DELETE FROM jobs WHERE key=?', [(key,) for key in jobs.keys() - consumers.keys()])
     return jobs
