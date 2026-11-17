@@ -43,6 +43,13 @@ async def prepare(search: store.Search) -> None:
             pass
         except Exception:
             log.warning('Place lookup failed for search %s', search['id'])
+    if sources.needs_district_area(search):
+        try:
+            await sources.district_area(place_query(profile(search)))
+        except cadence.Deferred:
+            pass  # the next check asks again; until then the whole stock stays out
+        except Exception:
+            log.warning('District outline lookup failed for search %s', search['id'])
 
 
 def rests(search: store.Search, source: str) -> str | None:

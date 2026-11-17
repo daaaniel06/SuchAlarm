@@ -253,6 +253,14 @@ class FilterTests(unittest.TestCase):
         postcode = {**town, 'place': {'kind': 'plz', 'label': '64283 Darmstadt', 'query': '64283'}}
         self.assertEqual(match(flat(place='64285 Darmstadt'), postcode), ('excluded', ['Nicht in 64283']))
 
+    def test_inside_a_polygon_with_a_hole(self):
+        ring = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]]
+        hole = [[4.0, 4.0], [6.0, 4.0], [6.0, 6.0], [4.0, 6.0], [4.0, 4.0]]
+        area = {'type': 'MultiPolygon', 'coordinates': [[ring, hole]]}
+        self.assertTrue(domain.inside(area, 2, 2))
+        self.assertFalse(domain.inside(area, 5, 5))  # in the hole
+        self.assertFalse(domain.inside(area, 11, 5))
+
     def test_a_district_search_keeps_its_towns(self):
         town = {**PROFILE, 'city': 'Darmstadt-Dieburg', 'exclusions': [], 'minArea': 0, 'minRooms': 1}
         for kind, label in (
@@ -263,8 +271,6 @@ class FilterTests(unittest.TestCase):
             with self.subTest(kind=kind, label=label):
                 district = {**town, 'place': {'kind': kind, 'label': label, 'query': 'Darmstadt-Dieburg'}}
                 self.assertEqual(match(flat(place='64807 Dieburg'), district)[0], 'matched')
-                # A landlord's whole stock was not searched by the district: its name cannot place a flat.
-                self.assertEqual(match(flat(place='34117 Kassel', source='nhw'), district)[0], 'excluded')
 
     def test_a_postcode_search_judges_an_address_without_postcode_by_its_town(self):
         town = {**PROFILE, 'city': '64283', 'exclusions': [], 'minArea': 0, 'minRooms': 1}
@@ -902,6 +908,27 @@ class PlaceTests(TempData):
         self.assertEqual(len(sources.select(stock, around)), 2)  # Mühltal is 6 km from the centre
         postcode = self.stored_search(query='64367', sources=['bauverein'])
         self.assertEqual([x.place for x in sources.select(stock, postcode)], ['Bruchmühlenweg 8, 64367 Mühltal'])
+
+    def test_a_district_places_a_whole_stock_by_its_outline(self):
+        district = self.stored_search(
+            query='Darmstadt-Dieburg (Kreis)',
+            sources=['nhw', 'immoscout24'],
+            filters={
+                'min_area': 0, 'min_rooms': 1, 'exclusions': [],
+                'place': {'kind': 'district', 'label': 'Darmstadt-Dieburg (Kreis)', 'query': 'Darmstadt-Dieburg'},
+            },
+        )  # fmt: skip
+        dieburg = flat(source='nhw', url='https://nhw/1', place='64807 Dieburg', lat=49.90, lon=8.84)
+        kassel = flat(source='nhw', url='https://nhw/2', place='34117 Kassel', lat=51.31, lon=9.49)
+        unplaced = flat(source='nhw', url='https://nhw/3', place='Dieburg')
+        portal = flat(source='immoscout24', url='https://is24/1', place='64807 Dieburg')
+        stock = [dieburg, kassel, unplaced, portal]
+        self.assertEqual(sources.select(stock, district), [portal])  # outline not looked up yet: stock stays out
+        square = {'type': 'Polygon', 'coordinates': [[[8.6, 49.7], [9.0, 49.7], [9.0, 50.0], [8.6, 50.0], [8.6, 49.7]]]}
+        cadence.save_location('osm-area', 'darmstadt-dieburg', json.dumps(square))
+        self.assertEqual(sources.select(stock, district), [dieburg, portal])
+        self.assertTrue(sources.needs_district_area(district))
+        self.assertFalse(sources.needs_district_area(dict(district, radius=10)))
 
     def test_a_radius_search_without_a_position_goes_by_the_town(self):
         """Distance only where the centre and the flat's spot are known; else the town decides, so a landlord's

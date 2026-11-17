@@ -232,6 +232,20 @@ def coordinate_pair(lat, lon):
     return {'lat': round(lat, 6), 'lon': round(lon, 6)} if 47 <= lat <= 56 and 5 <= lon <= 16 else {}
 
 
+def inside(area, lat, lon):
+    """Whether a point lies in a GeoJSON Polygon or MultiPolygon (rings of [lon, lat]); holes count as outside."""
+    polygons = [area['coordinates']] if area['type'] == 'Polygon' else area['coordinates']
+
+    def in_ring(ring):
+        hit = False
+        for (x1, y1), (x2, y2) in zip(ring, ring[1:] + ring[:1], strict=True):
+            if (y1 > lat) != (y2 > lat) and lon < x1 + (lat - y1) * (x2 - x1) / (y2 - y1):
+                hit = not hit
+        return hit
+
+    return any(in_ring(rings[0]) and not any(in_ring(hole) for hole in rings[1:]) for rings in polygons)
+
+
 def distance_km(a, b):
     lat1, lon1, lat2, lon2 = map(math.radians, (*a, *b))
     h = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
@@ -399,8 +413,8 @@ def outside_home(listing, profile):
         return False
     if is_district(profile.get('place') or {}):
         # A district ("Darmstadt-Dieburg (Kreis)") has many towns; its name says none of them. The portals
-        # searched it by its area; a landlord's whole stock (WHOLE_STOCK) is not, so it cannot tell.
-        return listing.source in WHOLE_STOCK
+        # searched it by its area; a landlord's whole stock is placed by its area in sources.select().
+        return False
     area = home_area(profile)
     if POSTCODE.fullmatch(area) and not POSTCODE.search(where):
         area = home_town(profile)

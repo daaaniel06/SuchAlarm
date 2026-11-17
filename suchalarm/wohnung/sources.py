@@ -14,10 +14,13 @@ from ..core import browser, cadence, http, images
 from . import portals
 from .domain import (
     SOURCES,
+    WHOLE_STOCK,
     Listing,
     beyond_radius,
     distance_km,
     home_area,
+    inside,
+    is_district,
     outside_home,
     place_query,
     profile,
@@ -131,6 +134,41 @@ async def locate(query, follow=False):
     return tuple(value)
 
 
+async def district_area(query, follow=False):
+    """The outline of a district (GeoJSON, simplified) from OpenStreetMap; looked up once, kept for good.
+    None if OpenStreetMap knows no such boundary."""
+    known = cadence.location('osm-area', _key(query))
+    if known:
+        return json.loads(known)
+    url = 'https://nominatim.openstreetmap.org/search?' + urlencode(
+        {
+            'q': f'Landkreis {query}',
+            'countrycodes': 'de',
+            'format': 'json',
+            'limit': 3,
+            'polygon_geojson': 1,
+            'polygon_threshold': 0.005,
+        }
+    )
+    result = await http.get_json('osm', url, {'User-Agent': OSM_UA}, follow=follow, kind='osm')
+    area = next(
+        (
+            r['geojson']
+            for r in (result if isinstance(result, list) else [])
+            if r.get('class') == 'boundary' and (r.get('geojson') or {}).get('type') in ('Polygon', 'MultiPolygon')
+        ),
+        None,
+    )
+    cadence.save_location('osm-area', _key(query), json.dumps(area))
+    return area
+
+
+def known_district_area(search):
+    """The district outline of a search if looked up already (never a request), else None."""
+    known = cadence.location('osm-area', _key(place_query(profile(search))))
+    return json.loads(known) if known else None
+
+
 def centre(search):
     """The searched place's centre if it was looked up already, else None (never a request)."""
     known = cadence.location('osm', _key(place_query(profile(search))))
@@ -140,6 +178,12 @@ def centre(search):
 def needs_centre(search):
     p = profile(search)
     return bool(p['radius']) or (p['place'] or {}).get('kind') == 'plz'
+
+
+def needs_district_area(search):
+    """A district search without radius places a landlord's whole stock by the district's outline."""
+    p = profile(search)
+    return not p['radius'] and is_district(p['place'] or {}) and bool(set(WHOLE_STOCK) & set(search['sources']))
 
 
 def needs_place(search):
@@ -512,9 +556,18 @@ def select(listings, search):
     the detail page; a listing ruled out by an estimated rent may still turn out to fit.
     """
     p, middle = profile(search), centre(search)
+    district = not p['radius'] and is_district(p['place'] or {})
+    area = known_district_area(search) if district else None
     kept = []
     for listing in listings:
         if wanted_ad(listing) or beyond_radius(listing, p, middle) is not None:
+            continue
+        # A landlord's whole stock is not searched by the district: only a flat inside its outline counts.
+        if (
+            district
+            and listing.source in WHOLE_STOCK
+            and not (area and listing.lat is not None and inside(area, listing.lat, listing.lon))
+        ):
             continue
         if listing.source in ('bauverein', 'nhw') and p['radius']:
             spot = (listing.lat, listing.lon) if listing.lat is not None else None
