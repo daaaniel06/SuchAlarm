@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from suchalarm import mailer, mailserver, scheduler, store, worker
+from suchalarm import digest, mailer, mailserver, scheduler, store, worker
 from suchalarm.app import app, create, delete, update
 from suchalarm.core import browser, cadence, http, images
 from suchalarm.kinds import KINDS
@@ -218,7 +218,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         newer = [replace(self.offer, url=f'https://www.ebay.de/itm/{n}', price=4000) for n in range(3)]
         await self.found(*newer)  # newer offers above the limit push it off the page
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest(time.time() + 86401)
+            await digest.send_digest(time.time() + 86401)
         deliver.assert_called_once()
         self.assertIn(self.offer.url, deliver.call_args.args[0].get_body(('plain',)).get_content())
         await self.found(*newer)  # mailed: no longer kept beside the page
@@ -232,10 +232,10 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         await self.found(self.offer)
         await update(1, ProductSearch(query='Spiel', max_price=3500, min_price=100, sources=['ebay']))
         self.search = store.search(1)
-        await worker.send_digest()  # a pass before the daily mail is due
+        await digest.send_digest()  # a pass before the daily mail is due
         await self.found(self.offer)  # the first result after the edit is a new starting point
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest(time.time() + 86401)
+            await digest.send_digest(time.time() + 86401)
         deliver.assert_called_once()
         self.assertIn(self.offer.url, deliver.call_args.args[0].get_body(('plain',)).get_content())
 
@@ -244,7 +244,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         await self.found(self.offer)
         await update(1, ProductSearch(query='Spiel', max_price=3500, category='videospiele', sources=['ebay']))
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest(time.time() + 86401)
+            await digest.send_digest(time.time() + 86401)
         deliver.assert_not_called()
 
     async def test_a_queued_car_is_judged_again_by_its_stored_registration_year(self):
@@ -264,14 +264,14 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(KINDS['preis'].take_pending(conn)), 1)
         await update(1, ProductSearch(**car, filters={'year_from': 2020}))
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest(time.time() + 7201)
+            await digest.send_digest(time.time() + 7201)
         deliver.assert_not_called()
 
     async def test_a_queued_offer_with_a_newly_excluded_word_is_not_mailed(self):
         await self.found(replace(self.offer, title='Spiel defekt'))
         await update(1, ProductSearch(query='Spiel', max_price=3500, excluded='defekt', sources=['ebay']))
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
         deliver.assert_not_called()
 
     async def test_disabling_negotiable_drops_only_queued_vb_offers(self):
@@ -289,7 +289,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         await update(1, ProductSearch(query='Spiel', max_price=3500, negotiable=False, sources=['ebay']))
         self.assertEqual(self.count('outbox'), 1)
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
         body = deliver.call_args.args[0].get_body(('plain',)).get_content()
         self.assertNotIn(self.offer.url, body)
         self.assertIn(rows[1]['url'], body)
@@ -314,12 +314,12 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
     async def test_dedup_and_further_drop(self):
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
             await self.found(self.offer)
-            await worker.send_digest()
+            await digest.send_digest()
             await self.found(self.offer)
-            await worker.send_digest()
+            await digest.send_digest()
             self.assertEqual(deliver.call_count, 1)
             await self.found(replace(self.offer, price=2900))
-            await worker.send_digest()
+            await digest.send_digest()
             self.assertEqual(deliver.call_count, 2)
             self.assertEqual(deliver.call_args[0][0]['Subject'], 'Preisalarm: Spiel für 29,00 €')
 
@@ -335,16 +335,16 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         with delivery.db() as conn:
             self.assertEqual([r[0] for r in conn.execute('SELECT url FROM deliveries')], [hit.url])
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
             deliver.assert_not_called()
             with patch('time.time', return_value=time.time() + 15 * 60 + 1):
-                await worker.send_digest()
+                await digest.send_digest()
         self.assertIn('Versand unbekannt', deliver.call_args[0][0].get_body(('plain',)).get_content())
 
     async def test_one_mail_for_several_offers(self):
         await self.found(self.offer, replace(self.offer, url='https://www.ebay.de/itm/2', price=2000))
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
         message = deliver.call_args[0][0]
         self.assertEqual(message['Subject'], 'Preisalarm: 2 neue Angebote')
         self.assertIn('https://www.ebay.de/itm/2', message.get_body(('plain',)).get_content())
@@ -353,20 +353,20 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
     async def test_definite_failure_retries_after_a_pause(self):
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', side_effect=mailer.DeliveryError('Mailserver nicht erreichbar.', False)):
-            await worker.send_digest()
+            await digest.send_digest()
         self.assertEqual((self.count('notifications'), self.count('outbox', 'WHERE batch IS NULL')), (0, 1))
         self.assertIn('Mailserver nicht erreichbar.', store.settings()['mail_error'])
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
             deliver.assert_not_called()
-            await worker.send_digest(time.time() + 601)
+            await digest.send_digest(time.time() + 601)
             deliver.assert_called_once()
         self.assertNotIn('mail_error', store.settings())
 
     async def test_uncertain_outcome_is_never_resent(self):
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', side_effect=mailer.DeliveryError('Verbindung abgebrochen.', True)):
-            await worker.send_digest()
+            await digest.send_digest()
         self.assertEqual(
             (self.count('notifications'), self.count('outbox'), self.count('batches', "WHERE status='unknown'")),
             (1, 0, 1),
@@ -379,11 +379,11 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         self.setting('recipients', '["a@example.com","b@example.com","c@example.com"]')
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', return_value={'b@example.com': 451, 'c@example.com': 550}):
-            await worker.send_digest()
+            await digest.send_digest()
         with patch('suchalarm.mailer.deliver', return_value={}) as deliver:
-            await worker.send_digest()  # not yet due
+            await digest.send_digest()  # not yet due
             deliver.assert_not_called()
-            await worker.send_digest(time.time() + worker.RECIPIENT_RETRY + 1)
+            await digest.send_digest(time.time() + digest.RECIPIENT_RETRY + 1)
         deliver.assert_called_once()
         again = deliver.call_args.args[0]
         self.assertEqual(again['To'], 'b@example.com')  # never a, and c refused for good
@@ -398,7 +398,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         self.setting('recipients', '["a@example.com","b@example.com"]')
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', return_value={'b@example.com': 451}):
-            await worker.send_digest()
+            await digest.send_digest()
 
     def delivery(self, address):
         with store.db() as conn:
@@ -411,14 +411,14 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         store.init()
         self.assertEqual(self.delivery('b@example.com'), 'uncertain')
         with patch('suchalarm.mailer.deliver', return_value={}) as deliver:
-            await worker.send_digest(time.time() + 86400)
+            await digest.send_digest(time.time() + 86400)
         deliver.assert_not_called()
 
     async def test_a_removed_recipient_gets_no_retry(self):
         await self.refused_for_now()
         self.setting('recipients', '["a@example.com"]')
         with patch('suchalarm.mailer.deliver', return_value={}) as deliver:
-            await worker.send_digest(time.time() + worker.RECIPIENT_RETRY + 1)
+            await digest.send_digest(time.time() + digest.RECIPIENT_RETRY + 1)
         deliver.assert_not_called()
         self.assertEqual(self.delivery('b@example.com'), 'cancelled')
 
@@ -426,7 +426,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         await self.refused_for_now()
         refusal = smtplib.SMTPRecipientsRefused({'b@example.com': (550, b'no such user')})
         with patch('suchalarm.mailer.deliver', side_effect=mailer._explain(refusal, True)):
-            await worker.send_digest(time.time() + worker.RECIPIENT_RETRY + 1)
+            await digest.send_digest(time.time() + digest.RECIPIENT_RETRY + 1)
         self.assertEqual(self.delivery('b@example.com'), 'refused')
 
     async def test_a_failed_mail_of_one_kind_does_not_pause_the_other(self):
@@ -438,13 +438,13 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
             )
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', return_value={}) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
         deliver.assert_called_once()
 
     async def test_a_refused_recipient_is_shown_and_the_others_get_nothing_twice(self):
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', return_value={'b@example.com': 550}):
-            await worker.send_digest()
+            await digest.send_digest()
         self.assertEqual((self.count('outbox'), self.count('batches', "WHERE status='sent'")), (0, 1))
         self.assertIn('b@example.com nicht angenommen', store.settings()['mail_error'])
         with store.db() as conn:
@@ -471,7 +471,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
             return []
 
         with patch('suchalarm.mailer.deliver', side_effect=delete_while_sending):
-            await worker.send_digest()
+            await digest.send_digest()
         self.assertEqual((self.count('outbox'), self.count('batches', "WHERE status='sent'")), (0, 1))
         with store.db() as conn:
             self.assertEqual(
@@ -488,7 +488,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
             return {}
 
         with patch('suchalarm.worker.asyncio.to_thread', side_effect=recreate_while_sending):
-            await worker.send_digest()
+            await digest.send_digest()
         self.assertEqual(store.search(self.search['id'])['query'], 'Laptop')
         self.assertEqual((self.count('notifications'), self.count('outbox')), (0, 0))
         self.assertEqual(self.count('batches', "WHERE status='sent'"), 1)
@@ -505,7 +505,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
             return {}
 
         with patch('suchalarm.worker.asyncio.to_thread', side_effect=edit_while_sending):
-            await worker.send_digest()
+            await digest.send_digest()
         self.assertEqual(self.count('notifications'), 0)
         self.assertEqual(self.count('batches', "WHERE status='sent'"), 1)
         self.search = store.search(1)
@@ -519,7 +519,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
     async def test_a_price_basis_edit_before_restart_does_not_restore_the_old_receipt(self):
         await self.found(self.offer)
         with store.db() as conn:
-            self.assertIsNotNone(worker._claim_batch(conn, store.mail_settings(), time.time(), 'preis'))
+            self.assertIsNotNone(digest._claim_batch(conn, store.mail_settings(), time.time(), 'preis'))
         await update(1, ProductSearch(query='Spiel', max_price=3500, sources=['ebay'], include_shipping=False))
         store.init()
         self.assertEqual((self.count('notifications'), self.count('outbox')), (0, 0))
@@ -533,7 +533,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
             return {}
 
         with patch('suchalarm.worker.asyncio.to_thread', side_effect=pause_while_sending):
-            await worker.send_digest()
+            await digest.send_digest()
         self.assertEqual((self.count('notifications'), self.count('outbox')), (1, 0))
 
     async def test_without_a_mailserver_hits_are_known_and_a_saved_server_only_mails_new_hits(self):
@@ -544,7 +544,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
             new = replace(self.offer, url='https://www.ebay.de/itm/2')
             await self.found(self.offer, new)
             with patch.object(mailer, 'deliver', return_value=[]) as deliver:
-                await worker.send_digest()
+                await digest.send_digest()
             message = deliver.call_args.args[0].get_body(('plain',)).get_content()
             self.assertNotIn(self.offer.url, message)
             self.assertIn(new.url, message)
@@ -556,7 +556,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         await self.found(self.offer)
         self.assertEqual(self.count('outbox'), 1)
         with without_smtp_env(), patch.object(mailer, 'deliver') as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
             deliver.assert_not_called()
         self.assertEqual((self.count('outbox'), self.count('notifications'), self.count('mail_log')), (0, 1, 0))
         self.assertEqual(self.count('batches'), 0)
@@ -568,7 +568,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         await self.found(self.offer)
         self.setting('mail_enabled', '0')
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
             deliver.assert_not_called()
         await self.found(self.offer, replace(self.offer, url='https://www.ebay.de/itm/2'))
         self.setting('mail_enabled', '1')
@@ -579,16 +579,16 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         self.setting('batch_size', '2')
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
             deliver.assert_not_called()
-            await worker.send_digest(time.time() + 7201)
+            await digest.send_digest(time.time() + 7201)
             deliver.assert_called_once()
         self.setting('frequency', 'Täglich')
         await self.found(replace(self.offer, url='https://www.ebay.de/itm/2'))
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest(time.time() + 3600)
+            await digest.send_digest(time.time() + 3600)
             deliver.assert_not_called()
-            await worker.send_digest(time.time() + 86401)
+            await digest.send_digest(time.time() + 86401)
             deliver.assert_called_once()
 
     async def test_restart_during_delivery_is_known_but_not_sent(self):
@@ -608,7 +608,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
     async def test_history_names_why_a_hit_is_known(self):
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', return_value={'b@example.com': 550}):
-            await worker.send_digest()  # accepted for the others: sent
+            await digest.send_digest()  # accepted for the others: sent
         self.assertEqual(self.count('notifications', "WHERE reason='sent'"), 1)
         self.setting('mail_enabled', '0')
         await self.found(self.offer, replace(self.offer, url='https://www.ebay.de/itm/2'))
@@ -646,7 +646,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         self.picture(self.offer.url)
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
         message = deliver.call_args[0][0]
         html = message.get_body(('html',)).get_content()
         self.assertIn('src="cid:', html)
@@ -661,7 +661,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         (images.root() / ('a' * 64 + '.webp')).write_bytes(b'kaputt')
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
         message = deliver.call_args[0][0]
         self.assertNotIn('src="cid:', message.get_body(('html',)).get_content())
 
@@ -669,9 +669,9 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         self.picture(self.offer.url, state='queued')
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
             deliver.assert_not_called()
-            await worker.send_digest(time.time() + 301)
+            await digest.send_digest(time.time() + 301)
             deliver.assert_called_once()
 
     async def shop_case(self, shop_price, used_price, shipping=0, include_shipping=True, fresh=True):
@@ -697,7 +697,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
                 conn.execute("UPDATE source_status SET checked_at=1 WHERE source='ebay'")
                 conn.execute("UPDATE offers SET last_seen=1 WHERE source='ebay'")
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
         return deliver.call_args[0][0].get_body(('plain',)).get_content() if deliver.called else ''
 
     async def test_shop_cheaper_than_every_used_offer_says_so(self):

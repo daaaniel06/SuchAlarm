@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from suchalarm import mailer, status, store, worker
+from suchalarm import digest, mailer, status, store, worker
 from suchalarm.core import browser, cadence
 from suchalarm.preis import worker as products
 from suchalarm.preis.categories import CATEGORIES
@@ -52,7 +52,7 @@ class StructureTests(unittest.TestCase):
                     self.assertIn('book(', text)
 
     def test_app_mailer_and_worker_ask_kinds_instead_of_naming_them(self):
-        for name in ('app.py', 'mailer.py', 'worker.py'):
+        for name in ('app.py', 'mailer.py', 'digest.py', 'worker.py'):
             tree = ast.parse((PACKAGE / name).read_text())
             literals = {node.value for node in ast.walk(tree) if isinstance(node, ast.Constant)}
             with self.subTest(file=name):
@@ -178,24 +178,24 @@ class FlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_no_history_without_the_servers_yes(self):
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', side_effect=mailer.DeliveryError('Abgelehnt.', False)):
-            await worker.send_digest()
+            await digest.send_digest()
         self.assertEqual(self.history(), [])
         with patch('suchalarm.mailer.deliver', return_value={}):
-            await worker.send_digest(time.time() + worker.MAIL_RETRY_AFTER + 1)
+            await digest.send_digest(time.time() + digest.MAIL_RETRY_AFTER + 1)
         self.assertEqual(self.history(), [(3000, 'sent')])
 
     async def test_a_restart_while_sending_never_sends_twice_but_a_lower_price_still_comes(self):
         await self.found(self.offer)
         with store.db() as conn:
-            self.assertIsNotNone(worker._claim_batch(conn, store.mail_settings(), time.time(), 'preis'))
+            self.assertIsNotNone(digest._claim_batch(conn, store.mail_settings(), time.time(), 'preis'))
         store.init()  # the server restarted before the SMTP answer
         self.assertEqual(self.history(), [(3000, 'uncertain')])
         with patch('suchalarm.mailer.deliver', return_value={}) as deliver:
             await self.found(self.offer)
-            await worker.send_digest(time.time() + worker.PACKAGE_WAIT + 1)
+            await digest.send_digest(time.time() + digest.PACKAGE_WAIT + 1)
             deliver.assert_not_called()
             await self.found(Offer('ebay', self.offer.url, 'Spiel', 2500, 0))
-            await worker.send_digest(time.time() + 2 * worker.PACKAGE_WAIT)
+            await digest.send_digest(time.time() + 2 * digest.PACKAGE_WAIT)
             deliver.assert_called_once()
         self.assertEqual(self.history(), [(2500, 'sent')])
 

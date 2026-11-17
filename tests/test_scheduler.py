@@ -150,7 +150,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         self.search()
         with (
             patch('suchalarm.worker._run_job', new=AsyncMock(side_effect=ValueError('kaputt'))),
-            patch('suchalarm.worker.send_digest', new=AsyncMock()) as send,
+            patch('suchalarm.digest.send_digest', new=AsyncMock()) as send,
             patch('suchalarm.worker.daily_backup', new=AsyncMock()) as backup,
         ):
             delay = await worker.run_once()
@@ -163,7 +163,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         actual = AsyncMock(return_value=([], None))
         with (
             patch('suchalarm.preis.sources.fetch', cadence.shared_search(actual)),
-            patch('suchalarm.worker.send_digest', new=AsyncMock()),
+            patch('suchalarm.digest.send_digest', new=AsyncMock()),
             patch('suchalarm.worker.daily_backup', new=AsyncMock()),
         ):
             await worker.run_once()
@@ -187,7 +187,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         actual = AsyncMock(return_value=([Offer('ebay', 'https://www.ebay.de/itm/1', 'Spiel PS5', 3000, 0)], None))
         with (
             patch('suchalarm.preis.sources.fetch', cadence.shared_search(actual)),
-            patch('suchalarm.worker.send_digest', new=AsyncMock()),
+            patch('suchalarm.digest.send_digest', new=AsyncMock()),
             patch('suchalarm.worker.daily_backup', new=AsyncMock()),
         ):
             await worker.run_once()
@@ -217,7 +217,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         actual = AsyncMock(side_effect=RuntimeError('Anbieter antwortet mit HTTP 502.'))
         with (
             patch('suchalarm.preis.sources.fetch', cadence.shared_search(actual)),
-            patch('suchalarm.worker.send_digest', new=AsyncMock()),
+            patch('suchalarm.digest.send_digest', new=AsyncMock()),
             patch('suchalarm.worker.daily_backup', new=AsyncMock()),
         ):
             await worker.run_once()
@@ -242,7 +242,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         scheduler.request(search)
         with (
             patch('suchalarm.core.browser.InvisiblePlaywright') as browser,
-            patch('suchalarm.worker.send_digest', new=AsyncMock()),
+            patch('suchalarm.digest.send_digest', new=AsyncMock()),
             patch('suchalarm.worker.daily_backup', new=AsyncMock()),
         ):
             await worker.run_once()
@@ -257,7 +257,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         actual = AsyncMock(return_value=([Offer('ebay', 'https://www.ebay.de/itm/1', 'Spiel PS5', 3000, 0)], None))
         with (
             patch('suchalarm.preis.sources.fetch', cadence.shared_search(actual)),
-            patch('suchalarm.worker.send_digest', new=AsyncMock()),
+            patch('suchalarm.digest.send_digest', new=AsyncMock()),
             patch('suchalarm.worker.daily_backup', new=AsyncMock()),
         ):
             await worker.run_once()
@@ -311,7 +311,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         start = time.time()
         with (
             patch('suchalarm.preis.sources.fetch', cadence.shared_search(visit)),
-            patch('suchalarm.worker.send_digest', new=AsyncMock()),
+            patch('suchalarm.digest.send_digest', new=AsyncMock()),
             patch('suchalarm.worker.daily_backup', new=AsyncMock()),
             patch('time.time', return_value=start) as clock,
         ):
