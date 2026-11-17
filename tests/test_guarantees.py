@@ -37,6 +37,15 @@ class StructureTests(unittest.TestCase):
                 with self.subTest(file=path.name, name=name):
                     self.assertFalse(name.startswith(('suchalarm.preis', 'suchalarm.wohnung')))
 
+    def test_every_module_that_sends_requests_books_them(self):
+        """A new adapter must not reach a provider past the budget (core/cadence.py, book)."""
+        sending = ('.goto(', 'urlopen(', 'HTTPSConnection(')
+        for path in PACKAGE.rglob('*.py'):
+            text = path.read_text()
+            if any(call in text for call in sending):
+                with self.subTest(file=str(path.relative_to(PACKAGE))):
+                    self.assertIn('book(', text)
+
     def test_app_mailer_and_worker_ask_kinds_instead_of_naming_them(self):
         for name in ('app.py', 'mailer.py', 'worker.py'):
             tree = ast.parse((PACKAGE / name).read_text())

@@ -238,6 +238,11 @@ def ready_at(source, kind='page', now=None):
 
 
 def book(source, kind='page'):
+    """Book one request of KIND at SOURCE now, or raise Deferred. Every request leaving the app is booked right
+    before it goes out (browser.load_page, http.get, images.step, the place lookups). Within one booked page
+    visit only what the page itself would do follows unbooked: the second load after an Akamai challenge, and
+    Immowelt's own search and content requests from its result page (at most 1 + 100 / 30 of them).
+    tests/test_guarantees.py checks that every module sending requests books them."""
     now = time.time()
     key, global_key = f'{site(source)}:{kind}', f'all:{kind}'
     with db() as conn:
