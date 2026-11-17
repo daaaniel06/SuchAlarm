@@ -50,7 +50,7 @@ class PriceFilterTests(unittest.IsolatedAsyncioTestCase):
             query = parse_qs(urlsplit(search_url(source, search['query'], search)).query)
             self.assertNotIn(minimum, query)
         self.assertEqual(portal_price_bounds('vinted', search), (0, 4499))
-        self.assertIn('/s-preis::45/', search_url('kleinanzeigen', search['query'], search))
+        self.assertIn('/s-anzeige:angebote/preis::45/', search_url('kleinanzeigen', search['query'], search))
 
     def test_vinted_buyer_protection_counts_when_the_search_includes_it(self):
         self.assertEqual(buyer_fee('vinted', 4400), 290)  # Vinted's card: 44,00 € -> 46,90 € inkl.
@@ -80,7 +80,7 @@ class PriceFilterTests(unittest.IsolatedAsyncioTestCase):
     def test_kleinanzeigen_rounds_outwards_not_into_the_price_range(self):
         search = dict(self.search, min_price=2050, max_price=4450)
         self.assertEqual(portal_price_bounds('kleinanzeigen', search), (2000, 4500))
-        self.assertIn('/s-preis:20:45/', search_url('kleinanzeigen', search['query'], search))
+        self.assertIn('/s-anzeige:angebote/preis:20:45/', search_url('kleinanzeigen', search['query'], search))
         self.assertFalse(
             eligible(Offer('kleinanzeigen', 'https://www.kleinanzeigen.de/s-anzeige/x/1-1-1', 'Spiel', 2000, 0), search)
         )

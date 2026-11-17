@@ -69,8 +69,10 @@ def kleinanzeigen_url(query, search):
         else ''
     )
     slug = quote(query.replace(' ', '-'), safe='')
-    # Newest first: checked every 15 minutes, every new offer is on page one at least once.
-    return f'https://www.kleinanzeigen.de/s-{price}{slug}/k0{kleinanzeigen_code(category, place, search)}?sortingField=SORTING_DATE'
+    # Newest first: checked every 15 minutes, every new offer is on page one at least once. "anzeige:angebote" leaves
+    # out requests ("Suche Zelda"), which never were offers (live 17.11.2026: 3.065 -> 3.034 for "zelda").
+    code = kleinanzeigen_code(category, place, search)
+    return f'https://www.kleinanzeigen.de/s-anzeige:angebote/{price}{slug}/k0{code}?sortingField=SORTING_DATE'
 
 
 def vinted_url(query, search):

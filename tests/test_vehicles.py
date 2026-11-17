@@ -86,7 +86,7 @@ class VehicleTests(unittest.TestCase):
         car = dict(self.car, filters={'year_from': 2012, 'km_to': 150000, 'fuel': 'diesel', 'gearbox': 'automatik'})
         self.assertEqual(
             search_url('kleinanzeigen', 'VW Golf 7', car),
-            'https://www.kleinanzeigen.de/s-preis::15000/VW-Golf-7/k0c216l9668r100'
+            'https://www.kleinanzeigen.de/s-anzeige:angebote/preis::15000/VW-Golf-7/k0c216l9668r100'
             '+autos.ez_i:2012%2C+autos.km_i:%2C150000+autos.fuel_s:diesel+autos.shift_s:automatik'
             '?sortingField=SORTING_DATE',
         )
