@@ -237,7 +237,7 @@ async def _retry_recipients(now):
         if row is None:
             return
         mail = store.mail_settings(kind=row['kind'] or kinds.DEFAULT)
-        if not mail['enabled'] or row['address'] not in mail['recipients']:
+        if not mail['enabled'] or row['address'] not in {mailer.ascii_or_same(a) for a in mail['recipients']}:
             # Taken out of the recipients, or the kind's mails were switched off since: no more tries.
             conn.execute(
                 'UPDATE deliveries SET status=? WHERE batch=? AND address=?',

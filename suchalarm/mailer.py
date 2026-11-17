@@ -16,7 +16,7 @@ from pathlib import Path
 from PIL import Image
 
 from . import kinds, mailhtml, maillinks
-from .mailserver import configured, server
+from .mailserver import ascii_address, configured, server
 
 log = logging.getLogger('suchalarm')
 
@@ -75,12 +75,23 @@ def _hang_up(client):
         client.close()
 
 
+def ascii_or_same(address):
+    """ADDRESS with an ASCII domain as it goes out; unchanged if it cannot be (the server answers for it)."""
+    try:
+        return ascii_address(address)
+    except ValueError:
+        return address  # the server answers for it, as for any other address
+
+
 def deliver(message):
     """Send over SMTP. Returns the recipients the server refused while it took the others, each with its SMTP
     code (address -> code, sorted). Raises DeliveryError with a short German reason, never secrets."""
     current = _usable_server()
     del message['From']  # the mailbox that sends it, whatever the server is set to now
     message['From'] = current.sender
+    recipients = list(dict.fromkeys(ascii_or_same(a.strip()) for a in (message['To'] or '').split(',') if a.strip()))
+    del message['To']  # recipients saved before addresses were made ASCII may still carry an umlaut domain
+    message['To'] = ', '.join(recipients)
     context = ssl.create_default_context()
     sending = False
     client: smtplib.SMTP

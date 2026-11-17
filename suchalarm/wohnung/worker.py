@@ -123,6 +123,11 @@ def reset(conn: Connection, search_id: int, old: store.Search, payload: FlatSear
     conn.executemany('DELETE FROM more_pages WHERE search_id=? AND source=?', [(search_id, s) for s in removed])
     conn.executemany('DELETE FROM listings WHERE search_id=? AND source=?', [(search_id, s) for s in dropped])
     if moved:
+        if old['query'] != payload.query or payload.radius < old['radius']:
+            # Another place or a smaller radius: flats waiting for the mail may lie outside, and without a
+            # position the radius could not even tell. What lies in the new area comes with its first result. A
+            # wider radius around the same place still holds them.
+            conn.execute('DELETE FROM outbox WHERE search_id=? AND batch IS NULL', (search_id,))
         store.keep_waiting_only(conn, 'listings', search_id)
         conn.execute('DELETE FROM start_offers WHERE search_id=?', (search_id,))
         return

@@ -240,7 +240,14 @@ async def more_step(now=None):
         if refused:
             cadence.outcome(job['source'], 'page', True)
         with store.db() as conn:
-            if refused or job['tries'] + 1 >= MORE_TRIES:
+            if refused:
+                # A refusal says nothing about the page: the job waits out the provider's pause (more_step only
+                # takes a source that may be visited) instead of leaving the stock read half.
+                more_unread(
+                    conn, job['search_id'], job['source'], 0,
+                    f'Seite {job["page"]} folgt nach der Sperrpause des Anbieters',
+                )  # fmt: skip
+            elif job['tries'] + 1 >= MORE_TRIES:
                 conn.execute('DELETE FROM more_pages WHERE job=?', (job['job'],))
             else:
                 conn.execute('UPDATE more_pages SET tries=tries+1 WHERE job=?', (job['job'],))

@@ -54,8 +54,11 @@ def queue_mails(now: float | None = None) -> None:
             if search is None or (row['state'] == PENDING and row['seen'] > now - DETAIL_WAIT):
                 continue  # the detail page decides; a paused portal must not hold a clear match for hours
             if (row['search_id'], row['url']) in followers:
-                # Another portal's copy of a flat that is mailed through its fitting listing: only known.
-                store.remember_reported(conn, row['search_id'], row['url'], 0, now)
+                # Another portal's copy of a flat that is mailed through its fitting listing: known while the
+                # group lasts ("Nicht dieselbe Wohnung" ends it, catalog.separate). A copy mailed or known
+                # before keeps that record.
+                if row['reported'] is None:
+                    store.remember_reported(conn, row['search_id'], row['url'], 0, now, store.COPY)
                 continue
             item = completed(row)
             verdict, _ = match(item, *wanted[search['id']])

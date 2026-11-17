@@ -1516,6 +1516,18 @@ class WorkerTests(TempData):
         pages.save_result(flat_search, 'immoscout24', page(300)[:5], len(page(300)[:5]), time.time())
         self.assertEqual(self.due(), [])  # not a full page
 
+    def test_a_refused_stock_page_waits_out_the_pause(self):
+        flat_search = self.stored_search()
+        page = lambda start: [self.card(n) for n in range(start, start + pages.FULL_PAGE)]  # noqa: E731
+        pages.save_result(flat_search, 'immoscout24', page(0), len(page(0)), time.time())  # the stock, page 1
+        self.assertEqual(self.due(), [(2, 0)])
+        with patch.object(flats.sources, 'more', new=AsyncMock(side_effect=browser.Blocked('HTTP 429'))):
+            asyncio.run(pages.more_step())
+        self.assertEqual(self.due(), [(2, 0)])  # kept, no try used up
+        self.assertIsNone(asyncio.run(pages.more_step()))  # the provider's pause holds it back
+        with store.db() as conn:
+            self.assertIn('Seite 2 folgt', status.of(conn, flat_search['id'], 'immoscout24')['warning'])
+
     def test_a_new_search_reads_the_whole_stock_page_by_page(self):
         flat_search = self.stored_search()
         page = lambda start, size=pages.FULL_PAGE: [self.card(n) for n in range(start, start + size)]  # noqa: E731
@@ -2354,6 +2366,25 @@ class ApiAndMailTests(TempData):
         rows = {row['url'][-1]: row for row in catalog.listings(wider)}
         self.assertEqual((rows['1']['start'], rows['2']['start']), (False, True))  # the rest is the new stock
 
+    def test_queued_flats_of_the_old_place_are_dropped_when_the_place_changes(self):
+        flat_search = self.create(sources=['immoscout24'], filters={'min_area': 40, 'min_rooms': 2, 'exclusions': []})
+        with store.db() as conn:
+            store.put_setting(conn, 'recipients', json.dumps(['a@example.com']))
+            store.put_setting(conn, 'mail_enabled:wohnung', '1')
+        pages.save_result(flat_search, 'immoscout24', [], 0, time.time())
+        pages.save_result(flat_search, 'immoscout24', [self.card(1)], 1, time.time())
+        with store.db() as conn:
+            conn.execute("UPDATE listing_details SET state='done', body='{}'")
+        outbox.queue_mails()
+        self.assertEqual(self.queued(), ['1'])
+        response = self.client.put(
+            f'/api/searches/{flat_search["id"]}',
+            json={'kind': 'wohnung', 'query': 'Berlin', 'max_price': 130000, 'radius': 10,
+                  'sources': ['immoscout24'], 'filters': {'min_area': 40, 'min_rooms': 2, 'exclusions': []}},
+        )  # fmt: skip
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.queued(), [])  # a Darmstadt flat is no news for Berlin
+
 
 def duplicates_close(first, second):
     from suchalarm.wohnung import duplicates
@@ -2555,6 +2586,18 @@ class DuplicateMailTests(ApiAndMailTests):
         outbox.queue_mails()
         with store.db() as conn:
             self.assertEqual([r[0] for r in conn.execute('SELECT url FROM outbox')], [leader['url']])
+            self.assertEqual(
+                conn.execute('SELECT reason FROM notifications WHERE url=?', (copy.url,)).fetchone()[0], store.COPY
+            )
+        with store.db() as conn:  # held back for a week: older than the mail queue looks
+            conn.execute('UPDATE listings SET first_seen=? WHERE url=?', (time.time() - 7 * 86400, copy.url))
+        # "Nicht dieselbe Wohnung": the copy was held back only as part of the group and is judged on its own.
+        self.client.post('/api/separate', json={'search_id': flat_search['id'], 'url': copy.url})
+        outbox.queue_mails()
+        with store.db() as conn:
+            self.assertEqual(
+                sorted(r[0] for r in conn.execute('SELECT url FROM outbox')), sorted([leader['url'], copy.url])
+            )
 
     def test_the_twin_that_fits_leads_and_is_mailed_when_the_first_one_is_too_dear(self):
         flat_search = self.create(

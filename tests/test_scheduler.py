@@ -216,6 +216,27 @@ class SchedulerTests(AsyncTempDataTest):
         self.assertEqual(scheduler.queued_ids(), [])
         self.assertIn('HTTP 502', cadence.last_error('ebay', search))
 
+    def test_a_click_waiting_for_its_provider_does_not_hold_back_another(self):
+        clicked = self.search('Erstes Spiel', ('ebay',))
+        other = self.search('Zweites Spiel', ('vinted',))
+        scheduler.request(clicked)
+        wait = time.time() + 600
+        with patch(
+            'suchalarm.core.cadence.ready_at', side_effect=lambda source, now=None: wait if source == 'ebay' else 0
+        ):
+            job, _ = scheduler.plan([clicked, other], False)
+        self.assertEqual((job['source'], job['searches'][0]['id']), ('vinted', other['id']))
+
+    def test_a_click_keeps_its_provider_free_of_automatic_jobs(self):
+        clicked = self.search('Erstes Spiel', ('ebay',))
+        automatic = self.search('Zweites Spiel', ('ebay',))
+        scheduler.request(clicked)
+        wait = time.time() + 600
+        with patch('suchalarm.core.cadence.ready_at', side_effect=lambda source, now=None: wait):
+            job, next_at = scheduler.plan([clicked, automatic], False)
+        self.assertIsNone(job)
+        self.assertLessEqual(next_at, wait)
+
     def test_manual_has_priority_over_automatic_jobs_and_normal_page_gaps(self):
         automatic = self.search('Erstes Spiel')
         manual = self.search('Zweites Spiel')

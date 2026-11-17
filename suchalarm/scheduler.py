@@ -191,7 +191,10 @@ def plan(searches, paused, now=None):
         jobs = _sync_jobs(conn, consumers)
     view = QueueView(manual, manual_runs, statuses, now)
     candidates = [_candidate(key, source, users, jobs[key], view) for key, (source, users) in consumers.items()]
-    candidates = [c for c in candidates if c.job['manual_at']] or candidates
+    # A click goes first at its own provider: no automatic job there may take the slot it waits for. Other
+    # providers go on; a click waiting for eBay's budget must not hold back a due Vinted check.
+    clicked = {c.job['source'] for c in candidates if c.job['manual_at']}
+    candidates = [c for c in candidates if c.job['manual_at'] or c.job['source'] not in clicked]
     if not candidates:
         return None, now + IDLE_WAKE
     ready = [c for c in candidates if c.ready <= now]

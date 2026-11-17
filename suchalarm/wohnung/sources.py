@@ -352,8 +352,11 @@ def _immowelt_list(request):
     """A function expression for page.evaluate: the offers of REQUEST (portals.immowelt_search), asked for
     from inside Immowelt's own result page, then their contents in batches of portals.IMMOWELT_BATCH. A
     refusal reads as a blocked page; any other failed answer leaves 'total' empty, so the page counts as
-    unreadable."""
+    unreadable. load_page may read a page several times while it settles: the requests go out once per document,
+    every further read gets the same answer (window.__suchalarmList)."""
     return f"""async () => {{
+  if (window.__suchalarmList) return await window.__suchalarmList;
+  window.__suchalarmList = (async () => {{
   const page = {{ title: document.title, text: document.body ? document.body.innerText.slice(0, 20000) : '',
                  rows: [], total: null }};
   const read = async response => {{
@@ -372,6 +375,8 @@ def _immowelt_list(request):
   }}
   page.total = found.totalCount;
   return page;
+  }})();
+  return await window.__suchalarmList;
 }}"""
 
 

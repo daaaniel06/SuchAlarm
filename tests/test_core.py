@@ -1139,6 +1139,21 @@ class ApiTests(TempDataTest):
         self.assertEqual(mail['wohnung'], {'enabled': True, 'frequency': 'Sofort', 'batch_size': 1})
         self.assertEqual(store.mail_settings(kind='preis')['frequency'], 'Täglich')  # the keys from before flats
 
+    def test_an_umlaut_domain_is_stored_in_ascii_and_an_old_one_cannot_break_the_page(self):
+        with without_smtp_env():
+            server = {'sender': 'max@müller.de', 'password': 'pw', 'host': 'smtp.example.de', 'port': 587}
+            self.assertEqual(self.client.put('/api/mail/server', json=server).status_code, 200)
+            self.assertEqual(store.mail_server()['sender'], 'max@xn--mller-kva.de')
+            self.assertEqual(mailserver.ascii_address('max@straße.de'), 'max@xn--strae-oqa.de')  # not strasse.de
+            self.assertEqual(self.client.put('/api/mail', json={'recipients': ['eva@bäcker.de']}).status_code, 200)
+            self.assertEqual(self.state()['mail']['recipients'], ['eva@xn--bcker-gra.de'])
+            # Saved by an older version: the page loads, shows the server as not set up, and takes a correction.
+            with store.db() as conn:
+                store.put_setting(conn, 'mail_server', json.dumps({**server, 'sender': 'jürgen@müller.de'}))
+            self.assertFalse(self.state()['mail']['configured'])
+            self.assertEqual(self.client.put('/api/mail/server', json={**server, 'sender': 'j@x.de'}).status_code, 200)
+            self.assertTrue(self.state()['mail']['configured'])
+
     def test_mail_server_from_the_settings_page_never_shows_its_password(self):
         with without_smtp_env():
             self.assertFalse(self.state()['mail']['configured'])
