@@ -10,7 +10,7 @@ from . import delivery
 from .categories import HOSTS
 from .money import money, shipping
 from .prices import Offer, portal_price_bounds
-from .queries import around, canonical, kleinanzeigen_attributes, section, vehicle_fits
+from .queries import around, canonical, kleinanzeigen_attributes, section, vehicle, vehicle_fits
 from .titles import clean_title, phrases, platform_ids, title_fits, wanted_words
 
 DEFAULT_CARD_LIMIT = 100
@@ -299,6 +299,7 @@ def parse_rows(source, data, search):
             condition[:MAX_CONDITION],
             str(row.get('owner', '')),
             bool(NEGOTIABLE.search(str(row.get('price', '')) + ' ' + status_text(row))),
+            *(vehicle(row.get('text', '').replace('\xad', '')) if section(source, search) == CARS else (None, None)),
         )
         # Keep idealo's shop alternatives: the shared cache serves searches with both shipping settings.
         key = (url, price, offer.shipping, offer.seller) if source == 'idealo' else url

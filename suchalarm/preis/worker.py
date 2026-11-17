@@ -30,11 +30,21 @@ from .prices import (
     too_cheap,
     with_shipping,
 )
+from .queries import vehicle_values_fit
 from .titles import all_terms, title_fits, wanted_words
 
 FRESH_USED = 3 * 3600  # a shop comparison only uses second-hand results this recent
 SHIPPING_WAIT = 15 * 60  # a Vinted hit waits this long for its shipping lookup before it is mailed without
 UNJUDGED_FILTERS = ('category', 'delivery', 'plz', 'radius', 'filters')  # only the provider's query applies them
+JUDGED_AGAIN = ('year_from', 'km_to')  # filters take_pending checks again from the stored vehicle facts
+
+
+def _unjudged(values):
+    """The UNJUDGED_FILTERS of a search, without the vehicle filters judged again before the mail."""
+    filters = {k: v for k, v in (values['filters'] or {}).items() if k not in JUDGED_AGAIN}
+    return {**{name: values[name] for name in UNJUDGED_FILTERS}, 'filters': filters}
+
+
 HITS = 'offers'  # key of the hit rows in /api/state
 MODEL = Search  # the request body of a product search
 # What the search editor offers; the providers' section IDs stay on the server.
@@ -152,6 +162,10 @@ def save_result(search, source, offers, reference, now):
             'INSERT OR IGNORE INTO negotiable_offers VALUES (?,?)',
             [(sid, o.url) for o in offers if o.negotiable],
         )
+        conn.executemany(
+            'INSERT OR REPLACE INTO vehicle_facts VALUES (?,?,?,?)',
+            [(sid, o.url, o.km, o.year) for o in offers if o.km is not None or o.year is not None],
+        )
         # Vinted shipping still unknown in the starting point: a later shipping lookup must not mail it either.
         conn.executemany(
             'INSERT OR IGNORE INTO shipping_baselines VALUES (?,?)',
@@ -201,8 +215,9 @@ def take_pending(conn: Connection) -> list[MailEntry]:
     entries, dropped = [], []
     rows = conn.execute(
         'SELECT x.search_id AS outbox_search, x.url AS outbox_url, x.created_at AS queued, o.*, '
-        'n.price AS reported, h.url AS hidden '
+        'n.price AS reported, h.url AS hidden, v.km, v.year '
         'FROM outbox x LEFT JOIN offers o ON o.search_id=x.search_id AND o.url=x.url '
+        'LEFT JOIN vehicle_facts v ON v.search_id=x.search_id AND v.url=x.url '
         'LEFT JOIN notifications n ON n.search_id=x.search_id AND n.url=x.url '
         'LEFT JOIN hidden h ON h.search_id=x.search_id AND h.url=x.url '
         "WHERE x.batch IS NULL AND x.search_id IN (SELECT id FROM searches WHERE kind='preis') ORDER BY x.created_at"
@@ -220,10 +235,11 @@ def take_pending(conn: Connection) -> list[MailEntry]:
             and price is not None  # unknown shipping that counts: no comparable price
             and in_range(price, search, free(row['price'], search))
             and title_fits(row['source'], row['title'], search)
+            and vehicle_values_fit(row['km'], row['year'], search)
             and not (row['reported'] is not None and price >= row['reported'])
         ):
             offer = dict(row)
-            for column in ('outbox_search', 'outbox_url', 'queued', 'reported', 'hidden'):
+            for column in ('outbox_search', 'outbox_url', 'queued', 'reported', 'hidden', 'km', 'year'):
                 del offer[column]
             entries.append((search, offer, price))
         else:
@@ -323,7 +339,7 @@ def reset(conn: Connection, search_id: int, old: Mapping[str, Any], payload: Sea
     a paused search is not checked again on its own, so wiping them would empty its list."""
     changed = any(old[name] != payload.comparable(name) for name in SEARCH_FILTERS)
     dropped = [source for source in old['sources'] if source not in payload.sources]
-    if any(old[name] != payload.comparable(name) for name in UNJUDGED_FILTERS):
+    if _unjudged(old) != _unjudged({name: payload.comparable(name) for name in UNJUDGED_FILTERS}):
         # take_pending cannot judge a waiting hit by these again (the card text is gone): it waits no longer.
         conn.execute('DELETE FROM outbox WHERE search_id=? AND batch IS NULL', (search_id,))
     if old['negotiable'] and not payload.negotiable:

@@ -65,8 +65,13 @@ def vehicle(text):
 
 def vehicle_fits(text, search):
     """Unknown values pass: the provider already filtered; only stated values outside the range drop out."""
-    filters = search.get('filters') or {}
     km, year = vehicle(text)
+    return vehicle_values_fit(km, year, search)
+
+
+def vehicle_values_fit(km, year, search):
+    """vehicle_fits for stored values: a waiting hit is judged again after the search's filters changed."""
+    filters = search.get('filters') or {}
     if filters.get('km_to') and km is not None and km > filters['km_to']:
         return False
     return not (filters.get('year_from') and year is not None and year < filters['year_from'])

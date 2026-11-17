@@ -17,6 +17,7 @@ from PIL import Image
 from suchalarm import mailer, mailserver, scheduler, store, worker
 from suchalarm.app import app, create, delete, update
 from suchalarm.core import browser, cadence, http, images
+from suchalarm.kinds import KINDS
 from suchalarm.preis import sources
 from suchalarm.preis.models import Search as ProductSearch
 from suchalarm.preis.money import money, shipping
@@ -243,6 +244,26 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         await update(1, ProductSearch(query='Spiel', max_price=3500, category='videospiele', sources=['ebay']))
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
             await worker.send_digest(time.time() + 86401)
+        deliver.assert_not_called()
+
+    async def test_a_queued_car_is_judged_again_by_its_stored_registration_year(self):
+        car = dict(
+            query='Golf', max_price=1500000, sources=['kleinanzeigen'], category='autos', delivery='abholung',
+            plz='10115', radius=100,
+        )  # fmt: skip
+        await update(1, ProductSearch(**car, filters={'year_from': 2010}))
+        self.search = store.search(1)
+        await self.found()  # the edited search's starting point
+        golf = Offer('kleinanzeigen', 'https://www.kleinanzeigen.de/s-anzeige/golf/1-216-1', 'Golf', 500000, year=2012)
+        await self.found(golf)
+        self.assertEqual(self.count('outbox'), 1)
+        await update(1, ProductSearch(**car, filters={'year_from': 2011}))
+        self.assertEqual(self.count('outbox'), 1)  # judged again before the mail, not thrown away
+        with store.db() as conn:
+            self.assertEqual(len(KINDS['preis'].take_pending(conn)), 1)
+        await update(1, ProductSearch(**car, filters={'year_from': 2020}))
+        with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
+            await worker.send_digest(time.time() + 7201)
         deliver.assert_not_called()
 
     async def test_a_queued_offer_with_a_newly_excluded_word_is_not_mailed(self):

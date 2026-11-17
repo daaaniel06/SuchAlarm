@@ -111,6 +111,8 @@ class Offer:
     condition: str = ''
     owner: str = ''  # the provider's ID of the seller, only for the dealer signal; not kept with the hits, never shown
     negotiable: bool = False
+    km: int | None = None  # a car's mileage and first registration year as its card states them (queries.vehicle)
+    year: int | None = None
 
     @classmethod
     def from_row(cls, row):
