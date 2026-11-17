@@ -6,7 +6,7 @@ import re
 from urllib.parse import urlencode
 
 from ...core.browser import Unreadable
-from ..domain import area, available_from, clip, detect_traits, line, money, number, rooms
+from ..domain import Profile, area, available_from, clip, detect_traits, line, money, number, rooms
 from .common import heating_included, plain, warm_from_parts
 
 IMMOBILIEN_DE = 'https://www.immobilien.de'
@@ -45,13 +45,13 @@ def id_city(answer, town):
     return found['slugToken'] if found else None
 
 
-def id_url(slug, profile, page=1):
+def id_url(slug, profile: Profile, page=1):
     """The town's newest offers within the search's limits. preis_bis limits the cold rent (the warm
     limit is a safe bound); warmmiete_bis would drop every offer without a stated warm rent."""
     limits = {
-        'preis_bis': math.ceil(profile['maxRent']),
-        'flaeche_von': math.floor(profile['minArea']),
-        'zimmer_von': math.floor(profile['minRooms']),
+        'preis_bis': math.ceil(profile['max_rent']),
+        'flaeche_von': math.floor(profile['min_area']),
+        'zimmer_von': math.floor(profile['min_rooms']),
     }
     query = {'sort': 'newest', **{name: value for name, value in limits.items() if value}}
     if page > 1:

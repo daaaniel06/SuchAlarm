@@ -6,7 +6,7 @@ import unicodedata
 from urllib.parse import quote, urlencode
 
 from ...core.browser import Unreadable
-from ..domain import area, available_from, clip, detect_traits, line, money, number, rooms
+from ..domain import Profile, area, available_from, clip, detect_traits, line, money, number, rooms
 from .common import attribute, plain
 
 OHNE_MAKLER = 'https://www.ohne-makler.net'
@@ -42,10 +42,10 @@ def om_slug(name):
     return re.sub(r'[^a-z0-9]+', '-', ascii_name).strip('-')
 
 
-def om_url(place, profile, page=1):
+def om_url(place, profile: Profile, page=1):
     """The newest offers of PLACE (a town's path, or a postcode) within the search's rent and area.
     price_max limits the cold rent, so the warm limit is a safe bound; rooms the site cannot filter."""
-    limits = {'price_max': math.ceil(profile['maxRent']), 'area_min': math.floor(profile['minArea'])}
+    limits = {'price_max': math.ceil(profile['max_rent']), 'area_min': math.floor(profile['min_area'])}
     query = {'sort': 'date_desc', **{name: value for name, value in limits.items() if value}}
     if re.fullmatch(r'\d{5}', place):
         address, query = OM_LIST, {'zip': place, **query}

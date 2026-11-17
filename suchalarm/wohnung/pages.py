@@ -15,7 +15,7 @@ from ..status import more_unread, source_ok, started
 from . import sources
 from .details import FETCH_TIMEOUT, GONE_RECHECK, read_again
 from .domain import WHOLE_STOCK, Listing, cheaper, could_match, other_rent, profile
-from .tables import GONE
+from .tables import GONE, PENDING
 
 log = logging.getLogger('suchalarm')
 
@@ -128,7 +128,9 @@ def _save_page(conn, search, page, now, stock):
     seen = dict(conn.execute('SELECT url, first_seen FROM listings WHERE search_id=? AND source=?', (sid, source)))
     unseen = {item.url for item in listings if item.url not in seen}
     if stock:
-        conn.executemany('INSERT OR IGNORE INTO start_offers VALUES (?,?)', [(sid, url) for url in unseen])
+        conn.executemany(
+            'INSERT OR IGNORE INTO start_offers(search_id,url) VALUES (?,?)', [(sid, url) for url in unseen]
+        )
         oldest = min(seen.values(), default=now)
         ranked = [url for url in dict.fromkeys(item.url for item in listings) if url in unseen]
         seen |= {url: oldest - 1 - position for position, url in enumerate(ranked)}
@@ -176,9 +178,9 @@ def _store(conn, search, page, seen, now):
         )
     stock = {row[0] for row in conn.execute('SELECT url FROM start_offers WHERE search_id=?', (sid,))}
     conn.executemany(
-        "INSERT OR IGNORE INTO listing_details(url,source,state,created_at) VALUES (?,?,'pending',?)",
+        'INSERT OR IGNORE INTO listing_details(url,source,state,created_at) VALUES (?,?,?,?)',
         [
-            (item.url, source, now)
+            (item.url, source, PENDING, now)
             for item in listings
             if item.url not in stock and source in sources.DETAILS and could_match(item, wanted, middle)
         ],

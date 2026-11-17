@@ -24,8 +24,13 @@ from .http import ssl_context
 MAX_BYTES, MAX_PIXELS = 2_000_000, 20_000_000
 MAX_DISK, MAX_FILES = 128 * 1024 * 1024, 2000
 MAX_URL, MAX_PENDING, MAX_ATTEMPTS = 2500, 1000, 3  # failed pictures retry after 6 hours
+# pictures.state; PENDING is only read when migrating older caches.
+QUEUED = 'queued'
+EXHAUSTED = 'exhausted'
+READY = 'ready'
+PENDING = 'pending'
 # Queued pictures remain processable while next_at delays their next attempt.
-PROCESSABLE = "state='queued'"
+PROCESSABLE = f"state='{QUEUED}'"
 Image.MAX_IMAGE_PIXELS = MAX_PIXELS
 log = logging.getLogger('suchalarm')
 # Provider image CDNs, as a host pattern per source; pictures are fetched from nowhere else.
@@ -47,10 +52,13 @@ def _setup(conn):
     """)
     if 'priority' not in {r[1] for r in conn.execute('PRAGMA table_info(pictures)')}:
         conn.execute('ALTER TABLE pictures ADD COLUMN priority INTEGER DEFAULT 0')
-    conn.execute(
-        "UPDATE pictures SET state=CASE WHEN attempts>=? THEN 'exhausted' ELSE 'queued' END WHERE state='pending'",
-        (MAX_ATTEMPTS,),
-    )
+    if conn.execute('PRAGMA user_version').fetchone()[0] < 1:
+        # Once: the old single state 'pending' becomes queued, or exhausted after the last attempt.
+        conn.execute(
+            'UPDATE pictures SET state=CASE WHEN attempts>=? THEN ? ELSE ? END WHERE state=?',
+            (MAX_ATTEMPTS, EXHAUSTED, QUEUED, PENDING),
+        )
+        conn.execute('PRAGMA user_version=1')
 
 
 def db():
@@ -86,13 +94,13 @@ def remember(source, pictures):
                 if pending >= MAX_PENDING:
                     continue
                 conn.execute(
-                    "INSERT INTO pictures(key,source,remote,state,seen) VALUES (?,?,?,'queued',?)",
-                    (key, source, remote, now),
+                    'INSERT INTO pictures(key,source,remote,state,seen) VALUES (?,?,?,?,?)',
+                    (key, source, remote, QUEUED, now),
                 )
                 pending += 1
             else:
                 conn.execute('UPDATE pictures SET seen=? WHERE key=?', (now, key))
-            conn.execute('INSERT OR REPLACE INTO offers VALUES (?,?,?)', (url, key, now))
+            conn.execute('INSERT OR REPLACE INTO offers(url,key,seen) VALUES (?,?,?)', (url, key, now))
 
 
 def enrich(offers):
@@ -100,7 +108,7 @@ def enrich(offers):
         ready = {
             r['url']: r['filename']
             for r in conn.execute(
-                "SELECT o.url,p.filename FROM offers o JOIN pictures p ON o.key=p.key WHERE p.state='ready'"
+                'SELECT o.url,p.filename FROM offers o JOIN pictures p ON o.key=p.key WHERE p.state=?', (READY,)
             )
         }
     for offer in offers:
@@ -116,8 +124,8 @@ def fingerprints(urls):
     marks = ','.join('?' * len(urls))
     with db() as conn:
         rows = conn.execute(
-            f"SELECT o.url,p.filename FROM offers o JOIN pictures p ON o.key=p.key WHERE p.state='ready' AND o.url IN ({marks})",
-            list(urls),
+            f'SELECT o.url,p.filename FROM offers o JOIN pictures p ON o.key=p.key WHERE p.state=? AND o.url IN ({marks})',
+            [READY, *urls],
         ).fetchall()
     found = {r['url']: _fingerprint(r['filename']) for r in rows if file_path(r['filename'] or '')}
     return {url: value for url, value in found.items() if value}
@@ -170,7 +178,7 @@ def photos(urls):
             f'FROM offers o JOIN pictures p ON o.key=p.key WHERE o.url IN ({marks})',
             list(urls),
         ).fetchall()
-    ready = {r['url']: path for r in rows if r['state'] == 'ready' and (path := file_path(r['filename'] or ''))}
+    ready = {r['url']: path for r in rows if r['state'] == READY and (path := file_path(r['filename'] or ''))}
     return ready, {r['url'] for r in rows if r['pending']}
 
 
@@ -289,7 +297,7 @@ async def step():
             name, size = await asyncio.to_thread(_download_to_file, job['source'], job['remote'])
             with db() as conn:
                 conn.execute(
-                    "UPDATE pictures SET state='ready',filename=?,bytes=? WHERE key=?", (name, size, job['key'])
+                    'UPDATE pictures SET state=?,filename=?,bytes=? WHERE key=?', (READY, name, size, job['key'])
                 )
             cadence.outcome(job['source'], 'image', False)
         except asyncio.CancelledError:
@@ -305,8 +313,8 @@ async def step():
             with db() as conn:
                 conn.execute(
                     'UPDATE pictures SET attempts=attempts+1,next_at=?,'
-                    "state=CASE WHEN attempts+1>=? THEN 'exhausted' ELSE 'queued' END WHERE key=?",
-                    (until, MAX_ATTEMPTS, job['key']),
+                    'state=CASE WHEN attempts+1>=? THEN ? ELSE ? END WHERE key=?',
+                    (until, MAX_ATTEMPTS, EXHAUSTED, QUEUED, job['key']),
                 )
         return
 
@@ -316,7 +324,7 @@ def cleanup():
     with db() as conn:
         conn.execute('DELETE FROM offers WHERE seen<?', (now - 30 * 86400,))
         conn.execute('DELETE FROM pictures WHERE seen<?', (now - 30 * 86400,))
-        rows = conn.execute("SELECT key,bytes FROM pictures WHERE state='ready' ORDER BY seen DESC").fetchall()
+        rows = conn.execute('SELECT key,bytes FROM pictures WHERE state=? ORDER BY seen DESC', (READY,)).fetchall()
         total = 0
         for index, row in enumerate(rows):
             total += row['bytes']

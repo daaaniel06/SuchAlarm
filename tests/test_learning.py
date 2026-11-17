@@ -1,14 +1,12 @@
 import json
-import os
-import tempfile
 import unittest
-from unittest.mock import patch
 
 from suchalarm import store
 from suchalarm.preis import learning
 from suchalarm.preis.categories import CATEGORIES
 from suchalarm.preis.prices import Offer, select_offers
 from suchalarm.preis.titles import learned_words, taught_away, title_fits
+from tests.helpers import TempDataTest
 
 GAME = 'Resident Evil Requiem'
 POSTERS = [f'Affiche encadrée {GAME} {n}' for n in range(3)]
@@ -67,17 +65,7 @@ class DealerTests(unittest.TestCase):
         self.assertEqual(len(select_offers(self.offers(GAMES[:2], '7'), search)), 2)
 
 
-class LearningTests(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {'DATA_DIR': self.tmp.name})
-        self.env.start()
-        store.init()
-
-    def tearDown(self):
-        self.env.stop()
-        self.tmp.cleanup()
-
+class LearningTests(TempDataTest):
     def search(self, query, category):
         with store.db() as conn:
             return conn.execute(
@@ -89,7 +77,10 @@ class LearningTests(unittest.TestCase):
         with store.db() as conn:
             for n, title in enumerate(titles):
                 url = f'https://www.vinted.de/items/{sid}{n}{int(hidden)}'
-                conn.execute("INSERT INTO offers VALUES (?,'vinted',?,?,4000,NULL,'','',1,1)", (sid, url, title))
+                conn.execute(
+                    "INSERT INTO offers(search_id,source,url,title,price,shipping,seller,condition,first_seen,last_seen) VALUES (?,'vinted',?,?,4000,NULL,'','',1,1)",
+                    (sid, url, title),
+                )
                 if hidden:
                     store.hide(conn, sid, url, 1)
 

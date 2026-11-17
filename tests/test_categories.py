@@ -17,6 +17,7 @@ from suchalarm.preis.prices import Offer, eligible, select_offers, too_cheap
 from suchalarm.preis.queries import vehicle
 from suchalarm.preis.sources import parse_rows, place_of, search_url
 from suchalarm.preis.titles import normalized, title_fits, wanted_words
+from tests.helpers import TempDataTest
 
 
 class CategoryTests(unittest.TestCase):
@@ -431,12 +432,9 @@ class CategoryTests(unittest.TestCase):
         )  # new price: query only
 
 
-class CategoryApiTests(unittest.TestCase):
+class CategoryApiTests(TempDataTest):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {'DATA_DIR': self.tmp.name})
-        self.env.start()
-        store.init()
+        super().setUp()
         self.client = TestClient(app)
         worker.progress = worker.Progress()
         self.payload = dict(
@@ -449,10 +447,6 @@ class CategoryApiTests(unittest.TestCase):
             radius=25,
             negotiable=True,
         )
-
-    def tearDown(self):
-        self.env.stop()
-        self.tmp.cleanup()
 
     def test_other_spellings_are_cleaned_and_limited(self):
         created = self.client.post(

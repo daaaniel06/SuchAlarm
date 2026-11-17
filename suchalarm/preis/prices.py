@@ -4,6 +4,7 @@ from bisect import bisect_left
 from collections import Counter
 from dataclasses import dataclass, replace
 
+from .categories import NEW_PRICE_SOURCE
 from .titles import clean_title, taught_away, title_fits
 
 
@@ -14,7 +15,7 @@ def lowest_item_price(source, search, compared):
 
 def portal_price_bounds(source, search):
     """Conservative item-price window; never drop a valid total-price match because of shipping."""
-    if source == 'idealo':
+    if source == NEW_PRICE_SOURCE:
         return 0, None  # the independent new-price reference must survive even above the alarm limit
     # Buyer protection counts on top of the item price, so the window shifts down to the item prices that fit.
     # Shipping is unknown until read, so with shipping the item itself may cost anything below the maximum.
@@ -78,7 +79,7 @@ def price_is_minimum(source, shipping, search):
 
 def with_shipping(source, search):
     """Whether an offer compares with shipping: idealo shops always by their full price, others as the search says."""
-    return source == 'idealo' or bool(search.get('include_shipping'))
+    return source == NEW_PRICE_SOURCE or bool(search.get('include_shipping'))
 
 
 def buyer_fee(source, price):

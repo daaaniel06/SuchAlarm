@@ -7,6 +7,7 @@ from urllib.parse import urlencode
 
 from ...core.browser import Unreadable
 from ..domain import (
+    Profile,
     area,
     available_from,
     clip,
@@ -68,11 +69,11 @@ def immoscout_places(entries):
 PAGE_SIZE = 100  # the app interface's largest page (50 without it; checked live on 29.10.2026)
 
 
-def immoscout_url(profile, region, coords, page=1):
+def immoscout_url(profile: Profile, region, coords, page=1):
     params = {
         'realestatetype': 'apartmentrent',
         'pricetype': 'calculatedtotalrent',  # filter on warm rent, results still show cold rent
-        'price': f'-{profile["maxRent"]:.1f}',
+        'price': f'-{profile["max_rent"]:.1f}',
         'sorting': '-firstactivation',
         'pagenumber': str(page),
         'pagesize': str(PAGE_SIZE),
@@ -81,10 +82,10 @@ def immoscout_url(profile, region, coords, page=1):
     # exclusioncriteria=swapflat is ignored (checked live on 31.10.2026).
     if 'WBS' in profile.get('exclusions', []):
         params['haspromotion'] = 'false'
-    if profile.get('minArea'):
-        params['livingspace'] = f'{profile["minArea"]:.1f}-'
-    if profile.get('minRooms'):
-        params['numberofrooms'] = f'{profile["minRooms"]:.1f}-'
+    if profile.get('min_area'):
+        params['livingspace'] = f'{profile["min_area"]:.1f}-'
+    if profile.get('min_rooms'):
+        params['numberofrooms'] = f'{profile["min_rooms"]:.1f}-'
     if profile.get('radius') and coords:
         params.update(
             searchType='radius', geocoordinates=f'{coords[0]:.5f};{coords[1]:.5f};{float(profile["radius"]):.1f}'

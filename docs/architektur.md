@@ -19,7 +19,7 @@ Browser (static/)  ──  app.py (API)  ──  store.py ── suchalarm.db   
 
 `suchalarm/core/` importiert nichts aus den Fachmodulen und hat keine Tabellen einer Suchart. Jedes Fachmodul meldet seine Quellen an: `cadence.register()` (Takt, Abfrage-Schlüssel, Ergebnistyp, lokale Filter) und `images.register()` (erlaubte Bild-Hosts). `suchalarm/__init__.py` lädt alle Fachmodule, deshalb sind die Quellen angemeldet, egal welches Modul zuerst importiert wird. Orts-IDs der Anbieter liegen je Quelle in `cadence.db` (`places`); der Vinted-Versand hat seine eigene `delivery.db`. Jede Suche trägt ihre Art in `searches.kind` (`preis` oder `wohnung`).
 
-`worker.py` ist der gemeinsame Ablauf (Quellen prüfen, Pausen und Fehler zeigen, Mails, Backup). Was eine Suchart anders macht, liefert ihr eigenes `preis/worker.py` bzw. `wohnung/worker.py` über dieselben Schritte:
+`worker.py` ist der gemeinsame Ablauf (Quellen prüfen, Pausen und Fehler zeigen, Backup); die Sammelmails und der zweite Versuch je Empfänger stehen in `digest.py`. Was eine Suchart anders macht, liefert ihr eigenes `preis/worker.py` bzw. `wohnung/worker.py` über dieselben Schritte:
 
 | Zweck | Schritte |
 | --- | --- |

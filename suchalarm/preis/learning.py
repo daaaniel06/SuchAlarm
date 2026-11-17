@@ -8,7 +8,7 @@ from .titles import all_terms, learned_words
 def _remember_hidden(conn):
     """Keep the titles of hidden offers while they are still stored; a restored offer teaches nothing."""
     conn.execute(
-        'INSERT OR IGNORE INTO hidden_titles SELECT o.search_id, o.url, o.title FROM offers o '
+        'INSERT OR IGNORE INTO hidden_titles(search_id,url,title) SELECT o.search_id, o.url, o.title FROM offers o '
         'JOIN hidden h ON h.search_id=o.search_id AND h.url=o.url'
     )
     conn.execute(
@@ -60,4 +60,4 @@ def by_category(searches):
 def forget(category, word):
     """The user takes a learned word back: it no longer filters CATEGORY, now or later."""
     with store.db() as conn:
-        conn.execute('INSERT OR IGNORE INTO forgotten_words VALUES (?,?)', (category, word))
+        conn.execute('INSERT OR IGNORE INTO forgotten_words(category,word) VALUES (?,?)', (category, word))

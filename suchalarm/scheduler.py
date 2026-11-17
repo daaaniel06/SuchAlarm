@@ -35,9 +35,13 @@ def request(search, only=None):
                 retry = max(retry, run['finished_at'] + cadence.MANUAL_COOLDOWN - now)
                 continue
             else:
-                conn.execute('INSERT OR REPLACE INTO manual_runs VALUES (?,?,0)', (key, now))
+                conn.execute(
+                    'INSERT OR REPLACE INTO manual_runs(key,requested_at,finished_at) VALUES (?,?,0)', (key, now)
+                )
                 started += 1
-            conn.execute('INSERT OR IGNORE INTO manual VALUES (?,?,?)', (search['id'], source, key))
+            conn.execute(
+                'INSERT OR IGNORE INTO manual(search_id,source,key) VALUES (?,?,?)', (search['id'], source, key)
+            )
     return dict(
         queued=bool(started or pending), started=bool(started), already_running=pending, retry_after=int(retry + 0.999)
     )
@@ -103,7 +107,10 @@ def _sync_manual(conn, by_id, now):
             del manual[(sid, source)]
     _finish_orphaned_runs(conn, now)
     # Existing pending requests from an older version become one fresh manual run.
-    conn.executemany('INSERT OR IGNORE INTO manual_runs VALUES (?,?,0)', [(key, now) for key in set(manual.values())])
+    conn.executemany(
+        'INSERT OR IGNORE INTO manual_runs(key,requested_at,finished_at) VALUES (?,?,0)',
+        [(key, now) for key in set(manual.values())],
+    )
     runs = {r['key']: r['requested_at'] for r in conn.execute('SELECT * FROM manual_runs WHERE finished_at=0')}
     return manual, runs
 
@@ -125,7 +132,7 @@ def _sync_jobs(conn, consumers):
     for key, (source, _) in consumers.items():
         if key not in jobs:
             position += 1
-            conn.execute('INSERT INTO jobs VALUES (?,?,?,0)', (key, source, position))
+            conn.execute('INSERT INTO jobs(key,source,position,not_before) VALUES (?,?,?,0)', (key, source, position))
             jobs[key] = dict(key=key, source=source, position=position, not_before=0)
     conn.executemany('DELETE FROM jobs WHERE key=?', [(key,) for key in jobs.keys() - consumers.keys()])
     return jobs
@@ -136,7 +143,7 @@ def _candidate(key, source, consumers, job, view):
     manual, statuses, now = view.manual, view.statuses, view.now
     row = cadence.query_state(source, consumers[0])
     clicked = [s for s in consumers if (s['id'], source) in manual]
-    fresh_cache = bool(row and row['state'] == 'ok' and row['next_at'] > now)
+    fresh_cache = bool(row and row['state'] == cadence.OK and row['next_at'] > now)
     blocked = cadence.blocked_until(source)
     manual_at = view.manual_runs.get(key, 0) if clicked else 0
 
@@ -165,7 +172,7 @@ def _candidate(key, source, consumers, job, view):
     if clicked and blocked and row and row['next_at'] > now:
         return result(max(now, job['not_before']), PRIORITY_FROM_CACHE, clicked)
     ready = max(cadence.query_due(source, row, now), cadence.ready_at(source, now=now), job['not_before'])
-    priority = PRIORITY_CONTINUING if row and row['state'] == 'continuing' else PRIORITY_DUE
+    priority = PRIORITY_CONTINUING if row and row['state'] == cadence.CONTINUING else PRIORITY_DUE
     return result(ready, priority, consumers)
 
 

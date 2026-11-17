@@ -9,12 +9,13 @@ import unittest
 from contextlib import contextmanager
 from dataclasses import replace
 from types import SimpleNamespace
+from typing import ClassVar
 from unittest.mock import AsyncMock, Mock, patch
 
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from suchalarm import mailer, mailserver, scheduler, store, worker
+from suchalarm import backups, digest, mailer, mailserver, migrations, scheduler, store, worker
 from suchalarm.app import app, create, delete, update
 from suchalarm.core import browser, cadence, http, images
 from suchalarm.kinds import KINDS
@@ -25,6 +26,7 @@ from suchalarm.preis.prices import Offer, eligible, select_offers
 from suchalarm.preis.queries import canonical
 from suchalarm.preis.sources import parse_rows
 from suchalarm.preis.titles import clean_title, matches
+from tests.helpers import AsyncTempDataTest, TempDataTest
 
 PAYLOAD = dict(query='Resident Evil Requiem', max_price=3500, sources=['ebay'], include_shipping=False, active=False)
 
@@ -168,18 +170,15 @@ class DomainTests(unittest.TestCase):
         self.assertEqual(parse_rows('ebay', [dict(base, title='Spiel PS5 defekt')], search), [])
 
 
-class WorkerTests(unittest.IsolatedAsyncioTestCase):
+class WorkerTests(AsyncTempDataTest):
+    ENV: ClassVar[dict[str, str]] = {'SMTP_HOST': 'smtp.example', 'SMTP_FROM': 'a@example.com'}
+
     async def asyncSetUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(
-            os.environ, {'DATA_DIR': self.tmp.name, 'SMTP_HOST': 'smtp.example', 'SMTP_FROM': 'a@example.com'}
-        )
-        self.env.start()
-        store.init()
+        await super().asyncSetUp()
         with store.db() as conn:
             conn.execute("INSERT INTO searches(query,max_price,sources) VALUES ('Spiel',3500,'[\"ebay\"]')")
-            conn.execute("INSERT INTO settings VALUES ('recipients','[\"a@example.com\"]')")
-            conn.execute("INSERT INTO settings VALUES ('mail_enabled','1')")
+            conn.execute("INSERT INTO settings(key,value) VALUES ('recipients','[\"a@example.com\"]')")
+            conn.execute("INSERT INTO settings(key,value) VALUES ('mail_enabled','1')")
             # The source was read before: new offers are news, not the starting point.
             conn.execute(
                 "INSERT INTO source_status(search_id,source,checked_at,error,count,started) VALUES (1,'ebay',1,NULL,0,1)"
@@ -188,8 +187,6 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         self.offer = Offer('ebay', 'https://www.ebay.de/itm/12345', 'Spiel', 3000, 0)
 
     async def asyncTearDown(self):
-        self.env.stop()
-        self.tmp.cleanup()
         worker.progress = worker.Progress()
 
     async def found(self, *offers):
@@ -202,7 +199,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
 
     def setting(self, key, value):
         with store.db() as conn:
-            conn.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', (key, value))
+            conn.execute('INSERT OR REPLACE INTO settings(key,value) VALUES (?,?)', (key, value))
 
     async def test_starting_point_is_not_news(self):
         with store.db() as conn:
@@ -218,7 +215,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         newer = [replace(self.offer, url=f'https://www.ebay.de/itm/{n}', price=4000) for n in range(3)]
         await self.found(*newer)  # newer offers above the limit push it off the page
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest(time.time() + 86401)
+            await digest.send_digest(time.time() + 86401)
         deliver.assert_called_once()
         self.assertIn(self.offer.url, deliver.call_args.args[0].get_body(('plain',)).get_content())
         await self.found(*newer)  # mailed: no longer kept beside the page
@@ -232,10 +229,10 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         await self.found(self.offer)
         await update(1, ProductSearch(query='Spiel', max_price=3500, min_price=100, sources=['ebay']))
         self.search = store.search(1)
-        await worker.send_digest()  # a pass before the daily mail is due
+        await digest.send_digest()  # a pass before the daily mail is due
         await self.found(self.offer)  # the first result after the edit is a new starting point
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest(time.time() + 86401)
+            await digest.send_digest(time.time() + 86401)
         deliver.assert_called_once()
         self.assertIn(self.offer.url, deliver.call_args.args[0].get_body(('plain',)).get_content())
 
@@ -244,7 +241,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         await self.found(self.offer)
         await update(1, ProductSearch(query='Spiel', max_price=3500, category='videospiele', sources=['ebay']))
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest(time.time() + 86401)
+            await digest.send_digest(time.time() + 86401)
         deliver.assert_not_called()
 
     async def test_a_queued_car_is_judged_again_by_its_stored_registration_year(self):
@@ -264,14 +261,14 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(KINDS['preis'].take_pending(conn)), 1)
         await update(1, ProductSearch(**car, filters={'year_from': 2020}))
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest(time.time() + 7201)
+            await digest.send_digest(time.time() + 7201)
         deliver.assert_not_called()
 
     async def test_a_queued_offer_with_a_newly_excluded_word_is_not_mailed(self):
         await self.found(replace(self.offer, title='Spiel defekt'))
         await update(1, ProductSearch(query='Spiel', max_price=3500, excluded='defekt', sources=['ebay']))
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
         deliver.assert_not_called()
 
     async def test_disabling_negotiable_drops_only_queued_vb_offers(self):
@@ -289,7 +286,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         await update(1, ProductSearch(query='Spiel', max_price=3500, negotiable=False, sources=['ebay']))
         self.assertEqual(self.count('outbox'), 1)
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
         body = deliver.call_args.args[0].get_body(('plain',)).get_content()
         self.assertNotIn(self.offer.url, body)
         self.assertIn(rows[1]['url'], body)
@@ -314,12 +311,12 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
     async def test_dedup_and_further_drop(self):
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
             await self.found(self.offer)
-            await worker.send_digest()
+            await digest.send_digest()
             await self.found(self.offer)
-            await worker.send_digest()
+            await digest.send_digest()
             self.assertEqual(deliver.call_count, 1)
             await self.found(replace(self.offer, price=2900))
-            await worker.send_digest()
+            await digest.send_digest()
             self.assertEqual(deliver.call_count, 2)
             self.assertEqual(deliver.call_args[0][0]['Subject'], 'Preisalarm: Spiel für 29,00 €')
 
@@ -335,16 +332,16 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         with delivery.db() as conn:
             self.assertEqual([r[0] for r in conn.execute('SELECT url FROM deliveries')], [hit.url])
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
             deliver.assert_not_called()
             with patch('time.time', return_value=time.time() + 15 * 60 + 1):
-                await worker.send_digest()
+                await digest.send_digest()
         self.assertIn('Versand unbekannt', deliver.call_args[0][0].get_body(('plain',)).get_content())
 
     async def test_one_mail_for_several_offers(self):
         await self.found(self.offer, replace(self.offer, url='https://www.ebay.de/itm/2', price=2000))
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
         message = deliver.call_args[0][0]
         self.assertEqual(message['Subject'], 'Preisalarm: 2 neue Angebote')
         self.assertIn('https://www.ebay.de/itm/2', message.get_body(('plain',)).get_content())
@@ -353,20 +350,20 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
     async def test_definite_failure_retries_after_a_pause(self):
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', side_effect=mailer.DeliveryError('Mailserver nicht erreichbar.', False)):
-            await worker.send_digest()
+            await digest.send_digest()
         self.assertEqual((self.count('notifications'), self.count('outbox', 'WHERE batch IS NULL')), (0, 1))
         self.assertIn('Mailserver nicht erreichbar.', store.settings()['mail_error'])
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
             deliver.assert_not_called()
-            await worker.send_digest(time.time() + 601)
+            await digest.send_digest(time.time() + 601)
             deliver.assert_called_once()
         self.assertNotIn('mail_error', store.settings())
 
     async def test_uncertain_outcome_is_never_resent(self):
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', side_effect=mailer.DeliveryError('Verbindung abgebrochen.', True)):
-            await worker.send_digest()
+            await digest.send_digest()
         self.assertEqual(
             (self.count('notifications'), self.count('outbox'), self.count('batches', "WHERE status='unknown'")),
             (1, 0, 1),
@@ -379,11 +376,11 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         self.setting('recipients', '["a@example.com","b@example.com","c@example.com"]')
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', return_value={'b@example.com': 451, 'c@example.com': 550}):
-            await worker.send_digest()
+            await digest.send_digest()
         with patch('suchalarm.mailer.deliver', return_value={}) as deliver:
-            await worker.send_digest()  # not yet due
+            await digest.send_digest()  # not yet due
             deliver.assert_not_called()
-            await worker.send_digest(time.time() + worker.RECIPIENT_RETRY + 1)
+            await digest.send_digest(time.time() + digest.RECIPIENT_RETRY + 1)
         deliver.assert_called_once()
         again = deliver.call_args.args[0]
         self.assertEqual(again['To'], 'b@example.com')  # never a, and c refused for good
@@ -398,7 +395,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         self.setting('recipients', '["a@example.com","b@example.com"]')
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', return_value={'b@example.com': 451}):
-            await worker.send_digest()
+            await digest.send_digest()
 
     def delivery(self, address):
         with store.db() as conn:
@@ -411,14 +408,14 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         store.init()
         self.assertEqual(self.delivery('b@example.com'), 'uncertain')
         with patch('suchalarm.mailer.deliver', return_value={}) as deliver:
-            await worker.send_digest(time.time() + 86400)
+            await digest.send_digest(time.time() + 86400)
         deliver.assert_not_called()
 
     async def test_a_removed_recipient_gets_no_retry(self):
         await self.refused_for_now()
         self.setting('recipients', '["a@example.com"]')
         with patch('suchalarm.mailer.deliver', return_value={}) as deliver:
-            await worker.send_digest(time.time() + worker.RECIPIENT_RETRY + 1)
+            await digest.send_digest(time.time() + digest.RECIPIENT_RETRY + 1)
         deliver.assert_not_called()
         self.assertEqual(self.delivery('b@example.com'), 'cancelled')
 
@@ -426,7 +423,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         await self.refused_for_now()
         refusal = smtplib.SMTPRecipientsRefused({'b@example.com': (550, b'no such user')})
         with patch('suchalarm.mailer.deliver', side_effect=mailer._explain(refusal, True)):
-            await worker.send_digest(time.time() + worker.RECIPIENT_RETRY + 1)
+            await digest.send_digest(time.time() + digest.RECIPIENT_RETRY + 1)
         self.assertEqual(self.delivery('b@example.com'), 'refused')
 
     async def test_a_failed_mail_of_one_kind_does_not_pause_the_other(self):
@@ -438,13 +435,13 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
             )
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', return_value={}) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
         deliver.assert_called_once()
 
     async def test_a_refused_recipient_is_shown_and_the_others_get_nothing_twice(self):
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', return_value={'b@example.com': 550}):
-            await worker.send_digest()
+            await digest.send_digest()
         self.assertEqual((self.count('outbox'), self.count('batches', "WHERE status='sent'")), (0, 1))
         self.assertIn('b@example.com nicht angenommen', store.settings()['mail_error'])
         with store.db() as conn:
@@ -471,7 +468,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
             return []
 
         with patch('suchalarm.mailer.deliver', side_effect=delete_while_sending):
-            await worker.send_digest()
+            await digest.send_digest()
         self.assertEqual((self.count('outbox'), self.count('batches', "WHERE status='sent'")), (0, 1))
         with store.db() as conn:
             self.assertEqual(
@@ -488,7 +485,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
             return {}
 
         with patch('suchalarm.worker.asyncio.to_thread', side_effect=recreate_while_sending):
-            await worker.send_digest()
+            await digest.send_digest()
         self.assertEqual(store.search(self.search['id'])['query'], 'Laptop')
         self.assertEqual((self.count('notifications'), self.count('outbox')), (0, 0))
         self.assertEqual(self.count('batches', "WHERE status='sent'"), 1)
@@ -505,7 +502,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
             return {}
 
         with patch('suchalarm.worker.asyncio.to_thread', side_effect=edit_while_sending):
-            await worker.send_digest()
+            await digest.send_digest()
         self.assertEqual(self.count('notifications'), 0)
         self.assertEqual(self.count('batches', "WHERE status='sent'"), 1)
         self.search = store.search(1)
@@ -519,7 +516,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
     async def test_a_price_basis_edit_before_restart_does_not_restore_the_old_receipt(self):
         await self.found(self.offer)
         with store.db() as conn:
-            self.assertIsNotNone(worker._claim_batch(conn, store.mail_settings(), time.time(), 'preis'))
+            self.assertIsNotNone(digest._claim_batch(conn, store.mail_settings(), time.time(), 'preis'))
         await update(1, ProductSearch(query='Spiel', max_price=3500, sources=['ebay'], include_shipping=False))
         store.init()
         self.assertEqual((self.count('notifications'), self.count('outbox')), (0, 0))
@@ -533,7 +530,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
             return {}
 
         with patch('suchalarm.worker.asyncio.to_thread', side_effect=pause_while_sending):
-            await worker.send_digest()
+            await digest.send_digest()
         self.assertEqual((self.count('notifications'), self.count('outbox')), (1, 0))
 
     async def test_without_a_mailserver_hits_are_known_and_a_saved_server_only_mails_new_hits(self):
@@ -544,7 +541,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
             new = replace(self.offer, url='https://www.ebay.de/itm/2')
             await self.found(self.offer, new)
             with patch.object(mailer, 'deliver', return_value=[]) as deliver:
-                await worker.send_digest()
+                await digest.send_digest()
             message = deliver.call_args.args[0].get_body(('plain',)).get_content()
             self.assertNotIn(self.offer.url, message)
             self.assertIn(new.url, message)
@@ -556,7 +553,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         await self.found(self.offer)
         self.assertEqual(self.count('outbox'), 1)
         with without_smtp_env(), patch.object(mailer, 'deliver') as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
             deliver.assert_not_called()
         self.assertEqual((self.count('outbox'), self.count('notifications'), self.count('mail_log')), (0, 1, 0))
         self.assertEqual(self.count('batches'), 0)
@@ -568,7 +565,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         await self.found(self.offer)
         self.setting('mail_enabled', '0')
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
             deliver.assert_not_called()
         await self.found(self.offer, replace(self.offer, url='https://www.ebay.de/itm/2'))
         self.setting('mail_enabled', '1')
@@ -579,21 +576,23 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         self.setting('batch_size', '2')
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
             deliver.assert_not_called()
-            await worker.send_digest(time.time() + 7201)
+            await digest.send_digest(time.time() + 7201)
             deliver.assert_called_once()
         self.setting('frequency', 'Täglich')
         await self.found(replace(self.offer, url='https://www.ebay.de/itm/2'))
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest(time.time() + 3600)
+            await digest.send_digest(time.time() + 3600)
             deliver.assert_not_called()
-            await worker.send_digest(time.time() + 86401)
+            await digest.send_digest(time.time() + 86401)
             deliver.assert_called_once()
 
     async def test_restart_during_delivery_is_known_but_not_sent(self):
         with store.db() as conn:
-            conn.execute("INSERT INTO outbox VALUES (1,'https://www.ebay.de/itm/12345',3000,1,'b1')")
+            conn.execute(
+                "INSERT INTO outbox(search_id,url,price,created_at,batch) VALUES (1,'https://www.ebay.de/itm/12345',3000,1,'b1')"
+            )
             conn.execute(
                 'INSERT INTO batches(id,recipients,subject,count,status,created_at) '
                 "VALUES ('b1','a@example.com','x',1,'sending',1)"
@@ -608,7 +607,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
     async def test_history_names_why_a_hit_is_known(self):
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', return_value={'b@example.com': 550}):
-            await worker.send_digest()  # accepted for the others: sent
+            await digest.send_digest()  # accepted for the others: sent
         self.assertEqual(self.count('notifications', "WHERE reason='sent'"), 1)
         self.setting('mail_enabled', '0')
         await self.found(self.offer, replace(self.offer, url='https://www.ebay.de/itm/2'))
@@ -640,13 +639,13 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
                 "INSERT OR REPLACE INTO pictures(key,source,remote,state,filename,seen) VALUES ('k','ebay','https://i.ebayimg.com/x.jpg',?,?,1)",
                 (state, name if state == 'ready' else None),
             )
-            conn.execute("INSERT OR REPLACE INTO offers VALUES (?,'k',1)", (url,))
+            conn.execute("INSERT OR REPLACE INTO offers(url,key,seen) VALUES (?,'k',1)", (url,))
 
     async def test_pictures_travel_inside_the_mail(self):
         self.picture(self.offer.url)
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
         message = deliver.call_args[0][0]
         html = message.get_body(('html',)).get_content()
         self.assertIn('src="cid:', html)
@@ -661,7 +660,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         (images.root() / ('a' * 64 + '.webp')).write_bytes(b'kaputt')
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
         message = deliver.call_args[0][0]
         self.assertNotIn('src="cid:', message.get_body(('html',)).get_content())
 
@@ -669,9 +668,9 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         self.picture(self.offer.url, state='queued')
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
             deliver.assert_not_called()
-            await worker.send_digest(time.time() + 301)
+            await digest.send_digest(time.time() + 301)
             deliver.assert_called_once()
 
     async def shop_case(self, shop_price, used_price, shipping=0, include_shipping=True, fresh=True):
@@ -697,7 +696,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
                 conn.execute("UPDATE source_status SET checked_at=1 WHERE source='ebay'")
                 conn.execute("UPDATE offers SET last_seen=1 WHERE source='ebay'")
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
-            await worker.send_digest()
+            await digest.send_digest()
         return deliver.call_args[0][0].get_body(('plain',)).get_content() if deliver.called else ''
 
     async def test_shop_cheaper_than_every_used_offer_says_so(self):
@@ -732,7 +731,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_hidden_offers_are_never_mailed(self):
         with store.db() as conn:
-            conn.execute('INSERT INTO hidden VALUES (1,?,1)', (self.offer.url,))
+            conn.execute('INSERT INTO hidden(search_id,url,hidden_at) VALUES (1,?,1)', (self.offer.url,))
         await self.found(self.offer)
         self.assertEqual(self.count('outbox'), 0)
 
@@ -808,10 +807,10 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_migrations_run_once(self):
         with store.db() as conn:
-            self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], len(store.MIGRATIONS))
-        with patch.object(store, 'MIGRATIONS', (Mock(),) * len(store.MIGRATIONS)) as migrations:
+            self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], len(migrations.MIGRATIONS))
+        with patch.object(migrations, 'MIGRATIONS', (Mock(),) * len(migrations.MIGRATIONS)) as applied:
             store.init()
-        migrations[0].assert_not_called()
+        applied[0].assert_not_called()
 
     async def test_restart_cleans_saved_ebay_titles_without_changing_history(self):
         await self.found(replace(self.offer, title='Neues AngebotSpielWird in neuem Fenster oder Tab geöffnet'))
@@ -825,8 +824,10 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_idealo_reference_moves_into_its_own_table_and_follows_the_search(self):
         with store.db() as conn:
-            conn.execute("INSERT INTO settings VALUES ('reference:1','{\"price\":4000}')")
-            conn.execute("INSERT INTO settings VALUES ('reference:99','{\"price\":1}')")  # orphan of a deleted search
+            conn.execute("INSERT INTO settings(key,value) VALUES ('reference:1','{\"price\":4000}')")
+            conn.execute(
+                "INSERT INTO settings(key,value) VALUES ('reference:99','{\"price\":1}')"
+            )  # orphan of a deleted search
         self.restart_old_version()
         with store.db() as conn:
             self.assertEqual(
@@ -852,46 +853,46 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
     async def test_daily_backup(self):
         worker.backup = worker.BackupClock()
         await worker.daily_backup()
-        backups = store.db_path().parent / 'backups'
-        (generation,) = [p for p in backups.iterdir() if p.is_dir()]
+        folder = store.db_path().parent / 'backups'
+        (generation,) = [p for p in folder.iterdir() if p.is_dir()]
         manifest = json.loads((generation / 'manifest.json').read_text())
         for name in ('suchalarm', *store.PARTS):
             self.assertIn(f'{name}.db', manifest['files'], name)
             self.assertTrue((generation / f'{name}.db').exists(), name)
-        self.assertFalse(list(backups.glob('*.tmp')))
+        self.assertFalse(list(folder.glob('*.tmp')))
 
     def test_backups_from_before_generations_stay_until_enough_generations_replace_them(self):
-        backups = store.db_path().parent / 'backups'
-        backups.mkdir(exist_ok=True)
-        (backups / 'suchalarm-2026-01-01.db').write_bytes(b'')
-        store.backup(keep=7)
-        self.assertTrue((backups / 'suchalarm-2026-01-01.db').exists())
+        folder = store.db_path().parent / 'backups'
+        folder.mkdir(exist_ok=True)
+        (folder / 'suchalarm-2026-01-01.db').write_bytes(b'')
+        backups.make(keep=7)
+        self.assertTrue((folder / 'suchalarm-2026-01-01.db').exists())
 
     def test_backup_keeps_complete_generations_only(self):
-        backups = store.db_path().parent / 'backups'
-        backups.mkdir(exist_ok=True)
-        (backups / 'suchalarm-2026-01-01.db').write_bytes(b'')  # a single file from before generations
+        folder = store.db_path().parent / 'backups'
+        folder.mkdir(exist_ok=True)
+        (folder / 'suchalarm-2026-01-01.db').write_bytes(b'')  # a single file from before generations
         for day in range(9):
-            (backups / f'2026-01-{day + 1:02d}').mkdir()
-            (backups / f'2026-01-{day + 1:02d}' / 'manifest.json').write_text('{}')
-        (backups / '2026-02-01.tmp').mkdir()  # an interrupted one is never a generation
-        store.backup(keep=3)
-        names = sorted(p.name for p in backups.iterdir())
+            (folder / f'2026-01-{day + 1:02d}').mkdir()
+            (folder / f'2026-01-{day + 1:02d}' / 'manifest.json').write_text('{}')
+        (folder / '2026-02-01.tmp').mkdir()  # an interrupted one is never a generation
+        backups.make(keep=3)
+        names = sorted(p.name for p in folder.iterdir())
         self.assertEqual(names, ['2026-01-08', '2026-01-09', time.strftime('%Y-%m-%d')])
 
 
-class ApiTests(unittest.TestCase):
+class ApiTests(TempDataTest):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {'DATA_DIR': self.tmp.name})
-        self.env.start()
-        store.init()
+        super().setUp()
         self.client = TestClient(app)
         worker.progress = worker.Progress()
 
-    def tearDown(self):
-        self.env.stop()
-        self.tmp.cleanup()
+    def test_the_polled_state_travels_compressed(self):
+        for n in range(30):
+            self.client.post('/api/searches', json=dict(query=f'Spiel {n} PS5', max_price=5000, sources=['ebay']))
+        response = self.client.get('/api/state', headers={'Accept-Encoding': 'gzip'})
+        self.assertEqual(response.headers.get('content-encoding'), 'gzip')
+        self.assertEqual(len(response.json()['searches']), 30)
 
     def test_new_and_existing_searches_are_product_searches(self):
         self.client.post('/api/searches', json=dict(query='Spiel PS5', max_price=5000, sources=['ebay']))
@@ -969,12 +970,15 @@ class ApiTests(unittest.TestCase):
         sid = self.client.post('/api/searches', json=payload).json()['id']
         with store.db() as conn:
             for source, url in (('ebay', 'https://www.ebay.de/itm/1'), ('vinted', 'https://www.vinted.de/items/2')):
-                conn.execute("INSERT INTO offers VALUES (?,?,?,'Spiel PS5',3000,0,'','',1,1)", (sid, source, url))
+                conn.execute(
+                    "INSERT INTO offers(search_id,source,url,title,price,shipping,seller,condition,first_seen,last_seen) VALUES (?,?,?,'Spiel PS5',3000,0,'','',1,1)",
+                    (sid, source, url),
+                )
                 conn.execute(
                     'INSERT INTO source_status(search_id,source,checked_at,error,count) VALUES (?,?,1,NULL,1)',
                     (sid, source),
                 )
-            conn.execute('INSERT INTO idealo_references VALUES (?,\'{"price":4000}\')', (sid,))
+            conn.execute('INSERT INTO idealo_references(search_id,value) VALUES (?,\'{"price":4000}\')', (sid,))
 
         def kept():
             state = self.client.get('/api/state').json()
@@ -1005,7 +1009,8 @@ class ApiTests(unittest.TestCase):
     def offer(self, sid, url, price, notified=False):
         with store.db() as conn:
             conn.execute(
-                "INSERT INTO offers VALUES (?,'ebay',?,'Resident Evil Requiem',?,0,'','',1,1)", (sid, url, price)
+                "INSERT INTO offers(search_id,source,url,title,price,shipping,seller,condition,first_seen,last_seen) VALUES (?,'ebay',?,'Resident Evil Requiem',?,0,'','',1,1)",
+                (sid, url, price),
             )
             if notified:
                 conn.execute(
@@ -1146,7 +1151,7 @@ class ApiTests(unittest.TestCase):
         self.offer(sid, 'https://www.ebay.de/itm/9', 300)
         self.offer(sid, 'https://www.ebay.de/itm/8', 900)
         with store.db() as conn:
-            conn.execute("INSERT INTO start_offers VALUES (?,'https://www.ebay.de/itm/8')", (sid,))
+            conn.execute("INSERT INTO start_offers(search_id,url) VALUES (?,'https://www.ebay.de/itm/8')", (sid,))
         self.assertEqual([(o['price'], o['start']) for o in self.state()['offers']], [(900, True)])
 
     def test_watch_list_keeps_a_snapshot(self):
@@ -1183,7 +1188,8 @@ class ApiTests(unittest.TestCase):
             url = f'https://www.ebay.de/itm/9{n}'
             with store.db() as conn:
                 conn.execute(
-                    "INSERT INTO offers VALUES (?,'ebay',?,?,900,0,'','',1,1)", (sid, url, f'Poster gerahmt {n}')
+                    "INSERT INTO offers(search_id,source,url,title,price,shipping,seller,condition,first_seen,last_seen) VALUES (?,'ebay',?,?,900,0,'','',1,1)",
+                    (sid, url, f'Poster gerahmt {n}'),
                 )
             self.client.post('/api/hidden', json={'search_id': sid, 'url': url, 'hidden': True})
         self.assertEqual(self.state()['learned'], {category: ['gerahmt', 'poster']})
@@ -1288,19 +1294,9 @@ if __name__ == '__main__':
     unittest.main()
 
 
-class NestedConnectionTests(unittest.TestCase):
+class NestedConnectionTests(TempDataTest):
     """A second connection that would wait for the first one's write lock in the same thread fails at once:
     waiting can never end there, and it would stand the whole app still (the event loop) for 20 seconds."""
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {'DATA_DIR': self.tmp.name})
-        self.env.start()
-        store.init()
-
-    def tearDown(self):
-        self.env.stop()
-        self.tmp.cleanup()
 
     def test_a_second_writer_inside_a_writing_transaction_fails_at_once(self):
         start = time.monotonic()

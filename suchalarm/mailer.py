@@ -201,7 +201,7 @@ def _preheader(entries):
 
 def digest_html(entries, photos=None):
     count = len(entries)
-    words = _mail(entries[0][0] if entries else {}).WORDS  # one mail is one kind (worker._send_kind)
+    words = _mail(entries[0][0] if entries else {}).WORDS  # one mail is one kind (digest._send_kind)
     noun, tagline = words['one' if count == 1 else 'many'], words['tagline']
     cards = ''.join(_card(entry, photo) for entry, photo in zip(entries, photos or [None] * count, strict=True))
     return f"""<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"></head>

@@ -1,14 +1,13 @@
 """The rules of AGENTS.md as tests of their own: each one guards a class of errors, not one implementation."""
 
 import ast
-import os
-import tempfile
 import time
 import unittest
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import AsyncMock, patch
 
-from suchalarm import mailer, status, store, worker
+from suchalarm import digest, mailer, status, store, worker
 from suchalarm.core import browser, cadence
 from suchalarm.preis import worker as products
 from suchalarm.preis.categories import CATEGORIES
@@ -16,6 +15,7 @@ from suchalarm.preis.prices import Offer, eligible
 from suchalarm.wohnung import portals
 from suchalarm.wohnung.domain import TRAITS, profile
 from suchalarm.wohnung.domain import query_text as flat_query
+from tests.helpers import AsyncTempDataTest, TempDataTest
 
 PACKAGE = Path(__file__).resolve().parent.parent / 'suchalarm'
 
@@ -52,26 +52,16 @@ class StructureTests(unittest.TestCase):
                     self.assertIn('book(', text)
 
     def test_app_mailer_and_worker_ask_kinds_instead_of_naming_them(self):
-        for name in ('app.py', 'mailer.py', 'worker.py'):
+        for name in ('app.py', 'mailer.py', 'digest.py', 'worker.py'):
             tree = ast.parse((PACKAGE / name).read_text())
             literals = {node.value for node in ast.walk(tree) if isinstance(node, ast.Constant)}
             with self.subTest(file=name):
                 self.assertFalse(literals & {'preis', 'wohnung'})
 
 
-class SharedResultTests(unittest.TestCase):
+class SharedResultTests(TempDataTest):
     """Searches with the same query key share one provider request and its cached result: whatever changes the
     request (its URL) must change the key, or a search would get another search's result."""
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {'DATA_DIR': self.tmp.name})
-        self.env.start()
-        store.init()
-
-    def tearDown(self):
-        self.env.stop()
-        self.tmp.cleanup()
 
     def assert_key_follows_request(self, pairs, request, key):
         for label, a, b in pairs:
@@ -142,29 +132,22 @@ class PriceTests(unittest.TestCase):
         self.assertFalse(eligible(offer, dict(min_price=0, max_price=999999, include_shipping=True)))
 
 
-class FlowTests(unittest.IsolatedAsyncioTestCase):
+class FlowTests(AsyncTempDataTest):
     """Find, send, restart: what the mail history says at each step."""
 
+    ENV: ClassVar[dict[str, str]] = {'SMTP_HOST': 'smtp.example', 'SMTP_FROM': 'a@example.com'}
+
     async def asyncSetUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(
-            os.environ, {'DATA_DIR': self.tmp.name, 'SMTP_HOST': 'smtp.example', 'SMTP_FROM': 'a@example.com'}
-        )
-        self.env.start()
-        store.init()
+        await super().asyncSetUp()
         with store.db() as conn:
             conn.execute("INSERT INTO searches(query,max_price,sources) VALUES ('Spiel',3500,'[\"ebay\"]')")
-            conn.execute("INSERT INTO settings VALUES ('recipients','[\"a@example.com\"]')")
-            conn.execute("INSERT INTO settings VALUES ('mail_enabled','1')")
+            conn.execute("INSERT INTO settings(key,value) VALUES ('recipients','[\"a@example.com\"]')")
+            conn.execute("INSERT INTO settings(key,value) VALUES ('mail_enabled','1')")
             conn.execute(
                 "INSERT INTO source_status(search_id,source,checked_at,error,count,started) VALUES (1,'ebay',1,NULL,0,1)"
             )
         self.search = store.searches()[0]
         self.offer = Offer('ebay', 'https://www.ebay.de/itm/12345', 'Spiel', 3000, 0)
-
-    async def asyncTearDown(self):
-        self.env.stop()
-        self.tmp.cleanup()
 
     async def found(self, *offers, error=None):
         fetch = AsyncMock(side_effect=error) if error else AsyncMock(return_value=(list(offers), None))
@@ -178,24 +161,24 @@ class FlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_no_history_without_the_servers_yes(self):
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', side_effect=mailer.DeliveryError('Abgelehnt.', False)):
-            await worker.send_digest()
+            await digest.send_digest()
         self.assertEqual(self.history(), [])
         with patch('suchalarm.mailer.deliver', return_value={}):
-            await worker.send_digest(time.time() + worker.MAIL_RETRY_AFTER + 1)
+            await digest.send_digest(time.time() + digest.MAIL_RETRY_AFTER + 1)
         self.assertEqual(self.history(), [(3000, 'sent')])
 
     async def test_a_restart_while_sending_never_sends_twice_but_a_lower_price_still_comes(self):
         await self.found(self.offer)
         with store.db() as conn:
-            self.assertIsNotNone(worker._claim_batch(conn, store.mail_settings(), time.time(), 'preis'))
+            self.assertIsNotNone(digest._claim_batch(conn, store.mail_settings(), time.time(), 'preis'))
         store.init()  # the server restarted before the SMTP answer
         self.assertEqual(self.history(), [(3000, 'uncertain')])
         with patch('suchalarm.mailer.deliver', return_value={}) as deliver:
             await self.found(self.offer)
-            await worker.send_digest(time.time() + worker.PACKAGE_WAIT + 1)
+            await digest.send_digest(time.time() + digest.PACKAGE_WAIT + 1)
             deliver.assert_not_called()
             await self.found(Offer('ebay', self.offer.url, 'Spiel', 2500, 0))
-            await worker.send_digest(time.time() + 2 * worker.PACKAGE_WAIT)
+            await digest.send_digest(time.time() + 2 * digest.PACKAGE_WAIT)
             deliver.assert_called_once()
         self.assertEqual(self.history(), [(2500, 'sent')])
 

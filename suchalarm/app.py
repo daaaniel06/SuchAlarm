@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -60,6 +61,8 @@ async def lifespan(app):
 
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+# /api/state carries every hit and is polled every few seconds: 640 kB of JSON become about 90 kB.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 for router in ROUTERS:
     app.include_router(router)
 

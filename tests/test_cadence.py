@@ -52,7 +52,7 @@ class CadenceTests(unittest.IsolatedAsyncioTestCase):
     def test_places_are_kept_per_source_and_old_location_ids_carry_over(self):
         old = cadence.sqlite3.connect(cadence.Path(self.tmp.name) / 'cadence.db')
         old.execute('CREATE TABLE locations (postcode TEXT PRIMARY KEY, id TEXT NOT NULL)')
-        old.execute("INSERT INTO locations VALUES ('10115', '9668')")
+        old.execute("INSERT INTO locations(postcode,id) VALUES ('10115', '9668')")
         old.commit()
         old.close()
         self.assertEqual(cadence.location('kleinanzeigen', '10115'), '9668')
@@ -87,7 +87,8 @@ class CadenceTests(unittest.IsolatedAsyncioTestCase):
         with cadence.db() as conn:
             conn.execute('DELETE FROM budget')
             conn.executemany(
-                'INSERT INTO requests VALUES (?,?)', [('vinted:page', time.time() - 60)] * cadence.HOURLY['page']
+                'INSERT INTO requests(key,at) VALUES (?,?)',
+                [('vinted:page', time.time() - 60)] * cadence.HOURLY['page'],
             )
         with self.assertRaises(cadence.Deferred):
             cadence.book('vinted')
@@ -104,7 +105,9 @@ class CadenceTests(unittest.IsolatedAsyncioTestCase):
             self.assertGreaterEqual(cadence.ready_at('ebay', now=start + 13), start + 21)
         self.assertGreaterEqual(cadence.ready_at('ebay', now=start + 13), start + 53)
         with cadence.db() as conn:
-            conn.executemany('INSERT INTO requests VALUES (?,?)', [('ebay:page', start)] * cadence.HOURLY['page'])
+            conn.executemany(
+                'INSERT INTO requests(key,at) VALUES (?,?)', [('ebay:page', start)] * cadence.HOURLY['page']
+            )
         with cadence.manual_check(start + 1):
             self.assertGreaterEqual(cadence.ready_at('ebay', now=start + 30), start + 3600)
 
@@ -229,7 +232,7 @@ class CadenceTests(unittest.IsolatedAsyncioTestCase):
         now = time.time()
         with cadence.db() as conn:
             conn.execute(
-                "INSERT INTO queries VALUES (?,?,?,?,0,'ok','{}')",
+                "INSERT INTO queries(key,source,at,next_at,failures,state,value) VALUES (?,?,?,?,0,'ok','{}')",
                 (cadence.query_key('ebay', search), 'ebay', now, now + 1200),
             )
         self.assertAlmostEqual(cadence.query_due('ebay', cadence.query_state('ebay', search), now), now + 1200, delta=1)

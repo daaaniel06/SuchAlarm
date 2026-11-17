@@ -185,7 +185,7 @@ class PriceFilterTests(unittest.IsolatedAsyncioTestCase):
         old_key = 'ebay:' + hashlib.sha256(old_input.encode()).hexdigest()
         with cadence.db() as conn:
             conn.execute(
-                "INSERT INTO queries VALUES (?,?,?,?,0,'ok',?)",
+                "INSERT INTO queries(key,source,at,next_at,failures,state,value) VALUES (?,?,?,?,0,'ok',?)",
                 (old_key, 'ebay', time.time(), time.time() + 1200, json.dumps({'offers': [], 'reference': None})),
             )
         actual = AsyncMock(

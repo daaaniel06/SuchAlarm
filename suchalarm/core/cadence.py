@@ -18,6 +18,13 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+# queries.state
+OK = 'ok'
+CONTINUING = 'continuing'
+WAITING = 'waiting'
+BLOCKED = 'blocked'
+RETRYING = 'retrying'
+
 
 @dataclass(frozen=True)
 class Rhythm:
@@ -165,7 +172,9 @@ def _setup(conn):
         conn.execute('ALTER TABLE failures ADD COLUMN detail TEXT')
     # Older versions kept Kleinanzeigen location IDs by postcode only; they become places of that source.
     if conn.execute("SELECT 1 FROM sqlite_master WHERE name='locations'").fetchone():
-        conn.execute("INSERT OR IGNORE INTO places SELECT 'kleinanzeigen', postcode, id FROM locations")
+        conn.execute(
+            "INSERT OR IGNORE INTO places(source,query,value) SELECT 'kleinanzeigen', postcode, id FROM locations"
+        )
         conn.execute('DROP TABLE locations')
     # Older versions' Vinted shipping cache moved to the product module's delivery.db; it refills within hours.
     conn.execute('DROP TABLE IF EXISTS deliveries')
@@ -263,7 +272,7 @@ def book(source, kind='page'):
                     'INSERT INTO budget(key,next_at) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET next_at=excluded.next_at',
                     (name, now + random.uniform(*gap)),
                 )
-        conn.execute('INSERT INTO requests VALUES (?,?)', (key, now))
+        conn.execute('INSERT INTO requests(key,at) VALUES (?,?)', (key, now))
         conn.execute('DELETE FROM requests WHERE at<?', (now - 86400,))
 
 
@@ -317,7 +326,7 @@ def save_page(source, url, value):
     now = time.time()
     with db() as conn:
         conn.execute(
-            'INSERT OR REPLACE INTO cache VALUES (?,?,?,?)',
+            'INSERT OR REPLACE INTO cache(key,value,at,expires) VALUES (?,?,?,?)',
             ('page:' + source + ':' + url, json.dumps(value), now, now + 900),
         )
         conn.execute('DELETE FROM cache WHERE expires<?', (now - 86400,))
@@ -338,7 +347,7 @@ def location(source, query):
 
 def save_location(source, query, value):
     with db() as conn:
-        conn.execute('INSERT OR REPLACE INTO places VALUES (?,?,?)', (source, query, value))
+        conn.execute('INSERT OR REPLACE INTO places(source,query,value) VALUES (?,?,?)', (source, query, value))
 
 
 def edit_results(source, needle, edit):
@@ -356,7 +365,7 @@ def edit_results(source, needle, edit):
 
 def observation(source, search, fallback):
     with db() as conn:
-        row = conn.execute("SELECT at FROM queries WHERE key=? AND state='ok'", (query_key(source, search),)).fetchone()
+        row = conn.execute('SELECT at FROM queries WHERE key=? AND state=?', (query_key(source, search), OK)).fetchone()
     return row['at'] if row else fallback
 
 
@@ -374,7 +383,7 @@ def query_due(source, row, now):
     if not row:
         return now
     due = row['next_at']
-    if row['state'] == 'ok' and datetime.fromtimestamp(now, BERLIN).hour in NIGHT_HOURS:
+    if row['state'] == OK and datetime.fromtimestamp(now, BERLIN).hour in NIGHT_HOURS:
         due = max(due, row['at'] + PROVIDERS[source].rhythm.night * 60)
     return due
 
@@ -391,7 +400,7 @@ def describe(searches):
                         source=source,
                         at=row['at'] if row else 0,
                         next_at=max(query_due(source, row, now), _ready(conn, source, 'page', now)),
-                        state='blocked' if _blocked_until(conn, source) else row['state'] if row else 'waiting',
+                        state=BLOCKED if _blocked_until(conn, source) else row['state'] if row else WAITING,
                     )
                 )
     return result
@@ -423,7 +432,7 @@ def _record_wait(key, source, exc):
         conn.execute(
             'INSERT INTO queries(key,source,next_at,state) VALUES (?,?,?,?) '
             'ON CONFLICT(key) DO UPDATE SET next_at=excluded.next_at,state=excluded.state',
-            (key, source, exc.until, 'continuing' if exc.continuation else 'waiting'),
+            (key, source, exc.until, CONTINUING if exc.continuation else WAITING),
         )
 
 
@@ -448,7 +457,7 @@ def _record_failure(key, source, row, exc, now, detail=None):
         conn.execute(
             'INSERT INTO queries(key,source,next_at,failures,state) VALUES (?,?,?,?,?) '
             'ON CONFLICT(key) DO UPDATE SET next_at=excluded.next_at,failures=excluded.failures,state=excluded.state',
-            (key, source, until, failures, 'blocked' if refused else 'retrying'),
+            (key, source, until, failures, BLOCKED if refused else RETRYING),
         )
     recent = not row or not row['at'] or now - row['at'] < RETRY_SILENTLY_WITHIN
     return until, not refused and failures <= len(RETRIES) and recent
@@ -459,8 +468,8 @@ def _record_success(key, source, offers, reference, cache_version):
     value = json.dumps({'offers': [asdict(o) for o in offers], 'reference': reference, 'version': cache_version})
     with db() as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO queries VALUES (?,?,?,?,0,'ok',?)",
-            (key, source, now, now + interval(source, now), value),
+            'INSERT OR REPLACE INTO queries(key,source,at,next_at,failures,state,value) VALUES (?,?,?,?,0,?,?)',
+            (key, source, now, now + interval(source, now), OK, value),
         )
         conn.execute(
             'DELETE FROM queries WHERE key NOT IN (SELECT key FROM queries ORDER BY at DESC LIMIT ?)',
@@ -480,7 +489,7 @@ def _within_interval(source, search, row, now, cache_version, cached_parser):
     force = requested and (not row or row['at'] < requested)
     if not row or row['next_at'] <= now or force:
         return None
-    if row['state'] != 'ok' or not row['value']:
+    if row['state'] != OK or not row['value']:
         raise Deferred(row['next_at'])
     return _cached_result(source, search, row, cache_version, cached_parser)
 

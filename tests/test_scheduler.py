@@ -1,8 +1,5 @@
 import json
-import os
-import tempfile
 import time
-import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -10,18 +7,11 @@ from suchalarm import scheduler, store, worker
 from suchalarm.core import cadence
 from suchalarm.preis import sources
 from suchalarm.preis.prices import Offer
+from tests.helpers import AsyncTempDataTest
 
 
-class SchedulerTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {'DATA_DIR': self.tmp.name})
-        self.env.start()
-        store.init()
-
+class SchedulerTests(AsyncTempDataTest):
     def tearDown(self):
-        self.env.stop()
-        self.tmp.cleanup()
         worker.progress = worker.Progress()
 
     def search(self, query='Spiel PS5', providers=('ebay',), active=True):
@@ -36,7 +26,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         search, source = job['searches'][0], job['source']
         with cadence.db() as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO queries VALUES (?,?,?,?,0,'ok',?)",
+                "INSERT OR REPLACE INTO queries(key,source,at,next_at,failures,state,value) VALUES (?,?,?,?,0,'ok',?)",
                 (
                     job['key'],
                     source,
@@ -150,7 +140,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         self.search()
         with (
             patch('suchalarm.worker._run_job', new=AsyncMock(side_effect=ValueError('kaputt'))),
-            patch('suchalarm.worker.send_digest', new=AsyncMock()) as send,
+            patch('suchalarm.digest.send_digest', new=AsyncMock()) as send,
             patch('suchalarm.worker.daily_backup', new=AsyncMock()) as backup,
         ):
             delay = await worker.run_once()
@@ -163,7 +153,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         actual = AsyncMock(return_value=([], None))
         with (
             patch('suchalarm.preis.sources.fetch', cadence.shared_search(actual)),
-            patch('suchalarm.worker.send_digest', new=AsyncMock()),
+            patch('suchalarm.digest.send_digest', new=AsyncMock()),
             patch('suchalarm.worker.daily_backup', new=AsyncMock()),
         ):
             await worker.run_once()
@@ -187,7 +177,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         actual = AsyncMock(return_value=([Offer('ebay', 'https://www.ebay.de/itm/1', 'Spiel PS5', 3000, 0)], None))
         with (
             patch('suchalarm.preis.sources.fetch', cadence.shared_search(actual)),
-            patch('suchalarm.worker.send_digest', new=AsyncMock()),
+            patch('suchalarm.digest.send_digest', new=AsyncMock()),
             patch('suchalarm.worker.daily_backup', new=AsyncMock()),
         ):
             await worker.run_once()
@@ -217,7 +207,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         actual = AsyncMock(side_effect=RuntimeError('Anbieter antwortet mit HTTP 502.'))
         with (
             patch('suchalarm.preis.sources.fetch', cadence.shared_search(actual)),
-            patch('suchalarm.worker.send_digest', new=AsyncMock()),
+            patch('suchalarm.digest.send_digest', new=AsyncMock()),
             patch('suchalarm.worker.daily_backup', new=AsyncMock()),
         ):
             await worker.run_once()
@@ -242,7 +232,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         scheduler.request(search)
         with (
             patch('suchalarm.core.browser.InvisiblePlaywright') as browser,
-            patch('suchalarm.worker.send_digest', new=AsyncMock()),
+            patch('suchalarm.digest.send_digest', new=AsyncMock()),
             patch('suchalarm.worker.daily_backup', new=AsyncMock()),
         ):
             await worker.run_once()
@@ -257,7 +247,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         actual = AsyncMock(return_value=([Offer('ebay', 'https://www.ebay.de/itm/1', 'Spiel PS5', 3000, 0)], None))
         with (
             patch('suchalarm.preis.sources.fetch', cadence.shared_search(actual)),
-            patch('suchalarm.worker.send_digest', new=AsyncMock()),
+            patch('suchalarm.digest.send_digest', new=AsyncMock()),
             patch('suchalarm.worker.daily_backup', new=AsyncMock()),
         ):
             await worker.run_once()
@@ -311,7 +301,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         start = time.time()
         with (
             patch('suchalarm.preis.sources.fetch', cadence.shared_search(visit)),
-            patch('suchalarm.worker.send_digest', new=AsyncMock()),
+            patch('suchalarm.digest.send_digest', new=AsyncMock()),
             patch('suchalarm.worker.daily_backup', new=AsyncMock()),
             patch('time.time', return_value=start) as clock,
         ):

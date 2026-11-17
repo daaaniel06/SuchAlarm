@@ -13,25 +13,27 @@ from pathlib import Path
 from typing import ClassVar
 from unittest.mock import AsyncMock, patch
 
-from suchalarm import status, store, worker
+from suchalarm import digest, migrations, status, store, worker
 from suchalarm.core import browser, cadence, http
 from suchalarm.core.browser import Unreadable
 from suchalarm.models import TEMPLATE_CHARS
 from suchalarm.wohnung import catalog, details, domain, outbox, pages, portals, sources, tables
 from suchalarm.wohnung import worker as flats
-from suchalarm.wohnung.domain import Listing, match, profile
+from suchalarm.wohnung.domain import Listing, Profile, match, profile
+from tests.helpers import TempDataTest
 
-PROFILE = {
+PROFILE: Profile = {
     'city': 'Berlin',
     'place': None,
     'radius': 0,
-    'maxRent': 1300,
-    'minArea': 50,
-    'minRooms': 2,
+    'max_rent': 1300,
+    'min_area': 50,
+    'min_rooms': 2,
     'exclusions': ['WBS'],
-    'excludeWords': [],
-    'moveInFrom': None,
-    'moveInBy': None,
+    'exclude_words': [],
+    'excluded_districts': [],
+    'move_in_from': None,
+    'move_in_by': None,
 }
 LISTING = Listing(
     'immoscout24',
@@ -139,7 +141,7 @@ class TextTests(unittest.TestCase):
 
 class FilterTests(unittest.TestCase):
     def test_excluded_districts_only_match_whole_names_in_the_location(self):
-        wanted = {**PROFILE, 'city': 'Darmstadt', 'excludedDistricts': ['Wixhausen', 'Eberstadt']}
+        wanted = {**PROFILE, 'city': 'Darmstadt', 'excluded_districts': ['Wixhausen', 'Eberstadt']}
         for place, expected in (
             ('64291 Darmstadt-Wixhausen', 'excluded'),
             ('Darmstadt, EBERSTADT', 'excluded'),
@@ -155,8 +157,8 @@ class FilterTests(unittest.TestCase):
     def test_excluded_districts_are_local_filters_and_old_searches_keep_working(self):
         original = search()
         changed = search(filters={**original['filters'], 'excluded_districts': ['Eberstadt']})
-        self.assertEqual(profile(changed)['excludedDistricts'], ['Eberstadt'])
-        self.assertEqual(profile(original)['excludedDistricts'], [])
+        self.assertEqual(profile(changed)['excluded_districts'], ['Eberstadt'])
+        self.assertEqual(profile(original)['excluded_districts'], [])
         for source in domain.SOURCES:
             with self.subTest(source=source):
                 self.assertEqual(domain.query_text(source, original), domain.query_text(source, changed))
@@ -179,9 +181,9 @@ class FilterTests(unittest.TestCase):
             self.assertEqual(match(flat(**changes), PROFILE)[0], expected, changes)
 
     def test_a_missing_area_or_room_count_only_matters_with_a_minimum(self):
-        free = {**PROFILE, 'minArea': 0, 'minRooms': 0}
+        free = {**PROFILE, 'min_area': 0, 'min_rooms': 0}
         self.assertEqual(match(flat(area=None, rooms=None), free)[0], 'matched')
-        self.assertEqual(match(flat(rooms=None), {**free, 'minRooms': 2}), ('unclear', ['Zimmer fehlt']))
+        self.assertEqual(match(flat(rooms=None), {**free, 'min_rooms': 2}), ('unclear', ['Zimmer fehlt']))
 
     def test_known_violation_beats_missing_data(self):
         self.assertEqual(match(flat(rent=None, area=None, traits=['WBS']), PROFILE)[0], 'excluded')
@@ -203,17 +205,17 @@ class FilterTests(unittest.TestCase):
         self.assertFalse(could(flat(area=40), PROFILE))
         self.assertFalse(could(flat(traits=['WBS']), PROFILE))
         self.assertFalse(could(flat(source='kleinanzeigen-wohnung', title='Paar sucht Wohnung'), PROFILE))
-        self.assertFalse(could(flat(title='Möbliert auf Zeit'), {**PROFILE, 'excludeWords': ['möbliert']}))
-        self.assertFalse(could(flat(available_from='2027-03-01'), {**PROFILE, 'moveInBy': '2026-12-31'}))
+        self.assertFalse(could(flat(title='Möbliert auf Zeit'), {**PROFILE, 'exclude_words': ['möbliert']}))
+        self.assertFalse(could(flat(available_from='2027-03-01'), {**PROFILE, 'move_in_by': '2026-12-31'}))
 
     def test_own_exclusion_words_check_title_and_description(self):
-        words = {**PROFILE, 'excludeWords': ['möbliert', 'Wohnen auf Zeit']}
+        words = {**PROFILE, 'exclude_words': ['möbliert', 'Wohnen auf Zeit']}
         self.assertEqual(match(flat(text='Schöne Wohnung, voll MÖBLIERT'), words), ('excluded', ['Enthält „möbliert“']))
         self.assertEqual(match(flat(title='Wohnen auf Zeit in Bessungen'), words)[0], 'excluded')
         self.assertEqual(match(flat(exclusions_known=False), words)[0], 'unclear')
 
     def test_own_exclusion_words_use_whole_words_and_negation_like_product_searches(self):
-        words = {**PROFILE, 'excludeWords': ['möbliert', 'Wohnen auf Zeit']}
+        words = {**PROFILE, 'exclude_words': ['möbliert', 'Wohnen auf Zeit']}
         for text, verdict in (
             ('Die Wohnung ist unmöbliert.', 'matched'),
             ('Die Wohnung ist NICHT MÖBLIERT.', 'matched'),
@@ -225,11 +227,11 @@ class FilterTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(match(flat(text=text), words)[0], verdict)
         self.assertEqual(match(flat(text='Schöne Wohnung, voll MOBLIERT'), words), ('excluded', ['Enthält „möbliert“']))
-        phrase = {**PROFILE, 'excludeWords': ['ohne Balkon']}
+        phrase = {**PROFILE, 'exclude_words': ['ohne Balkon']}
         self.assertEqual(match(flat(text='Wohnung ohne Balkon'), phrase), ('excluded', ['Enthält „ohne Balkon“']))
 
     def test_move_in_window(self):
-        window = {**PROFILE, 'moveInFrom': '2026-10-01', 'moveInBy': '2026-11-15'}
+        window = {**PROFILE, 'move_in_from': '2026-10-01', 'move_in_by': '2026-11-15'}
         for available, expected in (
             (None, 'matched'),
             ('2026-10-01', 'matched'),
@@ -244,8 +246,8 @@ class FilterTests(unittest.TestCase):
             'city': 'Darmstadt',
             'place': {'kind': 'city', 'label': 'Darmstadt', 'query': 'Darmstadt'},
             'exclusions': [],
-            'minArea': 0,
-            'minRooms': 1,
+            'min_area': 0,
+            'min_rooms': 1,
         }
         self.assertEqual(match(flat(place='64347 Griesheim'), town), ('excluded', ['Nicht in Darmstadt']))
         self.assertEqual(match(flat(place='64285 Darmstadt-Bessungen, Darmstadt'), town)[0], 'matched')
@@ -262,7 +264,7 @@ class FilterTests(unittest.TestCase):
         self.assertFalse(domain.inside(area, 11, 5))
 
     def test_a_district_search_keeps_its_towns(self):
-        town = {**PROFILE, 'city': 'Darmstadt-Dieburg', 'exclusions': [], 'minArea': 0, 'minRooms': 1}
+        town = {**PROFILE, 'city': 'Darmstadt-Dieburg', 'exclusions': [], 'min_area': 0, 'min_rooms': 1}
         for kind, label in (
             ('district', 'Darmstadt-Dieburg'),
             ('district', 'Darmstadt-Dieburg (Kreis)'),
@@ -273,7 +275,7 @@ class FilterTests(unittest.TestCase):
                 self.assertEqual(match(flat(place='64807 Dieburg'), district)[0], 'matched')
 
     def test_a_postcode_search_judges_an_address_without_postcode_by_its_town(self):
-        town = {**PROFILE, 'city': '64283', 'exclusions': [], 'minArea': 0, 'minRooms': 1}
+        town = {**PROFILE, 'city': '64283', 'exclusions': [], 'min_area': 0, 'min_rooms': 1}
         postcode = {**town, 'place': {'kind': 'plz', 'label': '64283 Darmstadt', 'query': '64283'}}
         self.assertEqual(match(flat(place='Darmstadt, Musterweg 3'), postcode)[0], 'matched')  # NHW names no postcode
         self.assertEqual(match(flat(place='Griesheim, Musterweg 3'), postcode), ('excluded', ['Nicht in 64283']))
@@ -282,7 +284,7 @@ class FilterTests(unittest.TestCase):
 
     def test_distance_search_only_drops_flats_clearly_outside(self):
         centre = (49.8728, 8.6512)  # Darmstadt
-        near = {**PROFILE, 'city': 'Darmstadt', 'radius': 5, 'exclusions': [], 'minArea': 0, 'minRooms': 1}
+        near = {**PROFILE, 'city': 'Darmstadt', 'radius': 5, 'exclusions': [], 'min_area': 0, 'min_rooms': 1}
         far = flat(place='Darmstadt', lat=49.80, lon=8.60)  # about 8,9 km
         self.assertEqual(match(far, near, centre)[0], 'excluded')
         self.assertEqual(match(flat(place='Darmstadt', lat=49.817, lon=8.645), near, centre)[0], 'matched')  # 6,2 km
@@ -297,9 +299,9 @@ class FilterTests(unittest.TestCase):
             filters={'min_area': 40, 'min_rooms': 2, 'exclusions': ['WBS', 'Unbekannt'], 'move_in_by': '2026-12-01'},
         )
         p = profile(stored)
-        self.assertEqual((p['maxRent'], p['minArea'], p['minRooms'], p['radius']), (1234.5, 40, 2, 5))
+        self.assertEqual((p['max_rent'], p['min_area'], p['min_rooms'], p['radius']), (1234.5, 40, 2, 5))
         self.assertEqual(
-            (p['exclusions'], p['excludeWords'], p['moveInBy']),
+            (p['exclusions'], p['exclude_words'], p['move_in_by']),
             (['WBS'], ['möbliert', 'Wohnen auf Zeit'], '2026-12-01'),
         )
 
@@ -513,7 +515,7 @@ class ParserTests(unittest.TestCase):
         )
 
     def test_kleinanzeigen_search_url(self):
-        swaps = {**PROFILE, 'radius': 10, 'minArea': 50, 'minRooms': 2.5, 'exclusions': ['Tauschwohnung']}
+        swaps = {**PROFILE, 'radius': 10, 'min_area': 50, 'min_rooms': 2.5, 'exclusions': ['Tauschwohnung']}
         self.assertEqual(
             portals.kleinanzeigen_url(swaps, '3331'),
             'https://www.kleinanzeigen.de/s-wohnung-mieten/anzeige:angebote/sortierung:neuste/preis::1300/'
@@ -691,13 +693,13 @@ class ParserTests(unittest.TestCase):
             portals.om_path('Hessen', 'Bad Homburg (Höhe)'), '/immobilien/wohnung-mieten/hessen/bad-homburg-hohe/'
         )
         self.assertEqual(portals.om_path('Bayern', 'München'), '/immobilien/wohnung-mieten/bayern/munchen/')
-        limits = {'maxRent': 899.5, 'minArea': 40.5, 'minRooms': 2, 'radius': 0}
+        limits = {'max_rent': 899.5, 'min_area': 40.5, 'min_rooms': 2, 'radius': 0}
         self.assertEqual(
             portals.om_url('/immobilien/wohnung-mieten/hessen/darmstadt/', limits),
             'https://www.ohne-makler.net/immobilien/wohnung-mieten/hessen/darmstadt/?sort=date_desc&price_max=900&area_min=40&radius=0',
         )
         self.assertEqual(
-            portals.om_url('/immobilien/wohnung-mieten/hessen/darmstadt/', {**limits, 'radius': 15, 'minArea': 0}, 2),
+            portals.om_url('/immobilien/wohnung-mieten/hessen/darmstadt/', {**limits, 'radius': 15, 'min_area': 0}, 2),
             'https://www.ohne-makler.net/immobilien/wohnung-mieten/hessen/darmstadt/?sort=date_desc&price_max=900&radius=25&page=2',
         )
         self.assertEqual(
@@ -756,21 +758,21 @@ class ParserTests(unittest.TestCase):
         self.assertIsNone(portals.id_city({'cities': []}, 'Xyz'))
         self.assertEqual(portals.id_town({'zips': [{'zip': '64283', 'city': 'Darmstadt'}]}), 'Darmstadt')
         self.assertEqual(
-            portals.id_url('darmstadt', {'maxRent': 899.5, 'minArea': 40.5, 'minRooms': 1.5}, 2),
+            portals.id_url('darmstadt', {'max_rent': 899.5, 'min_area': 40.5, 'min_rooms': 1.5}, 2),
             'https://www.immobilien.de/mieten/wohnung/darmstadt/?sort=newest&preis_bis=900&flaeche_von=40&zimmer_von=1&page=2',
         )
 
     def test_wg_gesucht_list_and_detail(self):
-        p = {'maxRent': 700.5, 'minArea': 30.5, 'minRooms': 1.5}
+        p = {'max_rent': 700.5, 'min_area': 30.5, 'min_rooms': 1.5}
         self.assertEqual(
             portals.wg_url(('Darmstadt', 23), p, page=2),
             'https://www.wg-gesucht.de/wohnungen-in-Darmstadt.23.1+2.1.1.html?rMax=701&sMin=30&rmMin=1&limit=100',
         )
         self.assertEqual(
-            portals.wg_url(('Darmstadt', 23), {'maxRent': 700, 'minArea': 0, 'minRooms': 0}),
+            portals.wg_url(('Darmstadt', 23), {'max_rent': 700, 'min_area': 0, 'min_rooms': 0}),
             'https://www.wg-gesucht.de/wohnungen-in-Darmstadt.23.1+2.1.0.html?rMax=700&limit=100',
         )
-        excluded = {'maxRent': 700, 'minArea': 0, 'minRooms': 0, 'exclusions': ['Tauschwohnung', 'Befristet']}
+        excluded = {'max_rent': 700, 'min_area': 0, 'min_rooms': 0, 'exclusions': ['Tauschwohnung', 'Befristet']}
         self.assertEqual(
             portals.wg_url(('Darmstadt', 23), excluded),
             'https://www.wg-gesucht.de/wohnungen-in-Darmstadt.23.1+2.1.0.html?rMax=700&limit=100&exc=2'
@@ -879,18 +881,8 @@ def without_markup(html):
     return re.sub(rf'\s(?:{hooks})="[^"]*"', '', html)
 
 
-class TempData(unittest.TestCase):
-    MAIL_ENV: ClassVar[dict[str, str]] = {}
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {'DATA_DIR': self.tmp.name, **self.MAIL_ENV})
-        self.env.start()
-        store.init()
-
-    def tearDown(self):
-        self.env.stop()
-        self.tmp.cleanup()
+class TempData(TempDataTest):
+    ENV: ClassVar[dict[str, str]] = {}
 
     def stored_search(self, **changes):
         values = search(**changes)
@@ -1417,7 +1409,7 @@ class FieldWarningTests(TempData):
         pages.save_result(flat_search, 'immoscout24', [], 0, time.time())
         with store.db() as conn:
             conn.execute('ALTER TABLE source_status DROP COLUMN warning')
-            conn.execute(f'PRAGMA user_version={store.MIGRATIONS.index(store._add_status_warning)}')
+            conn.execute(f'PRAGMA user_version={migrations.MIGRATIONS.index(migrations._add_status_warning)}')
         store.init()
         store.init()  # migrations also remain safe on the next startup
         with store.db() as conn:
@@ -1917,7 +1909,7 @@ class BrowserExtractTests(unittest.TestCase):
 
 
 class ApiAndMailTests(TempData):
-    MAIL_ENV: ClassVar[dict[str, str]] = {'SMTP_HOST': 'smtp.example', 'SMTP_FROM': 'a@example.com'}
+    ENV: ClassVar[dict[str, str]] = {'SMTP_HOST': 'smtp.example', 'SMTP_FROM': 'a@example.com'}
 
     def setUp(self):
         super().setUp()
@@ -2235,7 +2227,7 @@ class ApiAndMailTests(TempData):
             self.assertEqual([row[0] for row in conn.execute('SELECT url FROM outbox')], [new.url])
 
     def test_new_fitting_flats_are_mailed_once_their_check_is_complete(self):
-        from suchalarm import mailer, worker
+        from suchalarm import mailer
 
         flat_search = self.create(sources=['immoscout24'], filters={'min_area': 40, 'min_rooms': 2, 'exclusions': []})
         with store.db() as conn:
@@ -2262,7 +2254,7 @@ class ApiAndMailTests(TempData):
             patch.dict(os.environ, {'SMTP_HOST': 'mail', 'SMTP_FROM': 'bot@example.com'}),
             patch.object(mailer, 'deliver', return_value=[]) as deliver,
         ):
-            asyncio.run(worker.send_digest())
+            asyncio.run(digest.send_digest())
         message = deliver.call_args[0][0]
         self.assertEqual(message['Subject'], 'Wohnung: Wohnung 2 für 1.100,00 € warm')
         html = message.get_body(('html',)).get_content()

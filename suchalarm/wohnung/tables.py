@@ -1,6 +1,6 @@
 """The tables of flat searches in DATA_DIR/wohnung.db (store.register). Each entry runs once; only ever append."""
 
-from .. import store
+from .. import migrations
 
 TABLES = ('listings', 'listing_details', 'more_pages', 'separated')
 
@@ -13,13 +13,13 @@ PER_SEARCH = ('listings', 'more_pages', 'separated')  # detail pages are per URL
 def _create(conn):
     """Flats per search and URL, their detail pages (per URL), further result pages to read after a page of
     nothing but new flats, and pairs the user called "Nicht dieselbe Wohnung" (duplicates.py)."""
-    conn.executescript("""
+    conn.executescript(f"""
       CREATE TABLE IF NOT EXISTS wohnung.listings (
         search_id INTEGER, source TEXT NOT NULL, url TEXT NOT NULL,
         body TEXT NOT NULL, first_seen REAL NOT NULL, last_seen REAL NOT NULL, PRIMARY KEY(search_id, url)
       );
       CREATE TABLE IF NOT EXISTS wohnung.listing_details (
-        url TEXT PRIMARY KEY, source TEXT NOT NULL, body TEXT, state TEXT NOT NULL DEFAULT 'pending',
+        url TEXT PRIMARY KEY, source TEXT NOT NULL, body TEXT, state TEXT NOT NULL DEFAULT '{PENDING}',
         attempts INTEGER NOT NULL DEFAULT 0, next_at REAL NOT NULL DEFAULT 0, error TEXT, created_at REAL NOT NULL
       );
       CREATE TABLE IF NOT EXISTS wohnung.more_pages (
@@ -35,7 +35,7 @@ def _create(conn):
 def _move(conn):
     """The tables lived in suchalarm.db before."""
     for table in TABLES:
-        store.move(conn, 'wohnung', table)
+        migrations.move(conn, 'wohnung', table)
 
 
 def _cheaper_at(conn):

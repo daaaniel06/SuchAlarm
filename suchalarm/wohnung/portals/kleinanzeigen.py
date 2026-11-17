@@ -7,6 +7,7 @@ from urllib.parse import quote, urlencode
 
 from ...core.browser import Unreadable
 from ..domain import (
+    Profile,
     area,
     available_from,
     clip,
@@ -51,19 +52,19 @@ def kleinanzeigen_location(result, city, exact=False):
     return next(named, None if exact else places[0][0])
 
 
-def kleinanzeigen_url(profile, location_id, page=1):
+def kleinanzeigen_url(profile: Profile, location_id, page=1):
     radius = f'r{int(profile["radius"])}' if profile.get('radius') else ''
     filters = ''
-    if profile.get('minArea'):
-        filters += f'+wohnung_mieten.qm_d:{profile["minArea"]:g},'
-    if profile.get('minRooms'):
-        filters += f'+wohnung_mieten.zimmer_d:{profile["minRooms"]:g},'
+    if profile.get('min_area'):
+        filters += f'+wohnung_mieten.qm_d:{profile["min_area"]:g},'
+    if profile.get('min_rooms'):
+        filters += f'+wohnung_mieten.zimmer_d:{profile["min_rooms"]:g},'
     # No swap filter: swap_s:nein also drops every ad that leaves the field empty, most of them.
     # The price filter is the cold rent; a warm-rent limit is a safe upper bound for it.
     # "anzeige:angebote" leaves out requests from flat seekers.
     paging = f'seite:{page}/' if page > 1 else ''
     path = (
-        f'/s-wohnung-mieten/anzeige:angebote/sortierung:neuste/{paging}preis::{int(profile["maxRent"])}'
+        f'/s-wohnung-mieten/anzeige:angebote/sortierung:neuste/{paging}preis::{int(profile["max_rent"])}'
         f'/c203l{location_id}{radius}{filters}'
     )
     return KLEINANZEIGEN + quote(path, safe='/:+') + f'?pageSize={PAGE_SIZE}'
