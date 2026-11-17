@@ -9,8 +9,13 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from suchalarm import mailer, status, store, worker
-from suchalarm.core import browser
+from suchalarm.core import browser, cadence
+from suchalarm.preis import worker as products
+from suchalarm.preis.categories import CATEGORIES
 from suchalarm.preis.prices import Offer, eligible
+from suchalarm.wohnung import portals
+from suchalarm.wohnung.domain import TRAITS, profile
+from suchalarm.wohnung.domain import query_text as flat_query
 
 PACKAGE = Path(__file__).resolve().parent.parent / 'suchalarm'
 
@@ -52,6 +57,83 @@ class StructureTests(unittest.TestCase):
             literals = {node.value for node in ast.walk(tree) if isinstance(node, ast.Constant)}
             with self.subTest(file=name):
                 self.assertFalse(literals & {'preis', 'wohnung'})
+
+
+class SharedResultTests(unittest.TestCase):
+    """Searches with the same query key share one provider request and its cached result: whatever changes the
+    request (its URL) must change the key, or a search would get another search's result."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.env = patch.dict(os.environ, {'DATA_DIR': self.tmp.name})
+        self.env.start()
+        store.init()
+
+    def tearDown(self):
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def assert_key_follows_request(self, pairs, request, key):
+        for label, a, b in pairs:
+            with self.subTest(label=label):
+                if request(a) != request(b):
+                    self.assertNotEqual(key(a), key(b))
+
+    def test_product_searches(self):
+        cadence.save_location('kleinanzeigen', '10115', '9668')
+        cadence.save_location('kleinanzeigen', '20095', '9409')
+        base = dict(
+            id=1, kind='preis', query='Golf', alternatives='', min_price=0, max_price=500000, include_shipping=True,
+            include_fee=True, excluded='', category='sonstiges', delivery='versand', plz='', radius=0,
+            negotiable=False, free=False, filters={}, active=1,
+        )  # fmt: skip
+        changes = [
+            dict(query='Golf 7'), dict(alternatives='Polo'), dict(min_price=10000), dict(max_price=400000),
+            dict(include_shipping=False), dict(include_fee=False), dict(excluded='defekt'), dict(negotiable=True),
+            dict(free=True), dict(delivery='abholung', plz='10115', radius=50),
+            dict(delivery='beides', plz='10115', radius=50), dict(delivery='abholung', plz='20095', radius=100),
+            *(dict(filters=f) for f in ({'year_from': 2015}, {'km_to': 100000}, {'fuel': 'diesel'},
+                                        {'gearbox': 'manuell'}, {'platform': 'ps5'}, {'bike_type': 'ebike'})),
+        ]  # fmt: skip
+        for source in ('ebay', 'kleinanzeigen', 'vinted', 'idealo'):
+            pairs = [
+                (
+                    f'{source} {category} {change}',
+                    dict(base, category=category),
+                    dict(base, category=category, **change),
+                )
+                for category in CATEGORIES
+                for change in changes
+            ]
+            self.assert_key_follows_request(
+                pairs,
+                lambda s, source=source: products.search_url(source, s),
+                lambda s, source=source: cadence.query_key(source, s),
+            )
+
+    def test_flat_searches(self):
+        filters = {'min_area': 0, 'min_rooms': 1, 'exclusions': []}
+        base = dict(id=1, kind='wohnung', query='Darmstadt', max_price=150000, excluded='', radius=0, filters=filters)
+        changes = [
+            dict(max_price=120000), dict(radius=10), dict(excluded='souterrain'),
+            dict(filters={**filters, 'min_area': 50}), dict(filters={**filters, 'min_rooms': 3}),
+            *(dict(filters={**filters, 'exclusions': [trait]}) for trait in TRAITS),
+            dict(filters={**filters, 'move_in_from': '2026-12-01'}), dict(filters={**filters, 'move_in_by': '2027-01-01'}),
+            dict(filters={**filters, 'excluded_districts': ['Eberstadt']}),
+            dict(query='64283', filters={**filters, 'place': {'kind': 'plz', 'label': '64283', 'query': '64283'}}),
+        ]  # fmt: skip
+        requests = {
+            'immoscout24': lambda p: portals.immoscout_url(p, '/de/hessen/darmstadt', (49.87, 8.65)),
+            'kleinanzeigen-wohnung': lambda p: portals.kleinanzeigen_url(p, '4881'),
+            'immowelt': lambda p: str(portals.immowelt_search('/classified-search?locations=AD08DE6345', p)),
+            'wg-gesucht': lambda p: portals.wg_url(['darmstadt', 23], p),
+            'ohne-makler': lambda p: portals.om_url('darmstadt', p),
+        }
+        for source, request in requests.items():
+            pairs = [(f'{source} {change}', base, dict(base, **change)) for change in changes]
+            self.assert_key_follows_request(
+                pairs, lambda s, request=request: request(profile(s)), lambda s, source=source: flat_query(source, s)
+            )
 
 
 class PriceTests(unittest.TestCase):
