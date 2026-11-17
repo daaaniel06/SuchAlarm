@@ -2,8 +2,10 @@
 
 import { html, priceInput, raw, splitWords } from './logic.js';
 import { $ } from './ui.js';
-import { api, message, refresh, state } from './page.js';
+import { api, formDraft, message, refresh, saveDraft, state } from './page.js';
 import { PICKUP, PLACEHOLDERS, categoryIcon, categoryOf } from './searches.js';
+
+const edits = formDraft($('search-form'), '[data-category], [data-delivery], [data-word], #toggle-sources, #add-word');
 
 const removeIcon = raw('<svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>');
 
@@ -136,6 +138,8 @@ function moreSummary() {
   $('more-summary').textContent = parts.join(' · ');
 }
 export function openEditor(id) {
+  edits.reset();
+  $('save-search').disabled = false;
   const search = id ? state.searches.find(s => s.id === id) : null,
     f = search?.filters || {};
   $('search-form').reset();
@@ -272,6 +276,8 @@ $('learned-chips').addEventListener('click', async e => {
 
 $('search-form').addEventListener('submit', async event => {
   event.preventDefault();
+  const editing = edits.current;
+  if (editing.busy) return;
   if ($('word').value.trim()) addWord();
   const sources = [...document.querySelectorAll('[name=source]:checked')].map(x => x.value);
   if ($('query').value.trim().length < 2) return formError('Suchbegriff eingeben.');
@@ -310,14 +316,29 @@ $('search-form').addEventListener('submit', async event => {
   const id = $('search-id').value;
   $('save-search').disabled = true;
   try {
-    await api(id ? `searches/${id}` : 'searches', { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) });
-    $('editor').close();
-    message('Suche gespeichert.');
-    await refresh();
+    await saveDraft(
+      editing,
+      'searches',
+      async () => {
+        const data = await api(id ? `searches/${id}` : 'searches', {
+          method: id ? 'PUT' : 'POST',
+          body: JSON.stringify(payload),
+        });
+        // Keep the new identity even if the following refresh fails or typing continued.
+        if (edits.current === editing && !id) $('search-id').value = data.id;
+        return data;
+      },
+      (_, current) => {
+        if (edits.current !== editing) return;
+        if (!current) return;
+        $('editor').close();
+        message('Suche gespeichert.');
+      },
+    );
   } catch (err) {
-    formError(err.message);
+    if (edits.current === editing) formError(err.message);
   } finally {
-    $('save-search').disabled = false;
+    if (edits.current === editing) $('save-search').disabled = false;
   }
 });
 $('delete-search').addEventListener('click', async () => {

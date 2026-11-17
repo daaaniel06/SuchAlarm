@@ -290,3 +290,45 @@ export function mailTarget(hash) {
     return null;
   }
 }
+
+// A draft keeps edits (including typing back to the original value) distinct from server answers.
+export function createDraft() {
+  let version = 0,
+    saved = 0;
+  const pending = new Map();
+  return {
+    edit() {
+      version++;
+    },
+    get protected() {
+      return version !== saved || pending.size > 0;
+    },
+    get busy() {
+      return pending.size > 0;
+    },
+    save(write) {
+      const sent = version;
+      if (pending.has(sent)) return pending.get(sent);
+      const current = () => version === sent;
+      const job = Promise.resolve()
+        .then(() => write(current))
+        .then(result => {
+          if (current()) saved = sent;
+          return result;
+        })
+        .finally(() => pending.delete(sent));
+      pending.set(sent, job);
+      return job;
+    },
+  };
+}
+
+// One queue per server resource, shared even when two dialogs edit the same template.
+export function createSaveQueue() {
+  let tail = Promise.resolve();
+  return write => {
+    const job = tail.then(write);
+    tail = job.catch(() => {});
+    return job;
+  };
+}

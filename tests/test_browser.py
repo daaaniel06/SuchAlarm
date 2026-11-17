@@ -481,7 +481,9 @@ class AreaInterfaceTests(unittest.IsolatedAsyncioTestCase):
             await page.locator('#template-text').fill('Meine Bewerbung')
             await page.locator('#template-save').click()
             await asyncio.wait_for(template_started.wait(), timeout=5)
-            self.assertTrue(await page.locator('#template-text').is_disabled())
+            # Typing goes on during the save (the answer never overwrites it); saving twice does not.
+            self.assertTrue(await page.locator('#template-text').is_enabled())
+            self.assertTrue(await page.locator('#template-save').is_disabled())
             await page.keyboard.press('Escape')
             try:
                 self.assertTrue(await page.locator('#template-edit').is_disabled())
