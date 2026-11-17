@@ -247,6 +247,7 @@ async def update(search_id: int, payload: AnySearch):
     with store.db() as conn:
         store.change_search(conn, search_id, columns, values)
         KINDS[payload.kind].reset(conn, search_id, old, payload)
+        status.forget_counts(conn, search_id)
     scheduler.wake.set()
     return {'ok': True}
 

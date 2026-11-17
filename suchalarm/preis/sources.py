@@ -207,7 +207,10 @@ def titles_lost(source, rows, phrase):
     ]
     if len(named) < TITLE_EVIDENCE:
         return False
-    lost = sum(1 for row in named if not all(word in normalized(row.get('title', '')).split() for word in words))
+    # A title may glue words together ("iPhone13" for the link's "iphone-13"): each word only has to appear.
+    lost = sum(
+        1 for row in named if not all(word in normalized(row.get('title', '')).replace(' ', '') for word in words)
+    )
     return lost >= len(named) * TITLE_LOST_SHARE
 
 
@@ -508,8 +511,6 @@ async def _phrase_rows(page, source, search, phrase, follow):
     """The offer cards for one spelling of the search."""
     data = await load_page(page, source, search_url(source, wanted_words(source, search, phrase), search), follow)
     rows = listing_rows(source, data)
-    if titles_lost(source, rows, phrase or search['query']):
-        raise RuntimeError('Seitenaufbau des Anbieters geändert: Die Links nennen die Suche, die Titel nicht.')
     if search.get('delivery') == 'beides' and around(source, search):
         # The area around the postcode is read above; from all of Germany only what can be shipped.
         nationwide = dict(search, delivery='versand')
@@ -517,6 +518,8 @@ async def _phrase_rows(page, source, search, phrase, follow):
             page, source, search_url(source, wanted_words(source, nationwide, phrase), nationwide), follow=True
         )
         rows += [row for row in listing_rows(source, wide) if shippable(source, row)]
+    if titles_lost(source, rows, phrase or search['query']):
+        raise RuntimeError('Seitenaufbau des Anbieters geändert: Die Links nennen die Suche, die Titel nicht.')
     return rows
 
 

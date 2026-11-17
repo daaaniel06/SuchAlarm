@@ -211,6 +211,10 @@ class AvailabilityTests(unittest.TestCase):
         self.assertFalse(sources.titles_lost('vinted', titled, 'Nintendo Switch OLED'))
         other = [dict(card, url=card['url'].replace('nintendo-switch-oled', 'halterung')) for card in cards]
         self.assertFalse(sources.titles_lost('vinted', other, 'Nintendo Switch OLED'))  # simply other items
+        glued = [
+            dict(title='iPhone13 128GB', url=f'https://www.kleinanzeigen.de/s-anzeige/iphone-13/{n}') for n in range(6)
+        ]
+        self.assertFalse(sources.titles_lost('kleinanzeigen', glued, 'iPhone 13'))  # a title may glue the words
 
     def test_price_is_the_amount_next_to_the_euro_mark(self):
         self.assertEqual(sources.row_price({'price': 'US $20.00 (EUR 18,50)'}), 1850)

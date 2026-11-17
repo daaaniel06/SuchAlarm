@@ -7,6 +7,7 @@ import email
 import email.policy
 import json
 import logging
+import re
 import time
 import uuid
 from typing import Final, Literal
@@ -182,6 +183,12 @@ async def send_digest(now=None):
 WARNING_AGAIN = 24 * 3600  # the same layout warning of a search's source is mailed at most once a day
 
 
+def _warning_key(row):
+    """Which warning a mail was about. Its numbers change from check to check ("nur 1", "nur 2 statt 30"): the
+    same drop is the same warning."""
+    return f'{row["search_id"]}:{row["source"]}:{re.sub(r"[0-9.]+", "#", row["warning"])}'
+
+
 async def _send_warnings(now):
     """One short mail when sources look broken although they answered: a layout hint (fields missing on nearly
     every card) or a sudden drop against what they usually bring (status._drop_warning). Shown in the app too;
@@ -197,19 +204,24 @@ async def _send_warnings(now):
     due = [
         row
         for row in rows
-        if f'{row["search_id"]}:{row["source"]}:{row["warning"]}' not in sent
-        and store.mail_settings(kind=row['kind'] or kinds.DEFAULT)['enabled']
+        if _warning_key(row) not in sent and store.mail_settings(kind=row['kind'] or kinds.DEFAULT)['enabled']
     ]
     recipients = store.mail_settings()['recipients']
     if not due or not recipients:
         return
     message = mailer.warning_message(recipients, [(row['query'], row['source'], row['warning']) for row in due])
     try:
-        await asyncio.to_thread(mailer.deliver, message)
+        refused = await asyncio.to_thread(mailer.deliver, message)
     except mailer.DeliveryError as exc:
-        log.warning('Source warning mail not sent (%s)', exc)
-        return
-    sent.update({f'{row["search_id"]}:{row["source"]}:{row["warning"]}': now for row in due})
+        log.warning('Source warning mail %s (%s)', 'maybe sent' if exc.maybe_sent else 'not sent', exc)
+        if not exc.maybe_sent:
+            return  # tried again on the next pass
+        # The server may have it: never twice, like a digest.
+    else:
+        if refused:
+            # A hint, not an offer: the others have it, a refused address gets the next day's one.
+            log.warning('Source warning mail refused for %s', ', '.join(refused))
+    sent.update({_warning_key(row): now for row in due})
     with store.db() as conn:
         store.put_setting(conn, 'warnings_mailed', json.dumps(sent))
 

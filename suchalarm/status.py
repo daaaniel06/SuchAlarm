@@ -53,6 +53,12 @@ def _drop_warning(conn, sid, source, count):
     return DROP_WARNING.format(count=count, usual=usual)
 
 
+def forget_counts(conn, search_id):
+    """An edited search finds something else: what its sources usually brought says nothing about it any more
+    (a lower rent limit is no broken page)."""
+    conn.execute('DELETE FROM source_history WHERE search_id=?', (search_id,))
+
+
 def _remember_count(conn, sid, source, now, count):
     conn.execute(
         'INSERT INTO source_history(search_id,source,checked_at,count) VALUES (?,?,?,?)', (sid, source, now, count)
@@ -68,8 +74,12 @@ def source_ok(conn, sid, source, now, count, unread=None, warning=None):
     """A readable result with COUNT offers. From now on the source has started for the search (started()).
     UNREAD: offers the parser missed. WARNING: a layout hint beside the successful result; a sudden drop against
     the source's usual count for this search is one too (_drop_warning)."""
-    warning = warning or _drop_warning(conn, sid, source, count)
-    _remember_count(conn, sid, source, now, count)
+    drop = _drop_warning(conn, sid, source, count)
+    warning = warning or drop
+    if drop is None:
+        # A drop stays out of the usual count: a page that stays broken keeps its warning instead of becoming the
+        # new normal. It ends when the counts come back or the search is edited.
+        _remember_count(conn, sid, source, now, count)
     _show(conn, sid, source, now, count=count)
     conn.execute(
         'UPDATE source_status SET started=1, unread=?, warning=? WHERE search_id=? AND source=?',

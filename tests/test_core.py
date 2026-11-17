@@ -442,11 +442,15 @@ class WorkerTests(AsyncTempDataTest):
     def test_a_search_that_usually_finds_little_never_warns(self):
         self.assertIsNone(self.results(3, 4, 2, 5, 3, 0))
 
-    def test_an_edit_forgets_the_usual_count(self):
+    async def test_an_edit_forgets_the_usual_count(self):
         self.results(30, 30, 30, 30, 30)
-        with store.db() as conn:
-            status.forget(conn, 1, ['ebay'])
-        self.assertIsNone(self.results(0, start=5000))
+        await update(1, ProductSearch(query='Spiel', max_price=1000, sources=['ebay']))  # a lower limit finds less
+        self.assertIsNone(self.results(2, start=5000))
+
+    def test_a_page_that_stays_broken_keeps_its_warning(self):
+        self.results(30, 30, 30, 30, 30)
+        self.assertIsNotNone(self.results(*[1] * 10, start=6000))  # the drops never become the usual count
+        self.assertIsNone(self.results(29, start=7000))  # back to normal
 
     async def test_a_source_warning_is_mailed_once_a_day(self):
         with store.db() as conn:
@@ -460,9 +464,23 @@ class WorkerTests(AsyncTempDataTest):
         mail = deliver.call_args.args[0]
         self.assertEqual(mail['Subject'], 'Suchalarm: 1 Quelle auffällig')
         self.assertIn('Suche „Spiel“ · eBay: Liefert nur 0', mail.get_content())
+        with store.db() as conn:  # the same drop with another number is the same warning
+            status.source_ok(conn, 1, 'ebay', time.time(), 2, warning='Liefert nur 2 statt sonst etwa 31 Angebote')
+        with patch('suchalarm.mailer.deliver', return_value={}) as deliver:
+            await digest.send_digest()
+        deliver.assert_not_called()
         with patch('suchalarm.mailer.deliver', return_value={}) as deliver:
             await digest.send_digest(time.time() + digest.WARNING_AGAIN + 1)
         deliver.assert_called_once()
+
+    async def test_an_uncertain_source_warning_mail_is_not_sent_again(self):
+        with store.db() as conn:
+            status.source_ok(conn, 1, 'ebay', time.time(), 0, warning='Seitenaufbau geändert?')
+        with patch('suchalarm.mailer.deliver', side_effect=mailer.DeliveryError('Verbindung weg', True)):
+            await digest.send_digest()
+        with patch('suchalarm.mailer.deliver', return_value={}) as deliver:
+            await digest.send_digest()
+        deliver.assert_not_called()
 
     async def test_no_source_warning_mail_while_the_kinds_mails_are_off(self):
         self.setting('mail_enabled', '0')
