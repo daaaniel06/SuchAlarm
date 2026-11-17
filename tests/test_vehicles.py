@@ -7,7 +7,7 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
 from fastapi.testclient import TestClient
-from helpers import TempDataTest
+from tests.helpers import TempDataTest
 
 from suchalarm.app import app
 from suchalarm.core import cadence

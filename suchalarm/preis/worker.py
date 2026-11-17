@@ -15,7 +15,17 @@ from ..core import images
 from ..shapes import MailEntry, MailSample, Row
 from . import delivery, learning, sources
 from . import mail as mail  # the kind's mail presentation (kinds.py)
-from .categories import BIKE_TYPES, CATEGORIES, FUELS, GEARBOXES, PICKUP_SOURCES, PLATFORMS, RADII
+from .categories import (
+    BIKE_TYPES,
+    CATEGORIES,
+    FUELS,
+    GEARBOXES,
+    NEW_PRICE_SOURCE,
+    PICKUP_SOURCES,
+    PLATFORMS,
+    RADII,
+    SHIPPING_LOOKUP_SOURCES,
+)
 from .categories import SOURCES as SOURCES
 from .models import SEARCH_FILTERS, Search
 from .prices import (
@@ -171,14 +181,18 @@ def save_result(search, source, offers, reference, now):
         # Vinted shipping still unknown in the starting point: a later shipping lookup must not mail it either.
         conn.executemany(
             'INSERT OR IGNORE INTO shipping_baselines(search_id,url) VALUES (?,?)',
-            [(sid, o.url) for o in offers if o.source == 'vinted' and o.shipping is None and o.url in baseline],
+            [
+                (sid, o.url)
+                for o in offers
+                if o.source in SHIPPING_LOOKUP_SOURCES and o.shipping is None and o.url in baseline
+            ],
         )
         status.source_ok(conn, sid, source, now, len(offers))
         # The shared fetch leaves exclusions out; its reference is judged per search here.
-        if source == 'idealo' and reference and title_fits(source, reference['title'], search):
+        if source == NEW_PRICE_SOURCE and reference and title_fits(source, reference['title'], search):
             value = json.dumps(dict(reference, checked_at=now))
             conn.execute('INSERT OR REPLACE INTO idealo_references(search_id,value) VALUES (?,?)', (sid, value))
-        elif source == 'idealo':
+        elif source == NEW_PRICE_SOURCE:
             conn.execute('DELETE FROM idealo_references WHERE search_id=?', (sid,))
     return baseline
 
@@ -227,7 +241,7 @@ def take_pending(conn: Connection) -> list[MailEntry]:
     now = time.time()
     for row in rows:
         search = searches.get(row['outbox_search'])
-        if row['source'] == 'vinted' and row['shipping'] is None and row['queued'] > now - SHIPPING_WAIT:
+        if row['source'] in SHIPPING_LOOKUP_SOURCES and row['shipping'] is None and row['queued'] > now - SHIPPING_WAIT:
             continue  # the shipping lookup comes within a minute or two; the mail should name it
         price = compared(row, search) if row['url'] and search else None
         if (
@@ -264,7 +278,7 @@ def used_floor(conn, search, now):
 def explain(conn: Connection, entries: list[MailEntry], now: float) -> None:
     """A real shop offer cheaper than every current second-hand hit says so, with the saving."""
     for search, offer, price in entries:
-        floor = used_floor(conn, search, now) if offer['source'] == 'idealo' else None
+        floor = used_floor(conn, search, now) if offer['source'] == NEW_PRICE_SOURCE else None
         if floor is not None and price < floor:
             offer['compare'] = {'used': floor, 'saving': floor - price}
 

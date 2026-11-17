@@ -6,7 +6,7 @@ from functools import lru_cache
 from itertools import pairwise
 
 from ..core.text import excluded_word, folded_words
-from .categories import CAR_MAKES, PLATFORMS, PROVIDER_PLATFORMS
+from .categories import CAR_MAKES, NEW_PRICE_SOURCE, PLATFORMS, PROVIDER_PLATFORMS
 
 
 def clean_title(source, title):
@@ -37,7 +37,7 @@ def alternatives(search):
 
 def phrases(source, search):
     """What the provider is searched for, one request each. idealo's new price belongs to the query alone."""
-    return [search['query']] if source == 'idealo' else [search['query'], *alternatives(search)]
+    return [search['query']] if source == NEW_PRICE_SOURCE else [search['query'], *alternatives(search)]
 
 
 def terms(search, phrase=None):

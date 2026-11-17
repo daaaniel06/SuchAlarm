@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import ClassVar
 from unittest.mock import AsyncMock, patch
 
-from helpers import AsyncTempDataTest, TempDataTest
+from tests.helpers import AsyncTempDataTest, TempDataTest
 
 from suchalarm import digest, mailer, status, store, worker
 from suchalarm.core import browser, cadence

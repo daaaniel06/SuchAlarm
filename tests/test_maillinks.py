@@ -5,7 +5,7 @@ from typing import ClassVar
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-from helpers import TempDataTest
+from tests.helpers import TempDataTest
 
 from suchalarm import mailer, maillinks, store, worker
 from suchalarm.app import app

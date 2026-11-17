@@ -7,7 +7,7 @@ from urllib.parse import quote, urlencode
 from ..core import browser, cadence, images
 from ..core.browser import EMPTY, Unreadable, check_response
 from . import delivery
-from .categories import HOSTS
+from .categories import HOSTS, NEW_PRICE_SOURCE, SHIPPING_LOOKUP_SOURCES
 from .money import money, shipping
 from .prices import Offer, portal_price_bounds
 from .queries import around, canonical, kleinanzeigen_attributes, section, vehicle, vehicle_fits
@@ -437,10 +437,10 @@ def repair_cached(source, search, value, observed_at):
         return None
     if data is None:
         return None
-    if source != 'idealo':
+    if source != NEW_PRICE_SOURCE:
         offers = (
             delivery.enrich(parse_rows(source, data['rows'], search))
-            if source == 'vinted'
+            if source in SHIPPING_LOOKUP_SOURCES
             else parse_rows(source, data['rows'], search)
         )
         return {'offers': [asdict(o) for o in offers], 'reference': value.get('reference')}

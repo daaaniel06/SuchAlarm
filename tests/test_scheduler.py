@@ -3,7 +3,7 @@ import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from helpers import AsyncTempDataTest
+from tests.helpers import AsyncTempDataTest
 
 from suchalarm import scheduler, store, worker
 from suchalarm.core import cadence

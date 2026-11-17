@@ -11,6 +11,11 @@ HOSTS = {
 }
 # Only these providers can search around a postcode; pickup searches use them alone.
 PICKUP_SOURCES = ('ebay', 'kleinanzeigen')
+# Shops' new price (idealo): searched for the query alone, compared by its full price and shown beside the
+# second-hand offers as a reference, also above the alarm limit.
+NEW_PRICE_SOURCE = 'idealo'
+# Second-hand sources whose shipping the result page does not name: one detail page per hit (delivery.py).
+SHIPPING_LOOKUP_SOURCES = ('vinted',)
 RADII = (10, 25, 50, 100, 200)
 PLATFORMS = {
     'ps5': 'PS5',

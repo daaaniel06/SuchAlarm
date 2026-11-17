@@ -6,6 +6,7 @@ import time
 from dataclasses import replace
 
 from ..core import cadence
+from .categories import SHIPPING_LOOKUP_SOURCES
 
 TTL = 12 * 3600
 SCHEMA = """
@@ -31,7 +32,7 @@ def cached(url):
 def enrich(offers):
     result = []
     for offer in offers:
-        if offer.source == 'vinted' and offer.shipping is None:
+        if offer.source in SHIPPING_LOOKUP_SOURCES and offer.shipping is None:
             offer = replace(offer, shipping=cached(offer.url))
         result.append(offer)
     return result
@@ -41,7 +42,7 @@ def remember(offers):
     now = time.time()
     with db() as conn:
         for offer in offers:
-            if offer.source == 'vinted' and offer.shipping is None:
+            if offer.source in SHIPPING_LOOKUP_SOURCES and offer.shipping is None:
                 conn.execute(
                     'INSERT INTO deliveries(url,seen,price) VALUES (?,?,?) ON CONFLICT(url) DO UPDATE SET seen=excluded.seen,price=excluded.price',
                     (offer.url, now, offer.price),

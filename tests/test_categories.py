@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs, urlsplit
 
 from fastapi.testclient import TestClient
-from helpers import TempDataTest
+from tests.helpers import TempDataTest
 
 from suchalarm import store, worker
 from suchalarm.app import app

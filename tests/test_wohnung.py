@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import ClassVar
 from unittest.mock import AsyncMock, patch
 
-from helpers import TempDataTest
+from tests.helpers import TempDataTest
 
 from suchalarm import digest, migrations, status, store, worker
 from suchalarm.core import browser, cadence, http

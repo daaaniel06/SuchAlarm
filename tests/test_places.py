@@ -2,7 +2,7 @@
 
 from unittest.mock import AsyncMock, patch
 
-from helpers import AsyncTempDataTest
+from tests.helpers import AsyncTempDataTest
 
 from suchalarm.core import cadence
 from suchalarm.wohnung import sources

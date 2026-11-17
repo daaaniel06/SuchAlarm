@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from helpers import TempDataTest
+from tests.helpers import TempDataTest
 
 from suchalarm import store
 from suchalarm.preis import learning

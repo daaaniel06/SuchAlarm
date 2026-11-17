@@ -13,7 +13,7 @@ from typing import ClassVar
 from unittest.mock import AsyncMock, Mock, patch
 
 from fastapi.testclient import TestClient
-from helpers import AsyncTempDataTest, TempDataTest
+from tests.helpers import AsyncTempDataTest, TempDataTest
 from PIL import Image
 
 from suchalarm import backups, digest, mailer, mailserver, migrations, scheduler, store, worker
