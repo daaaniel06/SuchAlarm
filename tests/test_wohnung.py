@@ -263,6 +263,8 @@ class FilterTests(unittest.TestCase):
             with self.subTest(kind=kind, label=label):
                 district = {**town, 'place': {'kind': kind, 'label': label, 'query': 'Darmstadt-Dieburg'}}
                 self.assertEqual(match(flat(place='64807 Dieburg'), district)[0], 'matched')
+                # A landlord's whole stock was not searched by the district: its name cannot place a flat.
+                self.assertEqual(match(flat(place='34117 Kassel', source='nhw'), district)[0], 'excluded')
 
     def test_a_postcode_search_judges_an_address_without_postcode_by_its_town(self):
         town = {**PROFILE, 'city': '64283', 'exclusions': [], 'minArea': 0, 'minRooms': 1}

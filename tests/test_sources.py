@@ -331,6 +331,7 @@ class ShippingTests(unittest.TestCase):
         search = dict(include_shipping=True, include_fee=False, min_price=0, max_price=9000)
         row = dict(source='vinted', price=4400, shipping=249)
         self.assertEqual(mailer.entry_price((search, row)), 'ab 46,49 €')
+        self.assertEqual(mailer._mail(search).subject([(search, row)], 'Spiel'), 'Preisalarm: Spiel für ab 46,49 €')
         self.assertEqual(mailer.entry_price((dict(search, include_shipping=False), row)), '44,00 €')
         self.assertTrue(products.judged(row, search)['minimum'])
         self.assertFalse(products.judged(dict(row, source='ebay'), search)['minimum'])

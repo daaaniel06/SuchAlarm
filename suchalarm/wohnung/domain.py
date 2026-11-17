@@ -395,8 +395,12 @@ def outside_home(listing, profile):
     An address without postcode (NHW names only the town) is judged by the postcode's town: the
     postcode cannot be told, and a flat must not get lost over it."""
     where = listing.place
-    if profile.get('radius') or not where or is_district(profile.get('place') or {}):
-        return False  # a district ("Darmstadt-Dieburg (Kreis)") has many towns; its name says none of them
+    if profile.get('radius') or not where:
+        return False
+    if is_district(profile.get('place') or {}):
+        # A district ("Darmstadt-Dieburg (Kreis)") has many towns; its name says none of them. The portals
+        # searched it by its area; a landlord's whole stock (WHOLE_STOCK) is not, so it cannot tell.
+        return listing.source in WHOLE_STOCK
     area = home_area(profile)
     if POSTCODE.fullmatch(area) and not POSTCODE.search(where):
         area = home_town(profile)

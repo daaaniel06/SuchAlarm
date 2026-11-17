@@ -69,7 +69,7 @@ def subject(entries, title):
     if len(entries) > 1:
         return f'Preisalarm: {len(entries)} neue Angebote'
     value = price(*entries[0])
-    return f'Preisalarm: {title} ' + ('zu verschenken' if value == 0 else f'für {amount(value)}')
+    return f'Preisalarm: {title} ' + ('zu verschenken' if value == 0 else f'für {price_text(*entries[0])}')
 
 
 def card(search, offer, photo_src, links):
