@@ -1,9 +1,11 @@
 import io
 import os
+import sqlite3
 import ssl
 import tempfile
 import time
 import unittest
+from contextlib import closing
 from unittest.mock import MagicMock, patch
 
 from PIL import Image
@@ -30,7 +32,7 @@ class ImageCacheTests(unittest.IsolatedAsyncioTestCase):
     def job(self, key, url, priority=0, seen=1.0):
         with images.db() as conn:
             conn.execute(
-                "INSERT INTO pictures(key,source,remote,state,seen,priority) VALUES (?,'ebay',?,'pending',?,?)",
+                "INSERT INTO pictures(key,source,remote,state,seen,priority) VALUES (?,'ebay',?,'queued',?,?)",
                 (key, 'https://i.ebayimg.com/' + key + '.jpg', seen, priority),
             )
             conn.execute('INSERT INTO offers VALUES (?,?,?)', (url, key, seen))
@@ -70,15 +72,85 @@ class ImageCacheTests(unittest.IsolatedAsyncioTestCase):
         ):
             await images.step()
         with images.db() as conn:
-            row = conn.execute('SELECT attempts,next_at FROM pictures').fetchone()
+            row = conn.execute('SELECT state,attempts,next_at FROM pictures').fetchone()
+        self.assertEqual(row['state'], 'queued')
         self.assertEqual(row['attempts'], 1)
         self.assertGreater(row['next_at'], time.time() + 3600)
+        self.assertEqual(images.photos(['https://www.ebay.de/itm/1']), ({}, {'https://www.ebay.de/itm/1'}))
+        with patch('suchalarm.core.images.download') as download, patch('suchalarm.core.cadence.book'):
+            await images.step()
+        download.assert_not_called()
         with images.db() as conn:
-            conn.execute('UPDATE pictures SET attempts=3,next_at=0')
+            conn.execute('UPDATE pictures SET attempts=?,next_at=0', (images.MAX_ATTEMPTS - 1,))
+        with (
+            patch('suchalarm.core.images.download', side_effect=images.ImageFailure()),
+            patch('suchalarm.core.cadence.book'),
+        ):
+            await images.step()
+        with images.db() as conn:
+            row = conn.execute('SELECT state,attempts FROM pictures').fetchone()
+            conn.execute('UPDATE pictures SET next_at=0')
+        self.assertEqual((row['state'], row['attempts']), ('exhausted', images.MAX_ATTEMPTS))
         with patch('suchalarm.core.images.download') as download, patch('suchalarm.core.cadence.book'):
             await images.step()
         download.assert_not_called()
         self.assertEqual(images.photos(['https://www.ebay.de/itm/1']), ({}, set()))
+
+    def test_given_up_pictures_do_not_fill_the_queue(self):
+        self.job('a', 'https://www.ebay.de/itm/1')
+        with images.db() as conn:
+            conn.execute("UPDATE pictures SET state='exhausted',attempts=?", (images.MAX_ATTEMPTS,))
+        with patch('suchalarm.core.images.MAX_PENDING', 1):
+            images.remember('ebay', {'https://www.ebay.de/itm/2': 'https://i.ebayimg.com/b.jpg'})
+        with images.db() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM pictures').fetchone()[0], 2)
+
+    def test_waiting_pictures_fill_the_queue(self):
+        self.job('a', 'https://www.ebay.de/itm/1')
+        with images.db() as conn:
+            conn.execute('UPDATE pictures SET attempts=1,next_at=?', (time.time() + 21600,))
+        with patch('suchalarm.core.images.MAX_PENDING', 1):
+            images.remember('ebay', {'https://www.ebay.de/itm/2': 'https://i.ebayimg.com/b.jpg'})
+        with images.db() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM pictures').fetchone()[0], 1)
+
+    def test_migrates_pending_pictures(self):
+        with closing(sqlite3.connect(':memory:')) as conn:
+            conn.execute(
+                'CREATE TABLE pictures (key TEXT PRIMARY KEY, source TEXT, remote TEXT, state TEXT, '
+                'filename TEXT, attempts INTEGER DEFAULT 0, next_at REAL DEFAULT 0, seen REAL, bytes INTEGER DEFAULT 0)'
+            )
+            states = [
+                ('new', 'pending', 0, 0),
+                ('waiting', 'pending', images.MAX_ATTEMPTS - 1, 12345),
+                ('limit', 'pending', images.MAX_ATTEMPTS, 0),
+                ('over', 'pending', images.MAX_ATTEMPTS + 1, 0),
+                ('ready', 'ready', 1, 0),
+            ]
+            conn.executemany('INSERT INTO pictures(key,state,attempts,next_at) VALUES (?,?,?,?)', states)
+            images._setup(conn)
+            images._setup(conn)
+            self.assertEqual(
+                conn.execute('SELECT key,state,attempts,next_at FROM pictures ORDER BY key').fetchall(),
+                sorted(
+                    (key, 'exhausted' if attempts >= images.MAX_ATTEMPTS else 'queued', attempts, next_at)
+                    if state == 'pending'
+                    else (key, state, attempts, next_at)
+                    for key, state, attempts, next_at in states
+                ),
+            )
+
+    async def test_budget_pause_does_not_use_an_attempt(self):
+        self.job('a', 'https://www.ebay.de/itm/1')
+        with (
+            patch('suchalarm.core.images.download') as download,
+            patch('suchalarm.core.cadence.book', side_effect=images.cadence.Deferred(time.time() + 1800)),
+        ):
+            await images.step()
+        download.assert_not_called()
+        with images.db() as conn:
+            row = conn.execute('SELECT state,attempts,next_at FROM pictures').fetchone()
+        self.assertEqual(tuple(row), ('queued', 0, 0))
 
     async def test_refusal_pauses_the_image_budget(self):
         self.job('a', 'https://www.ebay.de/itm/1')
@@ -89,6 +161,11 @@ class ImageCacheTests(unittest.IsolatedAsyncioTestCase):
         ):
             await images.step()
         outcome.assert_called_once_with('ebay', 'image', True, 0)
+        with images.db() as conn:
+            row = conn.execute('SELECT state,attempts,next_at FROM pictures').fetchone()
+        # The CDN refused, the picture is not broken: no attempt used up.
+        self.assertEqual((row['state'], row['attempts']), ('queued', 0))
+        self.assertGreater(row['next_at'], time.time() + 1700)
 
     def test_cleanup_drops_old_and_orphaned_files(self):
         root = images.root()

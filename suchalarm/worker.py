@@ -6,13 +6,15 @@ check writing its offers (app.editable refuses while that search is being checke
 """
 
 import asyncio
+import email
+import email.policy
 import logging
 import time
 import uuid
 from contextlib import suppress
 from dataclasses import dataclass
 
-from . import mailer, mailserver, scheduler, status, store
+from . import kinds, mailer, mailserver, scheduler, status, store
 from .core import cadence, images
 from .kinds import KINDS
 
@@ -43,6 +45,7 @@ PACKAGE_WAIT = 7200  # "Sofort" with packages: never wait longer than this for a
 GATHER_WAIT = 300  # while other searches are still being checked, let their offers share the mail
 IMAGE_WAIT = 300  # "Sofort" waits this long at most for pictures still being cached
 MAIL_LIMIT = 100  # offers per mail; the rest follows with the next one
+RECIPIENT_RETRY, RECIPIENT_ATTEMPTS = 900, 4  # a recipient refused for now (4xx): again after 15, 30, 60 minutes
 BATCH_HISTORY = 200  # mails kept in the history
 INTERVALS = {'Alle 30 Minuten': 30 * 60, 'Täglich': 24 * 3600}
 BACKUP_EVERY, BACKUP_RETRY = 24 * 3600, 3600
@@ -98,8 +101,8 @@ OF_KIND = 'search_id IN (SELECT id FROM searches WHERE kind=?)'
 def _forget_outbox(conn, kind):
     """Mails are off or unconfigured: pending hits count as known, so enabling later sends no flood."""
     conn.execute(
-        'INSERT OR REPLACE INTO notifications SELECT search_id, url, price, created_at FROM outbox '
-        f'WHERE batch IS NULL AND {OF_KIND}',
+        'INSERT OR REPLACE INTO notifications(search_id,url,price,sent_at,reason) '
+        f"SELECT search_id, url, price, created_at, 'known' FROM outbox WHERE batch IS NULL AND {OF_KIND}",
         (kind,),
     )
     conn.execute(f'DELETE FROM outbox WHERE batch IS NULL AND {OF_KIND}', (kind,))
@@ -112,8 +115,11 @@ def _rhythm_allows(conn, mail, now, kind):
     ).fetchone()
     if not first:
         return False
+    # The pause after a failure is the kind's own; mails from before kinds were recorded (NULL) count for all.
     last = conn.execute(
-        "SELECT status, created_at FROM batches WHERE status IN ('failed','sent') ORDER BY created_at DESC LIMIT 1"
+        "SELECT status, created_at FROM batches WHERE status IN ('failed','sent') AND (kind=? OR kind IS NULL) "
+        'ORDER BY created_at DESC LIMIT 1',
+        (kind,),
     ).fetchone()
     if last and last['status'] == 'failed' and last['created_at'] > now - MAIL_RETRY_AFTER:
         return False
@@ -141,8 +147,8 @@ def _claim_batch(conn, mail, now, kind):
     batch = uuid.uuid4().hex
     message = mailer.compose_digest([(search, offer) for search, offer, _ in entries], mail['recipients'], batch)
     conn.execute(
-        "INSERT INTO batches VALUES (?,?,?,?,'sending',NULL,?,NULL)",
-        (batch, ', '.join(mail['recipients']), message['Subject'], len(entries), now),
+        'INSERT INTO batches(id,recipients,subject,count,status,created_at,kind) VALUES (?,?,?,?,?,?,?)',
+        (batch, ', '.join(mail['recipients']), message['Subject'], len(entries), 'sending', now, kind),
     )
     conn.executemany(
         'UPDATE outbox SET batch=? WHERE search_id=? AND url=?',
@@ -151,21 +157,40 @@ def _claim_batch(conn, mail, now, kind):
     return batch, message, entries
 
 
-def _record_delivery(batch, entries, outcome, error):
+def _record_recipients(conn, batch, message, outcome, refused):
+    """What each recipient's server said. A temporary refusal (4xx) gets the same mail again later, to that
+    address only; the mail is kept until then. Everyone else never gets it twice."""
+    status = {'sent': 'accepted', 'unknown': 'uncertain'}[outcome]
+    rows: list[tuple] = []
+    for address in (a.strip() for a in message['To'].split(',')):
+        code = refused.get(address)
+        if code is None:
+            rows.append((batch, address, status, None, 0))
+        else:
+            rows.append((batch, address, 'retry' if code < 500 else 'refused', code, time.time() + RECIPIENT_RETRY))
+    conn.executemany('INSERT OR REPLACE INTO deliveries(batch,address,status,code,next_at) VALUES (?,?,?,?,?)', rows)
+    if any(row[2] == 'retry' for row in rows):
+        conn.execute('UPDATE batches SET message=? WHERE id=?', (message.as_bytes(), batch))
+
+
+def _record_delivery(batch, entries, outcome, error, message=None, refused=None):
     with store.db() as conn:
         sent_at = time.time() if outcome == 'sent' else None
         conn.execute('UPDATE batches SET status=?, error=?, sent_at=? WHERE id=?', (outcome, error, sent_at, batch))
+        if message is not None and outcome != 'failed':
+            _record_recipients(conn, batch, message, outcome, refused or {})
         if outcome == 'failed':
             # The server definitely did not accept it: keep the offers for a later retry.
             conn.execute('UPDATE outbox SET batch=NULL WHERE batch=?', (batch,))
             store.put_setting(conn, 'mail_error', f'{error} Neuer Versuch in 10 Minuten.')
             return
         # Only the entries still belonging to this batch count; an edit or deletion may have removed them.
-        now = time.time()
+        # 'sent' only after the server accepted the mail; an uncertain one is known, so it never comes twice.
+        now, reason = time.time(), 'sent' if outcome == 'sent' else 'uncertain'
         conn.executemany(
-            'INSERT OR REPLACE INTO notifications SELECT search_id,url,?,? FROM outbox '
-            'WHERE search_id=? AND url=? AND batch=?',
-            [(price, now, search['id'], offer['url'], batch) for search, offer, price in entries],
+            'INSERT OR REPLACE INTO notifications(search_id,url,price,sent_at,reason) SELECT search_id,url,?,?,? '
+            'FROM outbox WHERE search_id=? AND url=? AND batch=?',
+            [(price, now, reason, search['id'], offer['url'], batch) for search, offer, price in entries],
         )
         conn.execute('DELETE FROM outbox WHERE batch=?', (batch,))
         if outcome == 'sent' and error is None:
@@ -193,6 +218,63 @@ async def send_digest(now=None):
         return
     for kind in KINDS:
         await _send_kind(kind, now)
+    await _retry_recipients(now)
+
+
+async def _retry_recipients(now):
+    """The mail once more to an address its server refused for now (4xx), to that address alone."""
+    with store.db() as conn:
+        row = conn.execute(
+            'SELECT d.batch, d.address, d.attempts, b.message, b.kind FROM deliveries d JOIN batches b ON b.id=d.batch '
+            "WHERE d.status='retry' AND d.next_at<=? AND b.message IS NOT NULL ORDER BY d.next_at LIMIT 1",
+            (now,),
+        ).fetchone()
+        if row is None:
+            return
+        mail = store.mail_settings(kind=row['kind'] or kinds.DEFAULT)
+        if not mail['enabled'] or row['address'] not in mail['recipients']:
+            # Taken out of the recipients, or the kind's mails were switched off since: no more tries.
+            conn.execute(
+                "UPDATE deliveries SET status='cancelled' WHERE batch=? AND address=?", (row['batch'], row['address'])
+            )
+            _drop_kept_mail(conn, row['batch'])
+            return
+        # Marked before the handover: a restart in between counts as uncertain, never as a reason to send again.
+        conn.execute(
+            "UPDATE deliveries SET status='sending' WHERE batch=? AND address=?", (row['batch'], row['address'])
+        )
+    message = email.message_from_bytes(row['message'], policy=email.policy.default)
+    del message['To']
+    message['To'] = row['address']
+    attempts = row['attempts'] + 1
+    try:
+        refused = await asyncio.to_thread(mailer.deliver, message)
+        code = refused.get(row['address'])
+        status = 'accepted' if code is None else ('refused' if code >= 500 else 'retry')
+    except mailer.DeliveryError as exc:
+        code = exc.refused.get(row['address'])
+        if code is not None:  # the one recipient refused: its code decides, as above
+            status = 'refused' if code >= 500 else 'retry'
+        else:
+            status = 'uncertain' if exc.maybe_sent else 'retry'
+    if status == 'retry' and attempts >= RECIPIENT_ATTEMPTS:
+        status = 'failed'
+    with store.db() as conn:
+        conn.execute(
+            'UPDATE deliveries SET status=?, code=?, attempts=?, next_at=? WHERE batch=? AND address=?',
+            (status, code, attempts, time.time() + RECIPIENT_RETRY * 2**attempts, row['batch'], row['address']),
+        )
+        if status == 'failed':
+            store.put_setting(
+                conn, 'mail_error', f'{row["address"]} hat die Mail auch nach {attempts} Versuchen nicht angenommen.'
+            )
+        _drop_kept_mail(conn, row['batch'])
+
+
+def _drop_kept_mail(conn, batch):
+    """The kept mail goes once no recipient waits for another try."""
+    if not conn.execute("SELECT 1 FROM deliveries WHERE batch=? AND status='retry'", (batch,)).fetchone():
+        conn.execute('UPDATE batches SET message=NULL WHERE id=?', (batch,))
 
 
 async def _send_kind(kind, now):
@@ -205,6 +287,7 @@ async def _send_kind(kind, now):
     if claimed is None:
         return
     batch, message, entries = claimed
+    refused = {}
     try:
         refused = await asyncio.to_thread(mailer.deliver, message)
         # The others got it: never sent again, the refused addresses are shown instead.
@@ -212,7 +295,7 @@ async def _send_kind(kind, now):
     except mailer.DeliveryError as exc:
         outcome, error = ('unknown' if exc.maybe_sent else 'failed'), str(exc)
         log.warning('Mail %s', outcome)
-    _record_delivery(batch, entries, outcome, error)
+    _record_delivery(batch, entries, outcome, error, message, refused)
 
 
 # The loop
@@ -240,12 +323,15 @@ async def _serve_followers(job, completed):
 
 async def _run_job(job):
     first, source = job['searches'][0], job['source']
-    with cadence.manual_check(job.get('manual_at')):
-        completed = await check(first, [source])
-    await _serve_followers(job, completed)
-    if source in completed:
-        scheduler.cancel(first['id'], source)
-    scheduler.finish(job)
+    try:
+        with cadence.manual_check(job.get('manual_at')):
+            completed = await check(first, [source])
+        await _serve_followers(job, completed)
+        if source in completed:
+            scheduler.cancel(first['id'], source)
+    finally:
+        # Also after an unexpected error: the job moves to the back instead of being picked again at once.
+        scheduler.finish(job)
 
 
 async def daily_backup():
@@ -255,26 +341,48 @@ async def daily_backup():
     try:
         for kind in KINDS.values():
             kind.cleanup()
-        await asyncio.to_thread(store.backup)
+        # On the event loop, not in a thread: no API write can land between the copies of two files.
+        store.backup()
         backup.due = time.time() + BACKUP_EVERY
     except Exception:
         log.exception('Backup failed')
         backup.due = time.time() + BACKUP_RETRY
 
 
+async def _guarded(name, step):
+    """Run one part of a pass; an unexpected error is logged and must not skip the parts after it (a broken
+    provider job never holds back the mail). Returns whether it went through."""
+    try:
+        await step()
+        return True
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        log.exception('Worker step %s failed', name)
+        return False
+
+
 async def run_once():
     """One step: a due job, or else the kinds' background work; then mail and backup. Returns the idle delay."""
     paused = store.paused()
     job, next_at = scheduler.plan(store.searches(), paused)
+    failed = False
     if job:
-        await _run_job(job)
+        failed = not await _guarded('job', lambda: _run_job(job))
     elif not paused:
+        for name, kind in KINDS.items():
+            # detail pages and shipping lookups, in free slots of the budget
+            failed |= not await _guarded(f'{name} idle', kind.idle)
+
+    async def queue_mails():
         for kind in KINDS.values():
-            await kind.idle()  # detail pages and shipping lookups, in free slots of the budget
-    for kind in KINDS.values():
-        kind.queue_mails()
-    await send_digest()
-    await daily_backup()
+            kind.queue_mails()
+
+    failed |= not await _guarded('queue mails', queue_mails)
+    failed |= not await _guarded('mail', send_digest)
+    await daily_backup()  # has its own retry clock
+    if failed:
+        return ERROR_PAUSE  # a repeating error must not spin the loop
     return 0 if job else max(0.1, min(IDLE_MAX, next_at - time.time()))
 
 

@@ -166,3 +166,193 @@ test('a link from the mail names its search and hit', () => {
   assert.equal(logic.mailTarget('#treffer=x:abc'), null);
   assert.equal(logic.mailTarget('#treffer=1:%E0%A4%A'), null);
 });
+
+const deferred = () => {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+};
+
+test('a pending draft deduplicates submits and protects against renders', async () => {
+  const draft = logic.createDraft(),
+    answer = deferred();
+  let calls = 0;
+  draft.edit();
+  const write = draft.save(async current => {
+    calls++;
+    await answer.promise;
+    assert.equal(current(), true);
+  });
+  assert.equal(
+    draft.save(() => assert.fail('duplicate write')),
+    write,
+  );
+  assert.equal(draft.busy, true);
+  assert.equal(draft.protected, true);
+  answer.resolve();
+  await write;
+  assert.equal(calls, 1);
+  assert.equal(draft.busy, false);
+  assert.equal(draft.protected, false);
+});
+
+test('typing during a save keeps the draft, even when the text is changed back', async () => {
+  const draft = logic.createDraft(),
+    answer = deferred();
+  const write = draft.save(async current => {
+    await answer.promise;
+    assert.equal(current(), false);
+  });
+  draft.edit();
+  draft.edit();
+  answer.resolve();
+  await write;
+  assert.equal(draft.protected, true);
+  await draft.save(current => assert.equal(current(), true));
+  assert.equal(draft.protected, false);
+});
+
+test('a failed save preserves the draft and permits retry', async () => {
+  const draft = logic.createDraft();
+  draft.edit();
+  await assert.rejects(
+    draft.save(() => {
+      throw Error('offline');
+    }),
+    /offline/,
+  );
+  assert.equal(draft.busy, false);
+  assert.equal(draft.protected, true);
+  await draft.save(() => {});
+  assert.equal(draft.protected, false);
+});
+
+test('two drafts sharing a resource write in submission order, also after failure', async () => {
+  const queue = logic.createSaveQueue(),
+    first = logic.createDraft(),
+    second = logic.createDraft();
+  const answer = deferred(),
+    started = deferred(),
+    calls = [];
+  const a = first.save(() =>
+    queue(async () => {
+      calls.push('first');
+      started.resolve();
+      await answer.promise;
+      throw Error('offline');
+    }),
+  );
+  const failed = assert.rejects(a, /offline/);
+  const b = second.save(() =>
+    queue(() => {
+      calls.push('second');
+    }),
+  );
+  await started.promise;
+  assert.deepEqual(calls, ['first']);
+  answer.resolve();
+  await Promise.all([failed, b]);
+  assert.deepEqual(calls, ['first', 'second']);
+});
+
+test('an older queued save cannot acknowledge a newer draft version', async () => {
+  const queue = logic.createSaveQueue(),
+    draft = logic.createDraft(),
+    answer = deferred();
+  draft.edit();
+  const a = draft.save(current =>
+    queue(async () => {
+      await answer.promise;
+      assert.equal(current(), false);
+    }),
+  );
+  draft.edit();
+  const b = draft.save(current =>
+    queue(() => {
+      assert.equal(draft.protected, true);
+      assert.equal(current(), true);
+    }),
+  );
+  answer.resolve();
+  await Promise.all([a, b]);
+  assert.equal(draft.protected, false);
+});
+
+test('saveDraft rejects stale polls; a refresh failing after the save does not fail it', async t => {
+  const page = require('../suchalarm/static/page.js');
+  const previousDocument = global.document;
+  const toast = { replaceChildren() {}, classList: { toggle() {} }, hidden: true };
+  global.document = { baseURI: 'https://suchalarm.test/', getElementById: () => toast };
+  t.after(() => {
+    global.document = previousDocument;
+    page.onRender(() => {});
+  });
+  const old = deferred();
+  let calls = 0;
+  t.mock.method(global, 'fetch', async () => {
+    if (++calls === 1) return old.promise;
+    return { ok: true, json: async () => ({ template: 'new' }) };
+  });
+  const poll = page.refresh();
+  const draft = logic.createDraft();
+  draft.edit();
+  await page.saveDraft(draft, 'template', async () => ({}));
+  old.resolve({ ok: true, json: async () => ({ template: 'old' }) });
+  await poll;
+  assert.equal(page.state.template, 'new');
+  assert.equal(draft.protected, false);
+
+  draft.edit();
+  t.mock.method(global, 'fetch', async () => {
+    throw Error('offline');
+  });
+  let accepted = false;
+  await page.saveDraft(
+    draft,
+    'template',
+    async () => ({}),
+    () => (accepted = true),
+  );
+  assert.equal(accepted, true); // the server took it: the dialog may close
+  assert.equal(draft.protected, false);
+  assert.equal(draft.busy, false);
+  draft.edit();
+  await assert.rejects(
+    page.saveDraft(draft, 'template', async () => {
+      throw Error('abgelehnt');
+    }),
+    /abgelehnt/,
+  );
+  assert.equal(draft.protected, true); // a refused save keeps the draft
+});
+
+test('formDraft captures edits before saving and isolates reopened dialogs', async () => {
+  const page = require('../suchalarm/static/page.js'),
+    handlers = new Map();
+  const form = page.formDraft({ addEventListener: (name, handler) => handlers.set(name, handler) }, '[data-chip]');
+  const first = form.current,
+    answer = deferred();
+  const write = first.save(async current => {
+    await answer.promise;
+    assert.equal(current(), false);
+  });
+  handlers.get('input')();
+  handlers.get('click')({ target: { closest: () => true } });
+  form.reset();
+  assert.notEqual(form.current, first);
+  assert.equal(form.current.protected, false);
+  answer.resolve();
+  await write;
+  assert.equal(form.current.protected, false);
+});
+
+test('a discarded draft gives the field back to the server', () => {
+  const draft = logic.createDraft();
+  draft.edit();
+  assert.equal(draft.protected, true);
+  draft.discard();
+  assert.equal(draft.protected, false);
+});

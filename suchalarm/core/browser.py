@@ -12,7 +12,7 @@ from invisible_playwright._pw.async_api import Error as PlaywrightError
 from invisible_playwright.async_api import InvisiblePlaywright
 
 from . import cadence
-from .cadence import note
+from .cadence import NotFound, note
 
 EMPTY = re.compile(
     r'keine (?:ergebnisse|treffer|anzeigen|artikel|angebote)|0 ergebnisse|nichts gefunden|no results', re.I
@@ -56,6 +56,8 @@ def check_response(response):
         raise Blocked(
             f'Anbieter blockiert die Browser-Abfrage (HTTP {status}). Kein Verbindungsfehler; später erneut versuchen.'
         )
+    if status in (404, 410):
+        raise NotFound(f'Anbieter antwortet mit HTTP {status}.')
     raise RuntimeError(f'Anbieter antwortet mit HTTP {status}.')
 
 

@@ -65,6 +65,17 @@ def mass_sellers(offers):
     return {seller for seller, count in counts.items() if count >= DEALER_FROM}
 
 
+def shipping_is_minimum(source):
+    """Vinted names shipping only as its cheapest option ("ab 2,49 €"): the amount is a lower bound. A search
+    that includes shipping compares with it all the same (Daniel's choice) and says "ab" with the price."""
+    return source == 'vinted'
+
+
+def price_is_minimum(source, shipping, search):
+    """Whether the compared price is a lower bound: known minimum shipping that the search adds."""
+    return shipping is not None and shipping_is_minimum(source) and with_shipping(source, search)
+
+
 def with_shipping(source, search):
     """Whether an offer compares with shipping: idealo shops always by their full price, others as the search says."""
     return source == 'idealo' or bool(search.get('include_shipping'))
@@ -100,6 +111,8 @@ class Offer:
     condition: str = ''
     owner: str = ''  # the provider's ID of the seller, only for the dealer signal; not kept with the hits, never shown
     negotiable: bool = False
+    km: int | None = None  # a car's mileage and first registration year as its card states them (queries.vehicle)
+    year: int | None = None
 
     @classmethod
     def from_row(cls, row):

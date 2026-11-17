@@ -2,7 +2,12 @@
 
 import { html, raw, splitWords } from './logic.js';
 import { $, isFlat } from './ui.js';
-import { api, message, refresh, state } from './page.js';
+import { api, formDraft, message, refresh, saveDraft, state } from './page.js';
+
+const edits = formDraft(
+  $('flat-form'),
+  '[data-trait], [data-flat-word], [data-place], #flat-toggle-sources, #flat-add-word',
+);
 
 const removeIcon = raw('<svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>');
 
@@ -72,7 +77,8 @@ function showPlaces(list) {
           aria-selected="${i === highlight}"
           data-place="${i}"
         >
-          <span>${o.label}</span><small>${o.kind === 'plz' ? 'Postleitzahl' : 'Stadt / Kreis'}</small>
+          <span>${o.label}</span
+          ><small>${o.kind === 'plz' ? 'Postleitzahl' : o.kind === 'district' ? 'Kreis' : 'Stadt'}</small>
         </button>`,
     )
     .join('');
@@ -85,6 +91,7 @@ function placeHint() {
     Boolean(picked) || text.length < 2 || !$('flat-place').dataset.edited || !$('flat-place-options').hidden;
 }
 function choosePlace(option) {
+  edits.current.edit();
   picked = option;
   $('flat-place').value = option.label;
   showPlaces([]);
@@ -140,6 +147,8 @@ $('flat-place-options').addEventListener('mousedown', e => {
 });
 
 export function openFlatEditor(id) {
+  edits.reset();
+  $('flat-save').disabled = false;
   const search = id ? state.searches.find(s => s.id === id) : null,
     f = search?.filters || {};
   $('flat-form').reset();
@@ -221,6 +230,8 @@ $('flat-word').addEventListener('keydown', e => {
 $('flat-add-word').addEventListener('click', addFlatWord);
 $('flat-form').addEventListener('submit', async event => {
   event.preventDefault();
+  const editing = edits.current;
+  if (editing.busy) return;
   if ($('flat-word').value.trim()) addFlatWord();
   const sources = flatBoxes()
     .filter(x => x.checked)
@@ -251,14 +262,29 @@ $('flat-form').addEventListener('submit', async event => {
   const id = $('flat-id').value;
   $('flat-save').disabled = true;
   try {
-    await api(id ? `searches/${id}` : 'searches', { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) });
-    $('flat-editor').close();
-    message('Wohnungssuche gespeichert.');
-    await refresh();
+    await saveDraft(
+      editing,
+      'searches',
+      async () => {
+        const data = await api(id ? `searches/${id}` : 'searches', {
+          method: id ? 'PUT' : 'POST',
+          body: JSON.stringify(payload),
+        });
+        // Keep the new identity even if the following refresh fails or typing continued.
+        if (edits.current === editing && !id) $('flat-id').value = data.id;
+        return data;
+      },
+      (_, current) => {
+        if (edits.current !== editing) return;
+        if (!current) return;
+        $('flat-editor').close();
+        message('Wohnungssuche gespeichert.');
+      },
+    );
   } catch (err) {
-    flatError(err.message);
+    if (edits.current === editing) flatError(err.message);
   } finally {
-    $('flat-save').disabled = false;
+    if (edits.current === editing) $('flat-save').disabled = false;
   }
 });
 $('flat-delete').addEventListener('click', async () => {

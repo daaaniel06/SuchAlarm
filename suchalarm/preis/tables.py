@@ -60,4 +60,14 @@ def _negotiable_offers(conn):
     )
 
 
-MIGRATIONS = (_create, _move, _clean_titles, _hidden_titles, _forgotten_words, _negotiable_offers)
+def _vehicle_facts(conn):
+    """A car's mileage and first registration year from its card, removed with the offer; older snapshots have
+    none (unknown values pass, like at the provider)."""
+    conn.execute(
+        'CREATE TABLE IF NOT EXISTS preis.vehicle_facts '
+        '(search_id INTEGER, url TEXT NOT NULL, km INTEGER, year INTEGER, PRIMARY KEY(search_id,url), '
+        'FOREIGN KEY(search_id,url) REFERENCES offers(search_id,url) ON DELETE CASCADE)'
+    )
+
+
+MIGRATIONS = (_create, _move, _clean_titles, _hidden_titles, _forgotten_words, _negotiable_offers, _vehicle_facts)

@@ -38,7 +38,7 @@ class FlatFilters(BaseModel):
 class PickedPlace(BaseModel):
     """A place chosen from the suggestions: its search QUERY and ImmoScout24's GEOPATH."""
 
-    kind: Literal['city', 'plz']
+    kind: Literal['city', 'district', 'plz']
     label: str = Field(min_length=2, max_length=120)
     query: str = Field(min_length=2, max_length=120)
     geopath: str | None = Field(default=None, max_length=200, pattern=r'^/[\w/-]+$')

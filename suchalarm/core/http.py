@@ -12,7 +12,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from . import cadence
-from .browser import BLOCK, REFUSAL_STATUSES, Blocked, Unreadable, note
+from .browser import BLOCK, REFUSAL_STATUSES, Blocked, NotFound, Unreadable, note
 
 BROWSER_UA = (
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -20,10 +20,6 @@ BROWSER_UA = (
 )
 TIMEOUT = 20
 MAX_BYTES = 3_000_000
-
-
-class NotFound(RuntimeError):
-    """HTTP 404: the provider does not know what was asked for."""
 
 
 def ssl_context():

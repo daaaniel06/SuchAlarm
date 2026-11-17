@@ -5,7 +5,7 @@ import { AREAS, AREA_TEXT, ago, html, mailProvider, parseServer, raw, serverText
 const removeIcon = raw('<svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>');
 import { $, clock, kindOfSource, safeLink, setHtml } from './ui.js';
 import { STEP_LABEL, nextFetch, pill, sourceSteps } from './steps.js';
-import { api, clearAsking, message, refresh, render, state } from './page.js';
+import { api, clearAsking, formDraft, message, pauseDraft, render, saveDraft, state } from './page.js';
 import { searchName } from './searches.js';
 
 // "Details" under Quellen: which sources are open, and what the server last said about them.
@@ -15,10 +15,12 @@ export const openDetails = new Set(),
 let tab = 'mail';
 
 let mail = null; // the mail settings as shown; every change is saved right away
-let saving = Promise.resolve();
+const mailDraft = formDraft($('mail-form'), '[data-remove], #add-recipient'),
+  serverDraft = formDraft($('server-form')),
+  templateDraft = formDraft($('template-form'));
 
 export function renderMailStatus() {
-  if (!$('mail-form').dataset.saving) {
+  if (!mailDraft.current.protected) {
     mail = { recipients: [...state.mail.recipients] };
     for (const kind of AREAS) mail[kind] = { ...state.mail[kind] };
     renderMail();
@@ -82,9 +84,10 @@ export function renderSettings(checking) {
     .querySelectorAll('[data-settings-tab]')
     .forEach(b => b.setAttribute('aria-pressed', String(b.dataset.settingsTab === tab)));
 
-  $('auto').checked = !state.paused;
-  $('auto-text').textContent = state.paused ? 'Pausiert · „Jetzt prüfen“ geht weiterhin' : '';
-  $('auto-text').hidden = !state.paused;
+  if (!pauseDraft.protected) $('auto').checked = !state.paused;
+  const paused = !$('auto').checked;
+  $('auto-text').textContent = paused ? 'Pausiert · „Jetzt prüfen“ geht weiterhin' : '';
+  $('auto-text').hidden = !paused;
   let failedAll = 0;
   const groups = AREAS.map((kind, i) => {
     const steps = sourceSteps(checking, true).filter(x => kindOfSource(x.source) === kind),
@@ -106,6 +109,8 @@ $('settings-tabs').addEventListener('click', e => {
   render();
 });
 $('template-edit').addEventListener('click', () => {
+  templateDraft.reset();
+  $('template-save').disabled = false;
   $('template-text').value = state.template || '';
   $('template-error').hidden = true;
   $('template-editor').showModal();
@@ -113,19 +118,31 @@ $('template-edit').addEventListener('click', () => {
 });
 $('template-form').addEventListener('submit', async e => {
   e.preventDefault();
-  $('template-edit').disabled = $('template-save').disabled = $('template-text').disabled = true;
+  const draft = templateDraft.current;
+  if (draft.busy) return;
+  // Reopening during the save would show the old text: the editor waits for the answer.
+  $('template-save').disabled = $('template-edit').disabled = true;
   $('template-error').hidden = true;
+  const text = $('template-text').value;
   try {
-    const text = $('template-text').value;
-    await api('template', { method: 'PUT', body: JSON.stringify({ text }) });
-    $('template-editor').close();
-    await refresh();
-    message(text.trim() ? 'Bewerbungstext gespeichert.' : 'Bewerbungstext entfernt.');
+    await saveDraft(
+      draft,
+      'template',
+      () => api('template', { method: 'PUT', body: JSON.stringify({ text }) }),
+      (_, current) => {
+        if (templateDraft.current !== draft || !current) return;
+        $('template-editor').close();
+        message(text.trim() ? 'Bewerbungstext gespeichert.' : 'Bewerbungstext entfernt.');
+      },
+    );
   } catch (err) {
-    $('template-error').textContent = err.message;
-    $('template-error').hidden = false;
+    if (templateDraft.current === draft) {
+      $('template-error').textContent = err.message;
+      $('template-error').hidden = false;
+    }
   } finally {
-    $('template-edit').disabled = $('template-save').disabled = $('template-text').disabled = false;
+    $('template-edit').disabled = false;
+    if (templateDraft.current === draft) $('template-save').disabled = false;
   }
 });
 function sourceField(x) {
@@ -254,28 +271,18 @@ function renderMail() {
   $('recipient-add').placeholder = mail.recipients.length ? 'Weitere Mailadresse' : 'Mailadresse hinzufügen';
   $('recipient-add').disabled = mail.recipients.length >= 5;
 }
-// Saves in order, one at a time; on failure the server's settings come back.
-function mailChanged() {
+// The local draft stays visible during saves and after a failed save.
+async function mailChanged() {
   const body = JSON.stringify({ recipients: mail.recipients, wohnung: mail.wohnung, preis: mail.preis });
-  $('mail-form').dataset.saving = '1';
   renderMail();
-  saving = saving.then(async () => {
-    try {
-      await api('mail', { method: 'PUT', body });
-    } catch (err) {
-      message(err.message, true);
-    }
-  });
-  const mine = saving;
-  mine.then(async () => {
-    if (saving !== mine) return;
-    // A poll sent before the save must not bring old recipients back: the form waits for the answer after it.
-    await refresh();
-    if (saving !== mine) return;
-    delete $('mail-form').dataset.saving;
-    renderMailStatus();
-  });
+  try {
+    await saveDraft(mailDraft.current, 'mail', () => api('mail', { method: 'PUT', body }));
+  } catch (err) {
+    message(err.message, true);
+  }
+  renderMailStatus();
 }
+
 function addRecipient() {
   const address = $('recipient-add').value.trim();
   if (!/^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/.test(address)) {
@@ -301,6 +308,8 @@ $('mail-form').addEventListener('click', e => {
   const b = e.target.closest('[data-batch]'),
     group = b?.closest('[data-mail-area]');
   if (group) {
+    if (mail[group.dataset.mailArea].batch_size === Number(b.dataset.batch)) return;
+    mailDraft.current.edit();
     mail[group.dataset.mailArea].batch_size = Number(b.dataset.batch);
     mailChanged();
   }
@@ -318,6 +327,7 @@ $('recipient-add').addEventListener('input', () => {
 $('recipient-add').addEventListener('keydown', e => {
   if (e.key === 'Enter') {
     e.preventDefault();
+    mailDraft.current.edit();
     addRecipient();
   }
 });
@@ -355,6 +365,7 @@ function renderServerNote() {
       `${provider.name} braucht ein <a href="${provider.help}" target="_blank" rel="noopener noreferrer">App-Passwort</a>.`;
 }
 $('server-edit').addEventListener('click', () => {
+  serverDraft.reset();
   const server = state.mail.server;
   $('server-sender').value = server.sender;
   $('server-host').value = serverText(server);
@@ -376,17 +387,17 @@ $('server-form').addEventListener('change', () => {
   }
   const body = { sender: $('server-sender').value.trim(), ...server };
   if ($('server-password').value) body.password = $('server-password').value;
-  serverSaving = serverSaving.then(async () => {
-    try {
-      await api('mail/server', { method: 'PUT', body: JSON.stringify(body) });
-      await refresh();
-      // A new address or server forgets the old password, so the field asks for it again.
+  const draft = serverDraft.current;
+  serverSaving = saveDraft(
+    draft,
+    'mail/server',
+    () => api('mail/server', { method: 'PUT', body: JSON.stringify(body) }),
+    (_, current) => {
+      if (serverDraft.current !== draft || !current) return;
       if (body.password !== undefined) $('server-password').value = '';
       $('server-password').placeholder = state.mail.server.password_set ? 'Gespeichert' : 'Passwort';
-    } catch (err) {
-      message(err.message, true);
-    }
-  });
+    },
+  ).catch(err => message(err.message, true));
 });
 $('server-form').addEventListener('submit', e => e.preventDefault());
 $('server-test').addEventListener('click', () => sendTestMail($('server-test')));

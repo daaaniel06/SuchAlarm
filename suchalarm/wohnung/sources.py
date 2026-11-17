@@ -14,10 +14,13 @@ from ..core import browser, cadence, http, images
 from . import portals
 from .domain import (
     SOURCES,
+    WHOLE_STOCK,
     Listing,
     beyond_radius,
     distance_km,
     home_area,
+    inside,
+    is_district,
     outside_home,
     place_query,
     profile,
@@ -131,6 +134,41 @@ async def locate(query, follow=False):
     return tuple(value)
 
 
+async def district_area(query, follow=False):
+    """The outline of a district (GeoJSON, simplified) from OpenStreetMap; looked up once, kept for good.
+    None if OpenStreetMap knows no such boundary."""
+    known = cadence.location('osm-area', _key(query))
+    if known:
+        return json.loads(known)
+    url = 'https://nominatim.openstreetmap.org/search?' + urlencode(
+        {
+            'q': f'Landkreis {query}',
+            'countrycodes': 'de',
+            'format': 'json',
+            'limit': 3,
+            'polygon_geojson': 1,
+            'polygon_threshold': 0.005,
+        }
+    )
+    result = await http.get_json('osm', url, {'User-Agent': OSM_UA}, follow=follow, kind='osm')
+    area = next(
+        (
+            r['geojson']
+            for r in (result if isinstance(result, list) else [])
+            if r.get('class') == 'boundary' and (r.get('geojson') or {}).get('type') in ('Polygon', 'MultiPolygon')
+        ),
+        None,
+    )
+    cadence.save_location('osm-area', _key(query), json.dumps(area))
+    return area
+
+
+def known_district_area(search):
+    """The district outline of a search if looked up already (never a request), else None."""
+    known = cadence.location('osm-area', _key(place_query(profile(search))))
+    return json.loads(known) if known else None
+
+
 def centre(search):
     """The searched place's centre if it was looked up already, else None (never a request)."""
     known = cadence.location('osm', _key(place_query(profile(search))))
@@ -140,6 +178,12 @@ def centre(search):
 def needs_centre(search):
     p = profile(search)
     return bool(p['radius']) or (p['place'] or {}).get('kind') == 'plz'
+
+
+def needs_district_area(search):
+    """A district search without radius places a landlord's whole stock by the district's outline."""
+    p = profile(search)
+    return not p['radius'] and is_district(p['place'] or {}) and bool(set(WHOLE_STOCK) & set(search['sources']))
 
 
 def needs_place(search):
@@ -157,8 +201,18 @@ def out_of_area(search, source):
             return 'Sucht nur nach Ortsnamen, nicht nach Postleitzahl'
         if cadence.location('wg-gesucht', _key(_wg_place(p))) == UNKNOWN_PLACE:
             return 'Kennt diesen Ort nicht'
-    if source in ('ohne-makler', 'immobilien-de') and cadence.location(source, _key(place_query(p))) == UNKNOWN_PLACE:
+    looked_up_as = {'ohne-makler': 'ohne-makler', 'immobilien-de': 'immobilien-de', 'immowelt': 'immowelt',
+                    'kleinanzeigen-wohnung': 'kleinanzeigen'}  # fmt: skip
+    if source in looked_up_as and cadence.location(looked_up_as[source], _key(place_query(p))) == UNKNOWN_PLACE:
         return 'Kennt diesen Ort nicht'
+    if source in WHOLE_STOCK and needs_district_area(search):
+        # Without the outline every flat of the stock would be left out, and that empty result would become the
+        # search's starting stock: the flats then found would be mailed as new. The source waits instead.
+        outline = cadence.location('osm-area', _key(place_query(p)))
+        if outline is None:
+            return 'Wartet auf den Umriss des Kreises'
+        if json.loads(outline) is None:
+            return 'Kreis auf der Karte nicht gefunden'
     known = cadence.location('osm', _key(place_query(p)))
     if known and source == 'bauverein':
         lat, lon, _ = json.loads(known)
@@ -263,13 +317,16 @@ async def _kleinanzeigen(p, number=1):
                 found = json.loads(await response.text())  # Firefox shows JSON in its viewer, not as body text
             except ValueError:
                 raise browser.Unreadable('Ortssuche von Kleinanzeigen nicht lesbar.') from None
-            return portals.kleinanzeigen_location(found, query)
+            identifier = portals.kleinanzeigen_location(found, query, exact=is_district(p['place'] or {}))
+            return UNKNOWN_PLACE if identifier is None else identifier
 
         # The place lookup is a visit of its own in the site's budget; the list then waits for the next slot.
         looked_up = cadence.location('kleinanzeigen', _key(query)) is None
         if looked_up:
             cadence.book(source, 'page')
         identifier = await _location('kleinanzeigen', query, location)
+        if identifier == UNKNOWN_PLACE:
+            raise RuntimeError(f'Kleinanzeigen kennt den Ort „{query}“ nicht.')
         data = await browser.load_page(
             page,
             source,
@@ -320,13 +377,19 @@ async def _immowelt(p, number=1):
 
         async def location():
             response = await page.goto(portals.immowelt_place_url(query), timeout=browser.PAGE_TIMEOUT_MS)
-            browser.check_response(response)
+            try:
+                browser.check_response(response)
+            except browser.NotFound:
+                return UNKNOWN_PLACE  # no page for this place ("Darmstadt-Dieburg" answers 410)
             return portals.immowelt_location(page.url, query)
 
         looked_up = cadence.location(source, _key(query)) is None
         if looked_up:
             cadence.book(source, 'page')
-        address, request = portals.immowelt_search(await _location(source, query, location), p, number)
+        place = await _location(source, query, location)
+        if place == UNKNOWN_PLACE:
+            raise RuntimeError(f'Immowelt kennt den Ort „{query}“ nicht.')
+        address, request = portals.immowelt_search(place, p, number)
         data = await browser.load_page(
             page,
             source,
@@ -512,9 +575,18 @@ def select(listings, search):
     the detail page; a listing ruled out by an estimated rent may still turn out to fit.
     """
     p, middle = profile(search), centre(search)
+    district = not p['radius'] and is_district(p['place'] or {})
+    area = known_district_area(search) if district else None
     kept = []
     for listing in listings:
         if wanted_ad(listing) or beyond_radius(listing, p, middle) is not None:
+            continue
+        # A landlord's whole stock is not searched by the district: only a flat inside its outline counts.
+        if (
+            district
+            and listing.source in WHOLE_STOCK
+            and not (area and listing.lat is not None and inside(area, listing.lat, listing.lon))
+        ):
             continue
         if listing.source in ('bauverein', 'nhw') and p['radius']:
             spot = (listing.lat, listing.lon) if listing.lat is not None else None

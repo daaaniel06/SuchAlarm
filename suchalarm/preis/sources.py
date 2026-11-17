@@ -10,7 +10,7 @@ from . import delivery
 from .categories import HOSTS
 from .money import money, shipping
 from .prices import Offer, portal_price_bounds
-from .queries import around, canonical, kleinanzeigen_attributes, section, vehicle_fits
+from .queries import around, canonical, kleinanzeigen_attributes, section, vehicle, vehicle_fits
 from .titles import clean_title, phrases, platform_ids, title_fits, wanted_words
 
 DEFAULT_CARD_LIMIT = 100
@@ -214,7 +214,9 @@ NEGOTIABLE = re.compile(r'\bVB\b')
 DELIVERABLE = re.compile(
     r'lieferbar|auf lager|lieferzeit|werktage|lieferung\s*:\s*bis\b|lieferung\s+(?:heute|morgen)', re.I
 )
-EURO_AMOUNT = re.compile(r'(\d(?:[\d.,\s\xa0]*\d)?)')
+AMOUNT = r'\d(?:[\d.,\s\xa0]*\d)?'
+# The amount next to the euro mark: "US $20.00 (EUR 18,50)" is 18,50, not the dollar price before it.
+EURO_AMOUNT = re.compile(rf'(?:€|\bEUR\b)\s*({AMOUNT})|({AMOUNT})\s*(?:€|\bEUR\b)')
 
 
 def row_price(row, search=None):
@@ -225,8 +227,8 @@ def row_price(row, search=None):
     if row.get('currency') == 'EUR':
         return money(row['price'])
     text = str(row.get('price', ''))
-    match = EURO_AMOUNT.search(text) if re.search(r'€|\bEUR\b', text) else None
-    return money(match.group(1)) if match else None
+    match = EURO_AMOUNT.search(text)
+    return money(match.group(1) or match.group(2)) if match else None
 
 
 def status_text(row):
@@ -297,6 +299,7 @@ def parse_rows(source, data, search):
             condition[:MAX_CONDITION],
             str(row.get('owner', '')),
             bool(NEGOTIABLE.search(str(row.get('price', '')) + ' ' + status_text(row))),
+            *(vehicle(row.get('text', '').replace('\xad', '')) if section(source, search) == CARS else (None, None)),
         )
         # Keep idealo's shop alternatives: the shared cache serves searches with both shipping settings.
         key = (url, price, offer.shipping, offer.seller) if source == 'idealo' else url

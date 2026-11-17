@@ -531,7 +531,10 @@ class CategoryApiTests(unittest.TestCase):
         )
         sid = self.client.post('/api/searches', json=game).json()['id']
         with store.db() as conn:
-            conn.execute('INSERT INTO notifications VALUES (?,?,?,?)', (sid, 'https://www.ebay.de/itm/1', 2000, 1))
+            conn.execute(
+                'INSERT INTO notifications(search_id,url,price,sent_at) VALUES (?,?,?,?)',
+                (sid, 'https://www.ebay.de/itm/1', 2000, 1),
+            )
         self.client.put(f'/api/searches/{sid}', json=dict(game, active=False))
         with store.db() as conn:
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM notifications').fetchone()[0], 1)

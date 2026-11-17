@@ -52,7 +52,7 @@ def immoscout_places(entries):
         label, kind = str(entity.get('label') or ''), entity.get('type')
         geopath = ((entity.get('geopath') or {}).get('uri') or '').split('?')[0]
         if kind in ('city', 'district') and geopath:
-            place = {'kind': 'city', 'label': label, 'query': re.sub(r'\s*\(Kreis\)$', '', label), 'geopath': geopath}
+            place = {'kind': kind, 'label': label, 'query': re.sub(r'\s*\(Kreis\)$', '', label), 'geopath': geopath}
         elif kind in ('postcode', 'postcodeWithQuarter') and re.match(r'\d{5}\s', label):
             # "64283 Darmstadt - Bessungen": one entry per postcode.
             code, town = label[:5], label[6:].split(' - ')[0]

@@ -9,6 +9,8 @@ import {
   checkSubmitting,
   message,
   onRender,
+  pauseDraft,
+  saveDraft,
   refresh,
   render,
   scheduleRefresh,
@@ -144,11 +146,18 @@ $('check-all').addEventListener('click', async () => {
     render();
   }
 });
+let requestedPause;
 async function setPaused(paused) {
+  if (pauseDraft.busy && requestedPause === paused) return;
+  requestedPause = paused;
+  pauseDraft.edit();
+  $('auto').checked = !paused;
   try {
-    await api('settings', { method: 'PUT', body: JSON.stringify({ paused }) });
-    await refresh();
+    await saveDraft(pauseDraft, 'settings', () => api('settings', { method: 'PUT', body: JSON.stringify({ paused }) }));
+    render();
   } catch (err) {
+    // The switch must show what the server does, not what was asked for.
+    pauseDraft.discard();
     message(err.message, true);
     render();
   }

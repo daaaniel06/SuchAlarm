@@ -199,6 +199,11 @@ class SourceLoadingTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AvailabilityTests(unittest.TestCase):
+    def test_price_is_the_amount_next_to_the_euro_mark(self):
+        self.assertEqual(sources.row_price({'price': 'US $20.00 (EUR 18,50)'}), 1850)
+        self.assertEqual(sources.row_price({'price': '1.299 € VB'}), 129900)
+        self.assertIsNone(sources.row_price({'price': 'US $20.00'}))
+
     def card(self, title, status=''):
         return dict(
             title=title,
@@ -322,6 +327,14 @@ class ShippingTests(unittest.TestCase):
         for included in (True, False):
             entry = (dict(include_shipping=included), dict(source='vinted', shipping=249))
             self.assertEqual(mailer.shipping_text(entry), 'Versand ab 2,49 €')
+        # The compared price with minimum shipping is itself a lower bound: "ab" in mail and app.
+        search = dict(include_shipping=True, include_fee=False, min_price=0, max_price=9000)
+        row = dict(source='vinted', price=4400, shipping=249)
+        self.assertEqual(mailer.entry_price((search, row)), 'ab 46,49 €')
+        self.assertEqual(mailer._mail(search).subject([(search, row)], 'Spiel'), 'Preisalarm: Spiel ab 46,49 €')
+        self.assertEqual(mailer.entry_price((dict(search, include_shipping=False), row)), '44,00 €')
+        self.assertTrue(products.judged(row, search)['minimum'])
+        self.assertFalse(products.judged(dict(row, source='ebay'), search)['minimum'])
 
     def test_total_from_same_card_gives_shipping_in_cents(self):
         self.assertEqual(row_shipping({'text': '49,99 €\n60,97\xa0€ inkl. Versand'}, 4999, 'idealo'), 1098)

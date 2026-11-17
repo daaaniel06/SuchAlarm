@@ -24,9 +24,10 @@ log = logging.getLogger('suchalarm')
 class DeliveryError(Exception):
     """A short German reason, never secrets. maybe_sent: the server may have accepted it; never resend."""
 
-    def __init__(self, message, maybe_sent):
+    def __init__(self, message, maybe_sent, refused=None):
         super().__init__(message)
         self.maybe_sent = maybe_sent
+        self.refused = refused or {}  # address -> SMTP code when the server refused every recipient
 
 
 UNREACHABLE = 'Mailserver nicht erreichbar – Host und Port prüfen.'
@@ -50,6 +51,9 @@ def _usable_server():
 
 def _explain(error, sending):
     """A DeliveryError for any failure; once the message was being handed over it may have arrived."""
+    if isinstance(error, smtplib.SMTPRecipientsRefused):
+        codes = {address: answer[0] for address, answer in error.recipients.items()}
+        return DeliveryError('Der Mailserver lehnt die Empfängeradresse ab.', False, codes)
     for kind, text in REFUSALS:
         if isinstance(error, kind):
             return DeliveryError(text, False)
@@ -101,15 +105,17 @@ def deliver(message):
 
 def refusal(refused):
     """What to show when the server took a mail but refused some of its recipients (address -> SMTP code).
-    A 4xx code is temporary (RFC 5321): the address is fine, that copy just did not arrive. Nothing is resent
-    either way: the others already have the mail."""
+    A 4xx code is temporary (RFC 5321): the address is fine, that copy just did not arrive yet; the worker sends
+    it again to that address alone. The others already have the mail and never get it twice."""
     lasting = [address for address, code in refused.items() if code >= 500]
     passing = [address for address, code in refused.items() if code < 500]
     parts = []
     if lasting:
         parts.append(f'Der Mailserver hat {", ".join(lasting)} nicht angenommen – Adresse prüfen.')
     if passing:
-        parts.append(f'Der Mailserver hat {", ".join(passing)} vorübergehend abgelehnt; dort kam diese Mail nicht an.')
+        parts.append(
+            f'Der Mailserver hat {", ".join(passing)} vorübergehend abgelehnt; die Mail geht später noch einmal nur dorthin.'
+        )
     return ' '.join(parts)
 
 

@@ -69,9 +69,9 @@ def queries(place):
     if after_code:
         town = re.split(r'\s+[-–]\s+', after_code.group(1))[0].strip()
     elif len(parts) >= 3:
-        town = parts[1].split()[0]
+        town = re.split(r'\s+[-–]\s+', parts[1])[0].strip()
     elif parts and (len(parts) > 1 or not has_street(place)):
-        town = parts[-1].split()[0]
+        town = re.split(r'\s+[-–]\s+', parts[-1])[0].strip()
     else:
         town = ''
     street_like = bool(parts) and bool(

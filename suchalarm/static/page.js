@@ -1,7 +1,7 @@
 // What every module shares: the loaded state, the view choices, the calls to the server and render().
 // app.js owns rendering and registers it with onRender(), so no module has to import app.js.
 
-import { AREAS } from './logic.js';
+import { AREAS, createDraft, createSaveQueue } from './logic.js';
 
 export let state,
   area,
@@ -84,16 +84,17 @@ let timer,
   shown = 0;
 // Polling, tab switches and actions may overlap: an answer older than the one shown is dropped, so
 // after "await refresh()" the state is at least as new as that request.
-export async function refresh() {
+export async function refresh({ strict = false } = {}) {
   const ticket = ++asked;
   try {
     const next = await api('state', { signal: AbortSignal.timeout(20000) });
-    if (ticket < shown) return;
+    if (ticket < shown) return strict ? refresh({ strict }) : undefined;
     shown = ticket;
     state = next;
     render();
   } catch (err) {
-    if (ticket < shown) return;
+    if (ticket < shown) return strict ? refresh({ strict }) : undefined;
+    if (strict) throw err;
     message(err.name === 'TimeoutError' ? 'Server antwortet nicht. Bitte erneut versuchen.' : err.message, true);
     clearTimeout(timer);
     timer = setTimeout(refresh, 15000);
@@ -109,3 +110,54 @@ export function scheduleRefresh({ busy, manual, finished }) {
     busy || manual ? 2000 : finished ? 2300 : 15000,
   );
 }
+
+// Capture edits before change/click handlers submit their snapshot. Opening a dialog makes a new
+// draft, so a late answer can never close or clear a different editing session.
+export function formDraft(element, buttons = '') {
+  let draft = createDraft();
+  const edit = () => draft.edit();
+  element.addEventListener('input', edit, true);
+  element.addEventListener('change', edit, true);
+  if (buttons)
+    element.addEventListener(
+      'click',
+      e => {
+        if (e.target.closest(buttons)) edit();
+      },
+      true,
+    );
+  return {
+    get current() {
+      return draft;
+    },
+    reset() {
+      draft = createDraft();
+    },
+  };
+}
+const saves = new Map();
+export function saveDraft(draft, resource, write, accept = () => {}) {
+  if (!saves.has(resource)) saves.set(resource, createSaveQueue());
+  return draft.save(current =>
+    saves.get(resource)(async () => {
+      let data;
+      try {
+        data = await write();
+      } catch (err) {
+        if (current()) throw err;
+        return undefined;
+      }
+      // Saved. Polls started before this write must not bring the old values back; a refresh or render that
+      // fails now is reported, but never turns the save into a failure.
+      shown = ++asked;
+      try {
+        await refresh({ strict: true });
+      } catch (err) {
+        message(err.message, true);
+      }
+      accept(data, current());
+      return data;
+    }),
+  );
+}
+export const pauseDraft = createDraft();

@@ -6,7 +6,7 @@
 - Anbieterseiten standardmäßig über das getarnte Firefox aus invisible_playwright (core/browser.py, startet lokal im Container mit Xvfb; läuft nicht unter macOS). Direkter HTTP-Abruf ist erlaubt, wenn er ohne Mehraufwand funktioniert, etwa Vorschaubilder von Bild-CDNs (core/images.py) oder ImmoScout24 über die App-Schnittstelle (die Website sperrt den Browser). Jeder Abruf, egal wie, läuft durch die Taktung in core/cadence.py (Budgetarten page, image, osm für OpenStreetMap, suggest für Ortsvorschläge).
 - Docker Compose, Proxy, persistente Volumes und Deploy des eigenen Betriebs nicht hier pflegen.
 - DESIGN.md ist verbindlich. Keine neue visuelle Identität erfinden.
-- Bei eingeschlossenem Versand sind unbekannte Kosten kein gültiger Gesamtpreis.
+- Bei eingeschlossenem Versand sind unbekannte Kosten kein gültiger Gesamtpreis. Ausnahme: Ein genannter Mindestversand („ab 2,49 €“, Vinted) zählt als Untergrenze; App und Mail zeigen den Preis dann mit „ab“ (preis/prices.py, price_is_minimum).
 - Erfolgreicher SMTP-Versand muss der Benachrichtigungs-Historie vorausgehen.
 - Gesperrte Quellen als gestört anzeigen, niemals als erfolgreiche Null-Treffer-Suche.
 - Keine Käufe oder Nachrichten an Verkäufer.

@@ -8,6 +8,7 @@ covers all. Request budgets, the page cache and the queue live in cadence.db, th
 import json
 import os
 import secrets
+import shutil
 import sqlite3
 import threading
 import time
@@ -31,7 +32,7 @@ CREATE TABLE IF NOT EXISTS start_offers (
 );
 CREATE TABLE IF NOT EXISTS notifications (
   search_id INTEGER REFERENCES searches(id) ON DELETE CASCADE,
-  url TEXT NOT NULL, price INTEGER NOT NULL, sent_at REAL NOT NULL,
+  url TEXT NOT NULL, price INTEGER NOT NULL, sent_at REAL NOT NULL, reason TEXT,
   PRIMARY KEY(search_id, url)
 );
 CREATE TABLE IF NOT EXISTS source_status (
@@ -173,7 +174,8 @@ def _migrate_legacy(conn):
     # The old mail log becomes the delivery history.
     if not conn.execute('SELECT 1 FROM batches LIMIT 1').fetchone():
         conn.execute(
-            "INSERT INTO batches SELECT 'log-' || id, '', subject, count, 'sent', NULL, sent_at, sent_at FROM mail_log"
+            'INSERT INTO batches(id,recipients,subject,count,status,error,created_at,sent_at) '
+            "SELECT 'log-' || id, '', subject, count, 'sent', NULL, sent_at, sent_at FROM mail_log"
         )
 
 
@@ -273,6 +275,27 @@ def _add_status_warning(conn):
         conn.execute('ALTER TABLE source_status ADD COLUMN warning TEXT')
 
 
+def _add_deliveries(conn):
+    """Which search kind a mail was for (its rhythm and pause after a failure are the kind's own), the mail itself
+    while a recipient still waits for a retry, and what each recipient's server said."""
+    columns = {r[1] for r in conn.execute('PRAGMA table_info(batches)')}
+    if 'kind' not in columns:
+        conn.execute('ALTER TABLE batches ADD COLUMN kind TEXT')
+    if 'message' not in columns:
+        conn.execute('ALTER TABLE batches ADD COLUMN message BLOB')
+    conn.execute(
+        'CREATE TABLE IF NOT EXISTS deliveries (batch TEXT NOT NULL REFERENCES batches(id) ON DELETE CASCADE, '
+        'address TEXT NOT NULL, status TEXT NOT NULL, code INTEGER, attempts INTEGER NOT NULL DEFAULT 0, '
+        'next_at REAL NOT NULL DEFAULT 0, PRIMARY KEY(batch, address))'
+    )
+
+
+def _add_report_reason(conn):
+    """Why a hit counts as known (REASONS). Rows from before stay NULL: their reason was not recorded."""
+    if 'reason' not in {r[1] for r in conn.execute('PRAGMA table_info(notifications)')}:
+        conn.execute('ALTER TABLE notifications ADD COLUMN reason TEXT')
+
+
 # Each entry runs once; PRAGMA user_version counts the applied ones. Only ever append.
 MIGRATIONS = (
     _migrate_legacy,
@@ -291,6 +314,8 @@ MIGRATIONS = (
     _add_status_started,
     _add_status_unread,
     _add_status_warning,
+    _add_report_reason,
+    _add_deliveries,
 )
 
 
@@ -310,15 +335,17 @@ def _migrate(conn, schema, migrations):
 
 
 def _recover_interrupted_delivery(conn):
-    """A restart during delivery leaves an uncertain mail: count it as sent so nothing comes twice."""
+    """A restart during delivery leaves an uncertain mail: known, so nothing comes twice, but not as sent."""
     conn.execute(
-        'INSERT OR REPLACE INTO notifications SELECT search_id, url, price, created_at FROM outbox WHERE batch IS NOT NULL'
+        'INSERT OR REPLACE INTO notifications(search_id,url,price,sent_at,reason) '
+        "SELECT search_id, url, price, created_at, 'uncertain' FROM outbox WHERE batch IS NOT NULL"
     )
     conn.execute('DELETE FROM outbox WHERE batch IS NOT NULL')
     conn.execute(
         "UPDATE batches SET status='unknown', error='Server wurde während des Versands neu gestartet.' "
         "WHERE status='sending'"
     )
+    conn.execute("UPDATE deliveries SET status='uncertain' WHERE status='sending'")  # a retry cut off the same way
 
 
 def init():
@@ -480,10 +507,18 @@ def keep_waiting_only(conn, table, search_id):
     )
 
 
-def remember_reported(conn, search_id, url, price, when):
-    """A hit counts as reported at PRICE: mailed, starting stock, or found while its mails were off. Only a
-    lower price mails it again."""
-    conn.execute('INSERT OR REPLACE INTO notifications VALUES (?,?,?,?)', (search_id, url, price, when))
+# Why a hit counts as known at its price; only a lower price mails it again. Only 'sent' is a mail the
+# server accepted: the history of notifications. 'known': starting stock, another portal's copy, or found
+# while mails were off. 'uncertain': the server may have taken the mail; never sent twice.
+REASONS = ('sent', 'known', 'uncertain')
+
+
+def remember_reported(conn, search_id, url, price, when, reason='known'):
+    """A hit counts as known at PRICE for REASON (REASONS)."""
+    conn.execute(
+        'INSERT OR REPLACE INTO notifications(search_id,url,price,sent_at,reason) VALUES (?,?,?,?,?)',
+        (search_id, url, price, when, reason),
+    )
 
 
 def queue(conn, search_id, url, price, when):
@@ -562,21 +597,45 @@ def mail_server(values=None):
     return {**MAIL_SERVER_DEFAULT, **json.loads(values.get('mail_server', '{}'))}
 
 
+# Files a generation holds besides suchalarm.db and the kinds' files: cadence.db keeps provider pauses, place
+# lookups and the queue, conservative to restore (a restored pause only waits longer). The picture cache and
+# delivery.db are caches that refill themselves.
+BACKUP_EXTRA = ('cadence',)
+
+
 def backup(keep=7):
-    """A consistent copy of suchalarm.db and every kind's file through SQLite's backup API, one per day;
-    the newest KEEP of each stay. Returns the copy of suchalarm.db."""
-    folder = db_path().parent / 'backups'
-    folder.mkdir(exist_ok=True)
-    for name in ('suchalarm', *PARTS):
-        source, copy = (
-            sqlite3.connect(db_path(name), timeout=20),
-            sqlite3.connect(folder / time.strftime(f'{name}-%Y-%m-%d.db')),
-        )
+    """One generation per day in backups/<date>/: every file through SQLite's backup API, checked with
+    integrity_check and listed in manifest.json. A generation becomes visible (renamed from .tmp) only when every
+    file is complete; the newest KEEP stay. Returns the generation's folder."""
+    root = db_path().parent / 'backups'
+    root.mkdir(exist_ok=True)
+    final = root / time.strftime('%Y-%m-%d')
+    for broken in root.glob('*.tmp'):
+        shutil.rmtree(broken)  # an interrupted generation
+    work = root / (final.name + '.tmp')
+    work.mkdir()
+    files = {}
+    for name in ('suchalarm', *PARTS, *BACKUP_EXTRA):
+        if not db_path(name).exists():
+            continue
+        target = work / f'{name}.db'
+        source, copy = sqlite3.connect(db_path(name), timeout=20), sqlite3.connect(target)
         try:
             source.backup(copy)
+            if copy.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
+                raise sqlite3.DatabaseError(f'Backup of {name}.db failed its integrity check')
         finally:
             copy.close()
             source.close()
-        for old in sorted(folder.glob(f'{name}-*.db'))[:-keep]:
-            old.unlink()
-    return folder / time.strftime('suchalarm-%Y-%m-%d.db')
+        files[target.name] = target.stat().st_size
+    manifest = {'created_at': time.time(), 'files': files, 'caches_not_included': ['images/cache.db', 'delivery.db']}
+    (work / 'manifest.json').write_text(json.dumps(manifest, indent=2))
+    shutil.rmtree(final, ignore_errors=True)
+    work.rename(final)
+    generations = sorted(p for p in root.iterdir() if p.is_dir() and (p / 'manifest.json').exists())
+    for old in generations[:-keep]:
+        shutil.rmtree(old)
+    if len(generations) >= keep:
+        for old in root.glob('*-????-??-??.db'):
+            old.unlink()  # single files from before generations, kept until as many generations replace them
+    return final

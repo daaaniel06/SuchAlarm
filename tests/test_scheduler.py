@@ -132,6 +132,32 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         job, _ = scheduler.plan([first, second], False)
         self.assertEqual(job['searches'][0]['id'], second['id'])
 
+    async def test_job_that_crashes_goes_to_the_back_of_the_queue(self):
+        first = self.search('Erstes Spiel')
+        second = self.search('Zweites Spiel')
+        job, _ = scheduler.plan([first, second], False)
+        with (
+            patch('suchalarm.worker.check', new=AsyncMock(side_effect=ValueError('kaputt'))),
+            self.assertRaises(ValueError),
+        ):
+            await worker._run_job(job)
+        later = time.time() + 600
+        with patch('suchalarm.core.cadence.ready_at', return_value=0):
+            following, _ = scheduler.plan([first, second], False, later)
+        self.assertNotEqual(following['key'], job['key'])
+
+    async def test_a_crashing_job_does_not_hold_back_the_mail(self):
+        self.search()
+        with (
+            patch('suchalarm.worker._run_job', new=AsyncMock(side_effect=ValueError('kaputt'))),
+            patch('suchalarm.worker.send_digest', new=AsyncMock()) as send,
+            patch('suchalarm.worker.daily_backup', new=AsyncMock()) as backup,
+        ):
+            delay = await worker.run_once()
+        send.assert_awaited_once()
+        backup.assert_awaited_once()
+        self.assertEqual(delay, worker.ERROR_PAUSE)
+
     async def test_manual_idealo_refreshes_now_then_keeps_automatic_twelve_hours(self):
         search = self.search(providers=('idealo',))
         actual = AsyncMock(return_value=([], None))

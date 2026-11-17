@@ -37,7 +37,7 @@ function note(o) {
   if (o.price === 0) return 'Zu verschenken';
   return o.shipping === null
     ? 'Versand unbekannt'
-    : o.source === 'vinted'
+    : o.shipping_from
       ? `Versand ab ${euro(o.shipping)}`
       : o.shipping === 0
         ? 'Versand frei'
@@ -85,7 +85,7 @@ function rowFoot(o, flat, gone, applied) {
 
 function rowPrice(o, flat, value) {
   if (flat) return value ? `${estimated(o) ? '≈ ' : ''}${euro(value)}` : '–';
-  return (value ?? o.price) === 0 ? 'Gratis' : euro(value ?? o.price);
+  return (value ?? o.price) === 0 ? 'Gratis' : `${o.minimum ? 'ab ' : ''}${euro(value ?? o.price)}`;
 }
 
 // The green dot pops in once; later refreshes draw it still.

@@ -24,6 +24,8 @@ from .http import ssl_context
 MAX_BYTES, MAX_PIXELS = 2_000_000, 20_000_000
 MAX_DISK, MAX_FILES = 128 * 1024 * 1024, 2000
 MAX_URL, MAX_PENDING, MAX_ATTEMPTS = 2500, 1000, 3  # failed pictures retry after 6 hours
+# Queued pictures remain processable while next_at delays their next attempt.
+PROCESSABLE = "state='queued'"
 Image.MAX_IMAGE_PIXELS = MAX_PIXELS
 log = logging.getLogger('suchalarm')
 # Provider image CDNs, as a host pattern per source; pictures are fetched from nowhere else.
@@ -45,6 +47,10 @@ def _setup(conn):
     """)
     if 'priority' not in {r[1] for r in conn.execute('PRAGMA table_info(pictures)')}:
         conn.execute('ALTER TABLE pictures ADD COLUMN priority INTEGER DEFAULT 0')
+    conn.execute(
+        "UPDATE pictures SET state=CASE WHEN attempts>=? THEN 'exhausted' ELSE 'queued' END WHERE state='pending'",
+        (MAX_ATTEMPTS,),
+    )
 
 
 def db():
@@ -70,7 +76,7 @@ def remember(source, pictures):
     """PICTURES maps an offer URL to its picture at SOURCE; new pictures are queued for download."""
     now = time.time()
     with db() as conn:
-        pending = conn.execute("SELECT COUNT(*) FROM pictures WHERE state='pending'").fetchone()[0]
+        pending = conn.execute(f'SELECT COUNT(*) FROM pictures WHERE {PROCESSABLE}').fetchone()[0]
         for url, remote in pictures.items():
             if not valid(source, remote):
                 continue
@@ -80,7 +86,7 @@ def remember(source, pictures):
                 if pending >= MAX_PENDING:
                     continue
                 conn.execute(
-                    "INSERT INTO pictures(key,source,remote,state,seen) VALUES (?,?,?,'pending',?)",
+                    "INSERT INTO pictures(key,source,remote,state,seen) VALUES (?,?,?,'queued',?)",
                     (key, source, remote, now),
                 )
                 pending += 1
@@ -160,11 +166,12 @@ def photos(urls):
     marks = ','.join('?' * len(urls))
     with db() as conn:
         rows = conn.execute(
-            f'SELECT o.url,p.state,p.filename,p.attempts FROM offers o JOIN pictures p ON o.key=p.key WHERE o.url IN ({marks})',
+            f'SELECT o.url,p.state,p.filename,{PROCESSABLE} AS pending '
+            f'FROM offers o JOIN pictures p ON o.key=p.key WHERE o.url IN ({marks})',
             list(urls),
         ).fetchall()
     ready = {r['url']: path for r in rows if r['state'] == 'ready' and (path := file_path(r['filename'] or ''))}
-    return ready, {r['url'] for r in rows if r['state'] == 'pending' and r['attempts'] < MAX_ATTEMPTS}
+    return ready, {r['url'] for r in rows if r['pending']}
 
 
 def file_path(name):
@@ -270,8 +277,8 @@ async def step():
         # Only the most urgent picture per provider: each provider gets at most one try per pass.
         jobs = conn.execute(
             'SELECT * FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY source ORDER BY priority DESC, seen DESC) AS n '
-            "FROM pictures WHERE state='pending' AND attempts<? AND next_at<=?) WHERE n=1 ORDER BY priority DESC, seen DESC",
-            (MAX_ATTEMPTS, now),
+            f'FROM pictures WHERE {PROCESSABLE} AND next_at<=?) WHERE n=1 ORDER BY priority DESC, seen DESC',
+            (now,),
         ).fetchall()
     for job in jobs:
         try:
@@ -288,11 +295,19 @@ async def step():
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            until = time.time() + 21600
             if isinstance(exc, ImageFailure) and exc.blocked:
+                # A refusal pauses the CDN and says nothing about the picture: it keeps its attempts.
                 until = cadence.outcome(job['source'], 'image', True, exc.retry_at)
+                with db() as conn:
+                    conn.execute('UPDATE pictures SET next_at=? WHERE key=?', (until, job['key']))
+                return
+            until = time.time() + 21600
             with db() as conn:
-                conn.execute('UPDATE pictures SET attempts=attempts+1,next_at=? WHERE key=?', (until, job['key']))
+                conn.execute(
+                    'UPDATE pictures SET attempts=attempts+1,next_at=?,'
+                    "state=CASE WHEN attempts+1>=? THEN 'exhausted' ELSE 'queued' END WHERE key=?",
+                    (until, MAX_ATTEMPTS, job['key']),
+                )
         return
 
 

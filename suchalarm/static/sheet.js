@@ -3,10 +3,11 @@
 
 import { dateText, decimal, district, euro, html, mapCoordinates, mapView, moveIn, raw } from './logic.js';
 import { $, bookmarkIcon, markOpened, safeImage, safeLink, short, sourceName } from './ui.js';
-import { api, message, refresh, state } from './page.js';
+import { api, formDraft, message, refresh, saveDraft, state } from './page.js';
 
 let open = null; // { search_id, url } of the flat in the sheet
 let copied = false; // the application text went to the portal: now the mark must not be forgotten
+const applicationDraft = formDraft($('application-text'));
 let shown = ''; // the sheet's markup: a refresh that changes nothing leaves the sheet alone
 const spots = new Map(); // URL -> {lat, lon, approx}, 'pending' or 'none'; looked up once per page load
 
@@ -262,6 +263,7 @@ function renderApplication({ o, saved }) {
   $('application-unmark').hidden = !applied;
   const empty = !$('application-text').value.trim();
   $('application-open').disabled = $('application-copy').disabled = $('application-template').disabled = empty;
+  $('application-template').disabled = empty || applicationDraft.current.busy;
 }
 
 // Returns whether the server took it.
@@ -304,6 +306,7 @@ $('detail').addEventListener('click', async e => {
   }
   if (what === 'apply') {
     copied = false;
+    applicationDraft.reset();
     $('application-text').value = state.template || '';
     $('application-feedback').textContent =
       'Der Versand passiert im Portal: Text kopieren, Inserat öffnen, dort einfügen.';
@@ -396,12 +399,25 @@ $('application-mark').addEventListener('click', () => mark(true));
 $('application-remind-mark').addEventListener('click', () => mark(true));
 $('application-unmark').addEventListener('click', () => mark(false));
 $('application-template').addEventListener('click', async () => {
+  const draft = applicationDraft.current;
+  if (draft.busy) return;
+  const text = $('application-text').value;
+  $('application-template').disabled = true;
   try {
-    await api('template', { method: 'PUT', body: JSON.stringify({ text: $('application-text').value }) });
-    await refresh();
-    $('application-feedback').textContent = 'Als Vorlage gespeichert.';
+    await saveDraft(
+      draft,
+      'template',
+      () => api('template', { method: 'PUT', body: JSON.stringify({ text }) }),
+      (_, unchanged) => {
+        if (applicationDraft.current === draft && unchanged)
+          $('application-feedback').textContent = 'Als Vorlage gespeichert.';
+      },
+    );
   } catch (err) {
-    message(err.message, true);
+    if (applicationDraft.current === draft) message(err.message, true);
+  } finally {
+    const flat = current();
+    if (flat) renderApplication(flat);
   }
 });
 $('application-text').addEventListener('input', () => {

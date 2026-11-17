@@ -17,7 +17,7 @@ from suchalarm import status, store, worker
 from suchalarm.core import browser, cadence, http
 from suchalarm.core.browser import Unreadable
 from suchalarm.models import TEMPLATE_CHARS
-from suchalarm.wohnung import catalog, details, domain, outbox, pages, portals, sources
+from suchalarm.wohnung import catalog, details, domain, outbox, pages, portals, sources, tables
 from suchalarm.wohnung import worker as flats
 from suchalarm.wohnung.domain import Listing, match, profile
 
@@ -239,12 +239,38 @@ class FilterTests(unittest.TestCase):
             self.assertEqual(match(flat(available_from=available), window)[0], expected)
 
     def test_town_only_search_drops_neighbouring_towns(self):
-        town = {**PROFILE, 'city': 'Darmstadt', 'exclusions': [], 'minArea': 0, 'minRooms': 1}
+        town = {
+            **PROFILE,
+            'city': 'Darmstadt',
+            'place': {'kind': 'city', 'label': 'Darmstadt', 'query': 'Darmstadt'},
+            'exclusions': [],
+            'minArea': 0,
+            'minRooms': 1,
+        }
         self.assertEqual(match(flat(place='64347 Griesheim'), town), ('excluded', ['Nicht in Darmstadt']))
         self.assertEqual(match(flat(place='64285 Darmstadt-Bessungen, Darmstadt'), town)[0], 'matched')
         self.assertEqual(match(flat(place='64347 Griesheim'), {**town, 'radius': 7})[0], 'matched')
         postcode = {**town, 'place': {'kind': 'plz', 'label': '64283 Darmstadt', 'query': '64283'}}
         self.assertEqual(match(flat(place='64285 Darmstadt'), postcode), ('excluded', ['Nicht in 64283']))
+
+    def test_inside_a_polygon_with_a_hole(self):
+        ring = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]]
+        hole = [[4.0, 4.0], [6.0, 4.0], [6.0, 6.0], [4.0, 6.0], [4.0, 4.0]]
+        area = {'type': 'MultiPolygon', 'coordinates': [[ring, hole]]}
+        self.assertTrue(domain.inside(area, 2, 2))
+        self.assertFalse(domain.inside(area, 5, 5))  # in the hole
+        self.assertFalse(domain.inside(area, 11, 5))
+
+    def test_a_district_search_keeps_its_towns(self):
+        town = {**PROFILE, 'city': 'Darmstadt-Dieburg', 'exclusions': [], 'minArea': 0, 'minRooms': 1}
+        for kind, label in (
+            ('district', 'Darmstadt-Dieburg'),
+            ('district', 'Darmstadt-Dieburg (Kreis)'),
+            ('city', 'Darmstadt-Dieburg (Kreis)'),
+        ):
+            with self.subTest(kind=kind, label=label):
+                district = {**town, 'place': {'kind': kind, 'label': label, 'query': 'Darmstadt-Dieburg'}}
+                self.assertEqual(match(flat(place='64807 Dieburg'), district)[0], 'matched')
 
     def test_a_postcode_search_judges_an_address_without_postcode_by_its_town(self):
         town = {**PROFILE, 'city': '64283', 'exclusions': [], 'minArea': 0, 'minRooms': 1}
@@ -477,6 +503,14 @@ class ParserTests(unittest.TestCase):
         )
         with self.assertRaises(RuntimeError):
             portals.kleinanzeigen_location({'_0': 'Deutschland'}, 'Xyz')
+        # Kleinanzeigen lists no districts; its first suggestion is another place (live 17.11.2026).
+        district = {'_0': 'Deutschland', '_4888': 'Darmstadt - Hessen', '_24053': 'Darme - Lingen (Ems)'}
+        self.assertIsNone(portals.kleinanzeigen_location(district, 'Darmstadt-Dieburg', exact=True))
+        self.assertEqual(portals.kleinanzeigen_location(district, 'Darmstadt-Dieburg'), '4888')  # a town: fuzzy
+        self.assertEqual(
+            portals.kleinanzeigen_location({'_0': 'Deutschland', '_4496': 'Dieburg - Hessen'}, 'Dieburg', exact=True),
+            '4496',
+        )
 
     def test_kleinanzeigen_search_url(self):
         swaps = {**PROFILE, 'radius': 10, 'minArea': 50, 'minRooms': 2.5, 'exclusions': ['Tauschwohnung']}
@@ -882,6 +916,56 @@ class PlaceTests(TempData):
         self.assertEqual(len(sources.select(stock, around)), 2)  # Mühltal is 6 km from the centre
         postcode = self.stored_search(query='64367', sources=['bauverein'])
         self.assertEqual([x.place for x in sources.select(stock, postcode)], ['Bruchmühlenweg 8, 64367 Mühltal'])
+
+    def test_a_district_places_a_whole_stock_by_its_outline(self):
+        district = self.stored_search(
+            query='Darmstadt-Dieburg (Kreis)',
+            sources=['nhw', 'immoscout24'],
+            filters={
+                'min_area': 0, 'min_rooms': 1, 'exclusions': [],
+                'place': {'kind': 'district', 'label': 'Darmstadt-Dieburg (Kreis)', 'query': 'Darmstadt-Dieburg'},
+            },
+        )  # fmt: skip
+        dieburg = flat(source='nhw', url='https://nhw/1', place='64807 Dieburg', lat=49.90, lon=8.84)
+        kassel = flat(source='nhw', url='https://nhw/2', place='34117 Kassel', lat=51.31, lon=9.49)
+        unplaced = flat(source='nhw', url='https://nhw/3', place='Dieburg')
+        portal = flat(source='immoscout24', url='https://is24/1', place='64807 Dieburg')
+        stock = [dieburg, kassel, unplaced, portal]
+        self.assertEqual(sources.select(stock, district), [portal])  # outline not looked up yet: stock stays out
+        # ... and the source waits, so an empty stock never becomes the search's starting point.
+        self.assertEqual(sources.out_of_area(district, 'nhw'), 'Wartet auf den Umriss des Kreises')
+        cadence.save_location('osm-area', 'darmstadt-dieburg', 'null')
+        self.assertEqual(sources.out_of_area(district, 'nhw'), 'Kreis auf der Karte nicht gefunden')
+        square = {'type': 'Polygon', 'coordinates': [[[8.6, 49.7], [9.0, 49.7], [9.0, 50.0], [8.6, 50.0], [8.6, 49.7]]]}
+        cadence.save_location('osm-area', 'darmstadt-dieburg', json.dumps(square))
+        self.assertEqual(sources.select(stock, district), [dieburg, portal])
+        self.assertTrue(sources.needs_district_area(district))
+        self.assertIsNone(sources.out_of_area(district, 'nhw'))  # the outline is known
+        self.assertFalse(sources.needs_district_area(dict(district, radius=10)))
+
+    def test_an_older_district_search_takes_its_whole_stock_in_anew(self):
+        place = {'kind': 'city', 'label': 'Darmstadt-Dieburg (Kreis)', 'query': 'Darmstadt-Dieburg'}
+        district = self.stored_search(query='Darmstadt-Dieburg (Kreis)', sources=['nhw', 'immoscout24'],
+                                      filters={'min_area': 0, 'min_rooms': 1, 'exclusions': [], 'place': place})  # fmt: skip
+        town = self.stored_search(query='Darmstadt', sources=['nhw'])
+        for search_id in (district['id'], town['id']):
+            pages.save_result(store.search(search_id), 'nhw', [], 0, time.time())  # the empty first result
+        pages.save_result(district, 'immoscout24', [], 0, time.time())
+        with store.db() as conn:
+            conn.execute(f'PRAGMA wohnung.user_version={len(tables.MIGRATIONS) - 1}')
+        store.init()
+        with store.db() as conn:
+            self.assertFalse(status.started(conn, district['id'], 'nhw'))  # starts over with its stock
+            self.assertTrue(status.started(conn, district['id'], 'immoscout24'))
+            self.assertTrue(status.started(conn, town['id'], 'nhw'))
+
+    def test_a_place_a_portal_does_not_know_rests_the_source(self):
+        flat_search = self.stored_search(query='Darmstadt-Dieburg', sources=['immowelt', 'kleinanzeigen-wohnung'])
+        for source, key in (('immowelt', 'immowelt'), ('kleinanzeigen-wohnung', 'kleinanzeigen')):
+            with self.subTest(source=source):
+                self.assertIsNone(sources.out_of_area(flat_search, source))
+                cadence.save_location(key, 'darmstadt-dieburg', sources.UNKNOWN_PLACE)
+                self.assertEqual(sources.out_of_area(flat_search, source), 'Kennt diesen Ort nicht')
 
     def test_a_radius_search_without_a_position_goes_by_the_town(self):
         """Distance only where the centre and the flat's spot are known; else the town decides, so a landlord's
@@ -1333,7 +1417,7 @@ class FieldWarningTests(TempData):
         pages.save_result(flat_search, 'immoscout24', [], 0, time.time())
         with store.db() as conn:
             conn.execute('ALTER TABLE source_status DROP COLUMN warning')
-            conn.execute(f'PRAGMA user_version={len(store.MIGRATIONS) - 1}')
+            conn.execute(f'PRAGMA user_version={store.MIGRATIONS.index(store._add_status_warning)}')
         store.init()
         store.init()  # migrations also remain safe on the next startup
         with store.db() as conn:
@@ -2046,9 +2130,25 @@ class ApiAndMailTests(TempData):
         bad = self.client.post('/api/searches', json=dict(payload, picked=dict(pick, geopath='https://evil')))
         self.assertEqual(bad.status_code, 422)
 
+    def test_a_picked_district_keeps_its_kind(self):
+        pick = {
+            'kind': 'district',
+            'label': 'Darmstadt-Dieburg (Kreis)',
+            'query': 'Darmstadt-Dieburg',
+            'geopath': '/de/hessen/darmstadt-dieburg-kreis',
+        }
+        self.assertEqual(self.create(query=pick['label'], picked=pick)['filters']['place'], pick)
+
     def test_place_suggestions_are_cached_and_spaced(self):
         entries = [
             {'entity': {'type': 'city', 'label': 'Darmstadt', 'geopath': {'uri': '/de/hessen/darmstadt?x=1'}}},
+            {
+                'entity': {
+                    'type': 'district',
+                    'label': 'Darmstadt-Dieburg (Kreis)',
+                    'geopath': {'uri': '/de/hessen/darmstadt-dieburg-kreis'},
+                }
+            },
             {'entity': {'type': 'postcode', 'label': '64283 Darmstadt - Bessungen'}},
             {'entity': {'type': 'postcode', 'label': '64283 Darmstadt - Mitte'}},
             {'entity': {'type': 'quarter', 'label': 'Bessungen'}},
@@ -2062,7 +2162,11 @@ class ApiAndMailTests(TempData):
             )  # spaced: ask again later
         self.assertEqual(
             [(x['kind'], x['label'], x['query'], x['geopath']) for x in first],
-            [('city', 'Darmstadt', 'Darmstadt', '/de/hessen/darmstadt'), ('plz', '64283 Darmstadt', '64283', None)],
+            [
+                ('city', 'Darmstadt', 'Darmstadt', '/de/hessen/darmstadt'),
+                ('district', 'Darmstadt-Dieburg (Kreis)', 'Darmstadt-Dieburg', '/de/hessen/darmstadt-dieburg-kreis'),
+                ('plz', '64283 Darmstadt', '64283', None),
+            ],
         )
         self.assertEqual(download.call_count, 1)
         self.assertEqual(self.client.get('/api/places', params={'q': 'Da'}).json(), [])
@@ -2205,7 +2309,10 @@ class ApiAndMailTests(TempData):
         outbox.queue_mails()
         self.assertEqual(self.queued(), ['2'])
         with store.db() as conn:  # the mail went out
-            conn.execute('INSERT INTO notifications SELECT search_id, url, price, ? FROM outbox', (time.time() - 30,))
+            conn.execute(
+                'INSERT INTO notifications(search_id,url,price,sent_at) SELECT search_id, url, price, ? FROM outbox',
+                (time.time() - 30,),
+            )
             conn.execute('DELETE FROM outbox')
         pages.save_result(flat_search, 'immoscout24', dear, len(dear), time.time())
         outbox.queue_mails()
