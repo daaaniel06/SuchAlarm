@@ -394,6 +394,41 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(states, {'a@example.com': 'accepted', 'b@example.com': 'accepted', 'c@example.com': 'refused'})
         self.assertIsNone(kept)  # the stored mail goes once nobody waits for it
 
+    async def refused_for_now(self):
+        self.setting('recipients', '["a@example.com","b@example.com"]')
+        await self.found(self.offer)
+        with patch('suchalarm.mailer.deliver', return_value={'b@example.com': 451}):
+            await worker.send_digest()
+
+    def delivery(self, address):
+        with store.db() as conn:
+            return conn.execute('SELECT status FROM deliveries WHERE address=?', (address,)).fetchone()[0]
+
+    async def test_a_restart_during_a_retry_never_sends_it_again(self):
+        await self.refused_for_now()
+        with store.db() as conn:
+            conn.execute("UPDATE deliveries SET status='sending' WHERE address='b@example.com'")
+        store.init()
+        self.assertEqual(self.delivery('b@example.com'), 'uncertain')
+        with patch('suchalarm.mailer.deliver', return_value={}) as deliver:
+            await worker.send_digest(time.time() + 86400)
+        deliver.assert_not_called()
+
+    async def test_a_removed_recipient_gets_no_retry(self):
+        await self.refused_for_now()
+        self.setting('recipients', '["a@example.com"]')
+        with patch('suchalarm.mailer.deliver', return_value={}) as deliver:
+            await worker.send_digest(time.time() + worker.RECIPIENT_RETRY + 1)
+        deliver.assert_not_called()
+        self.assertEqual(self.delivery('b@example.com'), 'cancelled')
+
+    async def test_a_retry_refused_for_good_stops(self):
+        await self.refused_for_now()
+        refusal = smtplib.SMTPRecipientsRefused({'b@example.com': (550, b'no such user')})
+        with patch('suchalarm.mailer.deliver', side_effect=mailer._explain(refusal, True)):
+            await worker.send_digest(time.time() + worker.RECIPIENT_RETRY + 1)
+        self.assertEqual(self.delivery('b@example.com'), 'refused')
+
     async def test_a_failed_mail_of_one_kind_does_not_pause_the_other(self):
         with store.db() as conn:
             conn.execute(
@@ -824,6 +859,13 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(f'{name}.db', manifest['files'], name)
             self.assertTrue((generation / f'{name}.db').exists(), name)
         self.assertFalse(list(backups.glob('*.tmp')))
+
+    def test_backups_from_before_generations_stay_until_enough_generations_replace_them(self):
+        backups = store.db_path().parent / 'backups'
+        backups.mkdir(exist_ok=True)
+        (backups / 'suchalarm-2026-01-01.db').write_bytes(b'')
+        store.backup(keep=7)
+        self.assertTrue((backups / 'suchalarm-2026-01-01.db').exists())
 
     def test_backup_keeps_complete_generations_only(self):
         backups = store.db_path().parent / 'backups'

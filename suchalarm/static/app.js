@@ -156,6 +156,8 @@ async function setPaused(paused) {
     await saveDraft(pauseDraft, 'settings', () => api('settings', { method: 'PUT', body: JSON.stringify({ paused }) }));
     render();
   } catch (err) {
+    // The switch must show what the server does, not what was asked for.
+    pauseDraft.discard();
     message(err.message, true);
     render();
   }

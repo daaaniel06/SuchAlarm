@@ -345,6 +345,7 @@ def _recover_interrupted_delivery(conn):
         "UPDATE batches SET status='unknown', error='Server wurde während des Versands neu gestartet.' "
         "WHERE status='sending'"
     )
+    conn.execute("UPDATE deliveries SET status='uncertain' WHERE status='sending'")  # a retry cut off the same way
 
 
 def init():
@@ -634,6 +635,7 @@ def backup(keep=7):
     generations = sorted(p for p in root.iterdir() if p.is_dir() and (p / 'manifest.json').exists())
     for old in generations[:-keep]:
         shutil.rmtree(old)
-    for old in root.glob('*-????-??-??.db'):
-        old.unlink()  # single files from before generations; the first generation replaces them
+    if len(generations) >= keep:
+        for old in root.glob('*-????-??-??.db'):
+            old.unlink()  # single files from before generations, kept until as many generations replace them
     return final

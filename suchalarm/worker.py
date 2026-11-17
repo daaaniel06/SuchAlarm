@@ -14,7 +14,7 @@ import uuid
 from contextlib import suppress
 from dataclasses import dataclass
 
-from . import mailer, mailserver, scheduler, status, store
+from . import kinds, mailer, mailserver, scheduler, status, store
 from .core import cadence, images
 from .kinds import KINDS
 
@@ -225,12 +225,24 @@ async def _retry_recipients(now):
     """The mail once more to an address its server refused for now (4xx), to that address alone."""
     with store.db() as conn:
         row = conn.execute(
-            'SELECT d.batch, d.address, d.attempts, b.message FROM deliveries d JOIN batches b ON b.id=d.batch '
+            'SELECT d.batch, d.address, d.attempts, b.message, b.kind FROM deliveries d JOIN batches b ON b.id=d.batch '
             "WHERE d.status='retry' AND d.next_at<=? AND b.message IS NOT NULL ORDER BY d.next_at LIMIT 1",
             (now,),
         ).fetchone()
-    if row is None:
-        return
+        if row is None:
+            return
+        mail = store.mail_settings(kind=row['kind'] or kinds.DEFAULT)
+        if not mail['enabled'] or row['address'] not in mail['recipients']:
+            # Taken out of the recipients, or the kind's mails were switched off since: no more tries.
+            conn.execute(
+                "UPDATE deliveries SET status='cancelled' WHERE batch=? AND address=?", (row['batch'], row['address'])
+            )
+            _drop_kept_mail(conn, row['batch'])
+            return
+        # Marked before the handover: a restart in between counts as uncertain, never as a reason to send again.
+        conn.execute(
+            "UPDATE deliveries SET status='sending' WHERE batch=? AND address=?", (row['batch'], row['address'])
+        )
     message = email.message_from_bytes(row['message'], policy=email.policy.default)
     del message['To']
     message['To'] = row['address']
@@ -240,7 +252,11 @@ async def _retry_recipients(now):
         code = refused.get(row['address'])
         status = 'accepted' if code is None else ('refused' if code >= 500 else 'retry')
     except mailer.DeliveryError as exc:
-        code, status = None, 'uncertain' if exc.maybe_sent else 'retry'
+        code = exc.refused.get(row['address'])
+        if code is not None:  # the one recipient refused: its code decides, as above
+            status = 'refused' if code >= 500 else 'retry'
+        else:
+            status = 'uncertain' if exc.maybe_sent else 'retry'
     if status == 'retry' and attempts >= RECIPIENT_ATTEMPTS:
         status = 'failed'
     with store.db() as conn:
@@ -252,8 +268,13 @@ async def _retry_recipients(now):
             store.put_setting(
                 conn, 'mail_error', f'{row["address"]} hat die Mail auch nach {attempts} Versuchen nicht angenommen.'
             )
-        if not conn.execute("SELECT 1 FROM deliveries WHERE batch=? AND status='retry'", (row['batch'],)).fetchone():
-            conn.execute('UPDATE batches SET message=NULL WHERE id=?', (row['batch'],))
+        _drop_kept_mail(conn, row['batch'])
+
+
+def _drop_kept_mail(conn, batch):
+    """The kept mail goes once no recipient waits for another try."""
+    if not conn.execute("SELECT 1 FROM deliveries WHERE batch=? AND status='retry'", (batch,)).fetchone():
+        conn.execute('UPDATE batches SET message=NULL WHERE id=?', (batch,))
 
 
 async def _send_kind(kind, now):

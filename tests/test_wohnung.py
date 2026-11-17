@@ -932,10 +932,15 @@ class PlaceTests(TempData):
         portal = flat(source='immoscout24', url='https://is24/1', place='64807 Dieburg')
         stock = [dieburg, kassel, unplaced, portal]
         self.assertEqual(sources.select(stock, district), [portal])  # outline not looked up yet: stock stays out
+        # ... and the source waits, so an empty stock never becomes the search's starting point.
+        self.assertEqual(sources.out_of_area(district, 'nhw'), 'Wartet auf den Umriss des Kreises')
+        cadence.save_location('osm-area', 'darmstadt-dieburg', 'null')
+        self.assertEqual(sources.out_of_area(district, 'nhw'), 'Kreis auf der Karte nicht gefunden')
         square = {'type': 'Polygon', 'coordinates': [[[8.6, 49.7], [9.0, 49.7], [9.0, 50.0], [8.6, 50.0], [8.6, 49.7]]]}
         cadence.save_location('osm-area', 'darmstadt-dieburg', json.dumps(square))
         self.assertEqual(sources.select(stock, district), [dieburg, portal])
         self.assertTrue(sources.needs_district_area(district))
+        self.assertIsNone(sources.out_of_area(district, 'nhw'))  # the outline is known
         self.assertFalse(sources.needs_district_area(dict(district, radius=10)))
 
     def test_a_place_a_portal_does_not_know_rests_the_source(self):

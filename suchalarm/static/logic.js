@@ -306,6 +306,10 @@ export function createDraft() {
     get busy() {
       return pending.size > 0;
     },
+    // Give the field back to the server's value (a refused save of a switch that must not show a wish).
+    discard() {
+      saved = version;
+    },
     save(write) {
       const sent = version;
       if (pending.has(sent)) return pending.get(sent);

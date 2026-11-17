@@ -24,9 +24,10 @@ log = logging.getLogger('suchalarm')
 class DeliveryError(Exception):
     """A short German reason, never secrets. maybe_sent: the server may have accepted it; never resend."""
 
-    def __init__(self, message, maybe_sent):
+    def __init__(self, message, maybe_sent, refused=None):
         super().__init__(message)
         self.maybe_sent = maybe_sent
+        self.refused = refused or {}  # address -> SMTP code when the server refused every recipient
 
 
 UNREACHABLE = 'Mailserver nicht erreichbar – Host und Port prüfen.'
@@ -50,6 +51,9 @@ def _usable_server():
 
 def _explain(error, sending):
     """A DeliveryError for any failure; once the message was being handed over it may have arrived."""
+    if isinstance(error, smtplib.SMTPRecipientsRefused):
+        codes = {address: answer[0] for address, answer in error.recipients.items()}
+        return DeliveryError('Der Mailserver lehnt die Empfängeradresse ab.', False, codes)
     for kind, text in REFUSALS:
         if isinstance(error, kind):
             return DeliveryError(text, False)

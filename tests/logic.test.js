@@ -348,3 +348,11 @@ test('formDraft captures edits before saving and isolates reopened dialogs', asy
   await write;
   assert.equal(form.current.protected, false);
 });
+
+test('a discarded draft gives the field back to the server', () => {
+  const draft = logic.createDraft();
+  draft.edit();
+  assert.equal(draft.protected, true);
+  draft.discard();
+  assert.equal(draft.protected, false);
+});

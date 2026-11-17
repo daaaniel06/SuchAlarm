@@ -205,6 +205,14 @@ def out_of_area(search, source):
                     'kleinanzeigen-wohnung': 'kleinanzeigen'}  # fmt: skip
     if source in looked_up_as and cadence.location(looked_up_as[source], _key(place_query(p))) == UNKNOWN_PLACE:
         return 'Kennt diesen Ort nicht'
+    if source in WHOLE_STOCK and needs_district_area(search):
+        # Without the outline every flat of the stock would be left out, and that empty result would become the
+        # search's starting stock: the flats then found would be mailed as new. The source waits instead.
+        outline = cadence.location('osm-area', _key(place_query(p)))
+        if outline is None:
+            return 'Wartet auf den Umriss des Kreises'
+        if json.loads(outline) is None:
+            return 'Kreis auf der Karte nicht gefunden'
     known = cadence.location('osm', _key(place_query(p)))
     if known and source == 'bauverein':
         lat, lon, _ = json.loads(known)
