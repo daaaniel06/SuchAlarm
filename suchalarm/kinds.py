@@ -90,3 +90,8 @@ ROUTERS = (preis_api.ROUTER, wohnung_api.ROUTER)
 def of(search):
     """The kind module of a search."""
     return KINDS[search.get('kind') or DEFAULT]
+
+
+def source_label(source):
+    """How the app names a source ("Kleinanzeigen", "idealo · Shops"); its ID if no kind knows it."""
+    return next((kind.SOURCES[source] for kind in KINDS.values() if source in kind.SOURCES), source)

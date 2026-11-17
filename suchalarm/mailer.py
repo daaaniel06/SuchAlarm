@@ -263,6 +263,21 @@ def jpeg(path):
         return None
 
 
+def warning_message(recipients, warnings):
+    """A plain mail about sources that answer but look broken; WARNINGS: (search query, source, warning)."""
+    message = EmailMessage()
+    message['To'] = ', '.join(recipients)
+    message['Subject'] = f'Suchalarm: {len(warnings)} Quelle{"n" if len(warnings) != 1 else ""} auffällig'
+    lines = [f'Suche „{query}“ · {kinds.source_label(source)}: {warning}' for query, source, warning in warnings]
+    message.set_content(
+        'Diese Quellen antworten, liefern aber auffällig wenig oder unvollständige Angebote. Vermutlich hat der '
+        'Anbieter seine Seite umgebaut; bis das behoben ist, können Treffer fehlen.\n\n'
+        + '\n'.join(lines)
+        + f'\n\n{maillinks.app_url()}'.rstrip()
+    )
+    return message
+
+
 def test_message(recipients, entries, batch):
     """Proves delivery; with current matches it shows the real layout."""
     if entries:

@@ -5,6 +5,7 @@ is never sent again. The worker (worker.py) calls send_digest() once per pass.""
 import asyncio
 import email
 import email.policy
+import json
 import logging
 import time
 import uuid
@@ -175,6 +176,42 @@ async def send_digest(now=None):
     for kind in KINDS:
         await _send_kind(kind, now)
     await _retry_recipients(now)
+    await _send_warnings(now)
+
+
+WARNING_AGAIN = 24 * 3600  # the same layout warning of a search's source is mailed at most once a day
+
+
+async def _send_warnings(now):
+    """One short mail when sources look broken although they answered: a layout hint (fields missing on nearly
+    every card) or a sudden drop against what they usually bring (status._drop_warning). Shown in the app too;
+    the mail is for the days nobody looks. Only searches whose kind sends mails; marked as sent only once the
+    server took it, so a failed attempt is tried again."""
+    with store.db() as conn:
+        rows = conn.execute(
+            'SELECT s.search_id, s.source, s.warning, q.query, q.kind FROM source_status s '
+            'JOIN searches q ON q.id=s.search_id WHERE s.warning IS NOT NULL AND s.error IS NULL AND q.active=1'
+        ).fetchall()
+    sent = json.loads(store.settings().get('warnings_mailed', '{}'))
+    sent = {key: at for key, at in sent.items() if at > now - WARNING_AGAIN}
+    due = [
+        row
+        for row in rows
+        if f'{row["search_id"]}:{row["source"]}:{row["warning"]}' not in sent
+        and store.mail_settings(kind=row['kind'] or kinds.DEFAULT)['enabled']
+    ]
+    recipients = store.mail_settings()['recipients']
+    if not due or not recipients:
+        return
+    message = mailer.warning_message(recipients, [(row['query'], row['source'], row['warning']) for row in due])
+    try:
+        await asyncio.to_thread(mailer.deliver, message)
+    except mailer.DeliveryError as exc:
+        log.warning('Source warning mail not sent (%s)', exc)
+        return
+    sent.update({f'{row["search_id"]}:{row["source"]}:{row["warning"]}': now for row in due})
+    with store.db() as conn:
+        store.put_setting(conn, 'warnings_mailed', json.dumps(sent))
 
 
 async def _retry_recipients(now):

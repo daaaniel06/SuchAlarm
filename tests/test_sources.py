@@ -199,6 +199,19 @@ class SourceLoadingTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AvailabilityTests(unittest.TestCase):
+    def test_cards_whose_link_names_the_search_but_not_their_title_are_a_layout_change(self):
+        # Vinted, 17.11.2026: the card title had become the brand alone; every card failed the title check.
+        cards = [
+            dict(title='Nintendo', url=f'https://www.vinted.de/items/{n}-nintendo-switch-oled-weiss', price='150,00 €')
+            for n in range(10)
+        ]
+        self.assertTrue(sources.titles_lost('vinted', cards, 'Nintendo Switch OLED'))
+        self.assertFalse(sources.titles_lost('vinted', cards[:4], 'Nintendo Switch OLED'))  # too few to tell
+        titled = [dict(card, title='Nintendo Switch OLED weiß') for card in cards]
+        self.assertFalse(sources.titles_lost('vinted', titled, 'Nintendo Switch OLED'))
+        other = [dict(card, url=card['url'].replace('nintendo-switch-oled', 'halterung')) for card in cards]
+        self.assertFalse(sources.titles_lost('vinted', other, 'Nintendo Switch OLED'))  # simply other items
+
     def test_price_is_the_amount_next_to_the_euro_mark(self):
         self.assertEqual(sources.row_price({'price': 'US $20.00 (EUR 18,50)'}), 1850)
         self.assertEqual(sources.row_price({'price': '1.299 € VB'}), 129900)

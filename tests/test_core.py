@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from suchalarm import backups, digest, mailer, mailserver, migrations, scheduler, store, worker
+from suchalarm import backups, digest, mailer, mailserver, migrations, scheduler, status, store, worker
 from suchalarm.app import app, create, delete, update
 from suchalarm.core import browser, cadence, http, images
 from suchalarm.kinds import KINDS
@@ -42,9 +42,9 @@ def without_smtp_env():
 
 class DomainTests(unittest.TestCase):
     def test_browser_404_is_a_deleted_page_like_over_http(self):
-        for status in (404, 410):
+        for code in (404, 410):
             with self.assertRaises(http.NotFound):
-                browser.check_response(SimpleNamespace(status=status))
+                browser.check_response(SimpleNamespace(status=code))
         with self.assertRaises(RuntimeError) as other:
             browser.check_response(SimpleNamespace(status=500))
         self.assertNotIsInstance(other.exception, http.NotFound)
@@ -425,6 +425,52 @@ class WorkerTests(AsyncTempDataTest):
         with patch('suchalarm.mailer.deliver', side_effect=mailer._explain(refusal, True)):
             await digest.send_digest(time.time() + digest.RECIPIENT_RETRY + 1)
         self.assertEqual(self.delivery('b@example.com'), 'refused')
+
+    def results(self, *counts, start=1000):
+        with store.db() as conn:
+            for n, count in enumerate(counts):
+                status.source_ok(conn, 1, 'ebay', start + n, count)
+            return status.of(conn, 1, 'ebay')['warning']
+
+    def test_a_sudden_drop_against_the_usual_count_is_a_warning(self):
+        self.assertIsNone(self.results(30, 30, 30, 0))  # too little history to tell
+        self.assertIsNone(self.results(28, 31, 30, start=2000))  # the odd zero does not move the median
+        warning = self.results(0, start=3000)
+        self.assertEqual(warning, status.DROP_WARNING.format(count=0, usual=30))
+        self.assertIsNone(self.results(9, start=4000))  # 9 of about 30 is a dip, not a broken page
+
+    def test_a_search_that_usually_finds_little_never_warns(self):
+        self.assertIsNone(self.results(3, 4, 2, 5, 3, 0))
+
+    def test_an_edit_forgets_the_usual_count(self):
+        self.results(30, 30, 30, 30, 30)
+        with store.db() as conn:
+            status.forget(conn, 1, ['ebay'])
+        self.assertIsNone(self.results(0, start=5000))
+
+    async def test_a_source_warning_is_mailed_once_a_day(self):
+        with store.db() as conn:
+            status.source_ok(conn, 1, 'ebay', time.time(), 0, warning='Liefert nur 0 statt sonst etwa 30 Angebote')
+        with patch('suchalarm.mailer.deliver', side_effect=mailer.DeliveryError('weg', False)):
+            await digest.send_digest()  # not taken: tried again on the next pass
+        with patch('suchalarm.mailer.deliver', return_value={}) as deliver:
+            await digest.send_digest()
+            await digest.send_digest()
+        deliver.assert_called_once()
+        mail = deliver.call_args.args[0]
+        self.assertEqual(mail['Subject'], 'Suchalarm: 1 Quelle auffällig')
+        self.assertIn('Suche „Spiel“ · eBay: Liefert nur 0', mail.get_content())
+        with patch('suchalarm.mailer.deliver', return_value={}) as deliver:
+            await digest.send_digest(time.time() + digest.WARNING_AGAIN + 1)
+        deliver.assert_called_once()
+
+    async def test_no_source_warning_mail_while_the_kinds_mails_are_off(self):
+        self.setting('mail_enabled', '0')
+        with store.db() as conn:
+            status.source_ok(conn, 1, 'ebay', time.time(), 0, warning='Seitenaufbau geändert?')
+        with patch('suchalarm.mailer.deliver', return_value={}) as deliver:
+            await digest.send_digest()
+        deliver.assert_not_called()
 
     async def test_a_failed_mail_of_one_kind_does_not_pause_the_other(self):
         with store.db() as conn:

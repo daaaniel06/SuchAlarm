@@ -195,6 +195,15 @@ def _add_report_reason(conn):
         conn.execute('ALTER TABLE notifications ADD COLUMN reason TEXT')
 
 
+def _add_source_history(conn):
+    """How many offers each successful result of a source brought, the latest few per search (status.py)."""
+    conn.execute(
+        'CREATE TABLE IF NOT EXISTS source_history (search_id INTEGER REFERENCES searches(id) ON DELETE CASCADE, '
+        'source TEXT NOT NULL, checked_at REAL NOT NULL, count INTEGER NOT NULL)'
+    )
+    conn.execute('CREATE INDEX IF NOT EXISTS source_history_search ON source_history(search_id, source, checked_at)')
+
+
 # Each entry runs once; PRAGMA user_version counts the applied ones. Only ever append.
 MIGRATIONS = (
     _migrate_legacy,
@@ -215,6 +224,7 @@ MIGRATIONS = (
     _add_status_warning,
     _add_report_reason,
     _add_deliveries,
+    _add_source_history,
 )
 
 
