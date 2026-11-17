@@ -72,7 +72,8 @@ function showPlaces(list) {
           aria-selected="${i === highlight}"
           data-place="${i}"
         >
-          <span>${o.label}</span><small>${o.kind === 'plz' ? 'Postleitzahl' : 'Stadt / Kreis'}</small>
+          <span>${o.label}</span
+          ><small>${o.kind === 'plz' ? 'Postleitzahl' : o.kind === 'district' ? 'Kreis' : 'Stadt'}</small>
         </button>`,
     )
     .join('');

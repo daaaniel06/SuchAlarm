@@ -376,6 +376,13 @@ def home_town(profile):
 DISTRICT = re.compile(r'\(Kreis\)\s*$')  # how ImmoScout24's place suggestions name a district
 
 
+def is_district(place):
+    """Districts have their own kind; older searches stored them as cities with a label suffix."""
+    return place.get('kind') == 'district' or (
+        place.get('kind') == 'city' and DISTRICT.search(place.get('label') or '') is not None
+    )
+
+
 def home_area(profile):
     """The town (or postcode) a search without radius is limited to."""
     query = place_query(profile)
@@ -388,7 +395,7 @@ def outside_home(listing, profile):
     An address without postcode (NHW names only the town) is judged by the postcode's town: the
     postcode cannot be told, and a flat must not get lost over it."""
     where = listing.place
-    if profile.get('radius') or not where or DISTRICT.search((profile.get('place') or {}).get('label') or ''):
+    if profile.get('radius') or not where or is_district(profile.get('place') or {}):
         return False  # a district ("Darmstadt-Dieburg (Kreis)") has many towns; its name says none of them
     area = home_area(profile)
     if POSTCODE.fullmatch(area) and not POSTCODE.search(where):

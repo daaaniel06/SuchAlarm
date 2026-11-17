@@ -239,7 +239,14 @@ class FilterTests(unittest.TestCase):
             self.assertEqual(match(flat(available_from=available), window)[0], expected)
 
     def test_town_only_search_drops_neighbouring_towns(self):
-        town = {**PROFILE, 'city': 'Darmstadt', 'exclusions': [], 'minArea': 0, 'minRooms': 1}
+        town = {
+            **PROFILE,
+            'city': 'Darmstadt',
+            'place': {'kind': 'city', 'label': 'Darmstadt', 'query': 'Darmstadt'},
+            'exclusions': [],
+            'minArea': 0,
+            'minRooms': 1,
+        }
         self.assertEqual(match(flat(place='64347 Griesheim'), town), ('excluded', ['Nicht in Darmstadt']))
         self.assertEqual(match(flat(place='64285 Darmstadt-Bessungen, Darmstadt'), town)[0], 'matched')
         self.assertEqual(match(flat(place='64347 Griesheim'), {**town, 'radius': 7})[0], 'matched')
@@ -248,11 +255,14 @@ class FilterTests(unittest.TestCase):
 
     def test_a_district_search_keeps_its_towns(self):
         town = {**PROFILE, 'city': 'Darmstadt-Dieburg', 'exclusions': [], 'minArea': 0, 'minRooms': 1}
-        district = {
-            **town,
-            'place': {'kind': 'city', 'label': 'Darmstadt-Dieburg (Kreis)', 'query': 'Darmstadt-Dieburg'},
-        }
-        self.assertEqual(match(flat(place='64807 Dieburg'), district)[0], 'matched')
+        for kind, label in (
+            ('district', 'Darmstadt-Dieburg'),
+            ('district', 'Darmstadt-Dieburg (Kreis)'),
+            ('city', 'Darmstadt-Dieburg (Kreis)'),
+        ):
+            with self.subTest(kind=kind, label=label):
+                district = {**town, 'place': {'kind': kind, 'label': label, 'query': 'Darmstadt-Dieburg'}}
+                self.assertEqual(match(flat(place='64807 Dieburg'), district)[0], 'matched')
 
     def test_a_postcode_search_judges_an_address_without_postcode_by_its_town(self):
         town = {**PROFILE, 'city': '64283', 'exclusions': [], 'minArea': 0, 'minRooms': 1}
@@ -2054,9 +2064,25 @@ class ApiAndMailTests(TempData):
         bad = self.client.post('/api/searches', json=dict(payload, picked=dict(pick, geopath='https://evil')))
         self.assertEqual(bad.status_code, 422)
 
+    def test_a_picked_district_keeps_its_kind(self):
+        pick = {
+            'kind': 'district',
+            'label': 'Darmstadt-Dieburg (Kreis)',
+            'query': 'Darmstadt-Dieburg',
+            'geopath': '/de/hessen/darmstadt-dieburg-kreis',
+        }
+        self.assertEqual(self.create(query=pick['label'], picked=pick)['filters']['place'], pick)
+
     def test_place_suggestions_are_cached_and_spaced(self):
         entries = [
             {'entity': {'type': 'city', 'label': 'Darmstadt', 'geopath': {'uri': '/de/hessen/darmstadt?x=1'}}},
+            {
+                'entity': {
+                    'type': 'district',
+                    'label': 'Darmstadt-Dieburg (Kreis)',
+                    'geopath': {'uri': '/de/hessen/darmstadt-dieburg-kreis'},
+                }
+            },
             {'entity': {'type': 'postcode', 'label': '64283 Darmstadt - Bessungen'}},
             {'entity': {'type': 'postcode', 'label': '64283 Darmstadt - Mitte'}},
             {'entity': {'type': 'quarter', 'label': 'Bessungen'}},
@@ -2070,7 +2096,11 @@ class ApiAndMailTests(TempData):
             )  # spaced: ask again later
         self.assertEqual(
             [(x['kind'], x['label'], x['query'], x['geopath']) for x in first],
-            [('city', 'Darmstadt', 'Darmstadt', '/de/hessen/darmstadt'), ('plz', '64283 Darmstadt', '64283', None)],
+            [
+                ('city', 'Darmstadt', 'Darmstadt', '/de/hessen/darmstadt'),
+                ('district', 'Darmstadt-Dieburg (Kreis)', 'Darmstadt-Dieburg', '/de/hessen/darmstadt-dieburg-kreis'),
+                ('plz', '64283 Darmstadt', '64283', None),
+            ],
         )
         self.assertEqual(download.call_count, 1)
         self.assertEqual(self.client.get('/api/places', params={'q': 'Da'}).json(), [])
