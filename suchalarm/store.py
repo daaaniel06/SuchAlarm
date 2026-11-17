@@ -8,6 +8,7 @@ covers all. Request budgets, the page cache and the queue live in cadence.db, th
 import json
 import os
 import secrets
+import shutil
 import sqlite3
 import threading
 import time
@@ -595,21 +596,44 @@ def mail_server(values=None):
     return {**MAIL_SERVER_DEFAULT, **json.loads(values.get('mail_server', '{}'))}
 
 
+# Files a generation holds besides suchalarm.db and the kinds' files: cadence.db keeps provider pauses, place
+# lookups and the queue, conservative to restore (a restored pause only waits longer). The picture cache and
+# delivery.db are caches that refill themselves.
+BACKUP_EXTRA = ('cadence',)
+
+
 def backup(keep=7):
-    """A consistent copy of suchalarm.db and every kind's file through SQLite's backup API, one per day;
-    the newest KEEP of each stay. Returns the copy of suchalarm.db."""
-    folder = db_path().parent / 'backups'
-    folder.mkdir(exist_ok=True)
-    for name in ('suchalarm', *PARTS):
-        source, copy = (
-            sqlite3.connect(db_path(name), timeout=20),
-            sqlite3.connect(folder / time.strftime(f'{name}-%Y-%m-%d.db')),
-        )
+    """One generation per day in backups/<date>/: every file through SQLite's backup API, checked with
+    integrity_check and listed in manifest.json. A generation becomes visible (renamed from .tmp) only when every
+    file is complete; the newest KEEP stay. Returns the generation's folder."""
+    root = db_path().parent / 'backups'
+    root.mkdir(exist_ok=True)
+    final = root / time.strftime('%Y-%m-%d')
+    for broken in root.glob('*.tmp'):
+        shutil.rmtree(broken)  # an interrupted generation
+    work = root / (final.name + '.tmp')
+    work.mkdir()
+    files = {}
+    for name in ('suchalarm', *PARTS, *BACKUP_EXTRA):
+        if not db_path(name).exists():
+            continue
+        target = work / f'{name}.db'
+        source, copy = sqlite3.connect(db_path(name), timeout=20), sqlite3.connect(target)
         try:
             source.backup(copy)
+            if copy.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
+                raise sqlite3.DatabaseError(f'Backup of {name}.db failed its integrity check')
         finally:
             copy.close()
             source.close()
-        for old in sorted(folder.glob(f'{name}-*.db'))[:-keep]:
-            old.unlink()
-    return folder / time.strftime('suchalarm-%Y-%m-%d.db')
+        files[target.name] = target.stat().st_size
+    manifest = {'created_at': time.time(), 'files': files, 'caches_not_included': ['images/cache.db', 'delivery.db']}
+    (work / 'manifest.json').write_text(json.dumps(manifest, indent=2))
+    shutil.rmtree(final, ignore_errors=True)
+    work.rename(final)
+    generations = sorted(p for p in root.iterdir() if p.is_dir() and (p / 'manifest.json').exists())
+    for old in generations[:-keep]:
+        shutil.rmtree(old)
+    for old in root.glob('*-????-??-??.db'):
+        old.unlink()  # single files from before generations; the first generation replaces them
+    return final

@@ -215,7 +215,7 @@ Gedacht ist Suchalarm für einen eigenen Server im privaten Netz, hinter einem R
 
 - **Deploy:** Vor jedem neuen Image die Test-Stage bauen (`docker build --target test .` und starten: ruff, mypy, Tests ohne Netzwerk), erst danach das Image und den Dienst aktualisieren. Images mit dem Commit-SHA taggen, dann ist ein Rollback nur ein Tag-Wechsel.
 - **Rollback:** auf einen vorhandenen SHA-Tag zurückgehen; vor Schemaänderungen Daten sichern.
-- **Backups:** täglich über die SQLite-Backup-API nach `/data/backups/`, sieben Tage aufbewahrt. Gegen Datenträgerverlust zusätzlich extern sichern.
+- **Backups:** täglich über die SQLite-Backup-API als Generation nach `/data/backups/<Datum>/` (alle Datenbanken, `cadence.db` mit, Caches ohne; `manifest.json` nennt die Dateien, jede ist per `integrity_check` geprüft), sieben Generationen aufbewahrt. Wiederherstellen: App stoppen, die `.db`-Dateien einer Generation nach `/data/` kopieren, starten. Gegen Datenträgerverlust zusätzlich extern sichern.
 - **Zugriff:** keine Benutzeranmeldung (siehe Warnung im Schnellstart). Schreibende Anfragen fremder Origins werden abgewiesen. Nur der Proxy sollte einen Port veröffentlichen; `FORWARDED_ALLOW_IPS` auf dessen Adresse setzen.
 
 ## Grundsätze

@@ -817,8 +817,24 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         worker.backup = worker.BackupClock()
         await worker.daily_backup()
         backups = store.db_path().parent / 'backups'
+        (generation,) = [p for p in backups.iterdir() if p.is_dir()]
+        manifest = json.loads((generation / 'manifest.json').read_text())
         for name in ('suchalarm', *store.PARTS):
-            self.assertEqual(len(list(backups.glob(f'{name}-*.db'))), 1, name)
+            self.assertIn(f'{name}.db', manifest['files'], name)
+            self.assertTrue((generation / f'{name}.db').exists(), name)
+        self.assertFalse(list(backups.glob('*.tmp')))
+
+    def test_backup_keeps_complete_generations_only(self):
+        backups = store.db_path().parent / 'backups'
+        backups.mkdir(exist_ok=True)
+        (backups / 'suchalarm-2026-01-01.db').write_bytes(b'')  # a single file from before generations
+        for day in range(9):
+            (backups / f'2026-01-{day + 1:02d}').mkdir()
+            (backups / f'2026-01-{day + 1:02d}' / 'manifest.json').write_text('{}')
+        (backups / '2026-02-01.tmp').mkdir()  # an interrupted one is never a generation
+        store.backup(keep=3)
+        names = sorted(p.name for p in backups.iterdir())
+        self.assertEqual(names, ['2026-01-08', '2026-01-09', time.strftime('%Y-%m-%d')])
 
 
 class ApiTests(unittest.TestCase):
