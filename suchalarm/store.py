@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS start_offers (
 );
 CREATE TABLE IF NOT EXISTS notifications (
   search_id INTEGER REFERENCES searches(id) ON DELETE CASCADE,
-  url TEXT NOT NULL, price INTEGER NOT NULL, sent_at REAL NOT NULL,
+  url TEXT NOT NULL, price INTEGER NOT NULL, sent_at REAL NOT NULL, reason TEXT,
   PRIMARY KEY(search_id, url)
 );
 CREATE TABLE IF NOT EXISTS source_status (
@@ -273,6 +273,12 @@ def _add_status_warning(conn):
         conn.execute('ALTER TABLE source_status ADD COLUMN warning TEXT')
 
 
+def _add_report_reason(conn):
+    """Why a hit counts as known (REASONS). Rows from before stay NULL: their reason was not recorded."""
+    if 'reason' not in {r[1] for r in conn.execute('PRAGMA table_info(notifications)')}:
+        conn.execute('ALTER TABLE notifications ADD COLUMN reason TEXT')
+
+
 # Each entry runs once; PRAGMA user_version counts the applied ones. Only ever append.
 MIGRATIONS = (
     _migrate_legacy,
@@ -291,6 +297,7 @@ MIGRATIONS = (
     _add_status_started,
     _add_status_unread,
     _add_status_warning,
+    _add_report_reason,
 )
 
 
@@ -310,9 +317,10 @@ def _migrate(conn, schema, migrations):
 
 
 def _recover_interrupted_delivery(conn):
-    """A restart during delivery leaves an uncertain mail: count it as sent so nothing comes twice."""
+    """A restart during delivery leaves an uncertain mail: known, so nothing comes twice, but not as sent."""
     conn.execute(
-        'INSERT OR REPLACE INTO notifications SELECT search_id, url, price, created_at FROM outbox WHERE batch IS NOT NULL'
+        'INSERT OR REPLACE INTO notifications(search_id,url,price,sent_at,reason) '
+        "SELECT search_id, url, price, created_at, 'uncertain' FROM outbox WHERE batch IS NOT NULL"
     )
     conn.execute('DELETE FROM outbox WHERE batch IS NOT NULL')
     conn.execute(
@@ -480,10 +488,18 @@ def keep_waiting_only(conn, table, search_id):
     )
 
 
-def remember_reported(conn, search_id, url, price, when):
-    """A hit counts as reported at PRICE: mailed, starting stock, or found while its mails were off. Only a
-    lower price mails it again."""
-    conn.execute('INSERT OR REPLACE INTO notifications VALUES (?,?,?,?)', (search_id, url, price, when))
+# Why a hit counts as known at its price; only a lower price mails it again. Only 'sent' is a mail the
+# server accepted: the history of notifications. 'known': starting stock, another portal's copy, or found
+# while mails were off. 'uncertain': the server may have taken the mail; never sent twice.
+REASONS = ('sent', 'known', 'uncertain')
+
+
+def remember_reported(conn, search_id, url, price, when, reason='known'):
+    """A hit counts as known at PRICE for REASON (REASONS)."""
+    conn.execute(
+        'INSERT OR REPLACE INTO notifications(search_id,url,price,sent_at,reason) VALUES (?,?,?,?,?)',
+        (search_id, url, price, when, reason),
+    )
 
 
 def queue(conn, search_id, url, price, when):

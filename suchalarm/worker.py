@@ -98,8 +98,8 @@ OF_KIND = 'search_id IN (SELECT id FROM searches WHERE kind=?)'
 def _forget_outbox(conn, kind):
     """Mails are off or unconfigured: pending hits count as known, so enabling later sends no flood."""
     conn.execute(
-        'INSERT OR REPLACE INTO notifications SELECT search_id, url, price, created_at FROM outbox '
-        f'WHERE batch IS NULL AND {OF_KIND}',
+        'INSERT OR REPLACE INTO notifications(search_id,url,price,sent_at,reason) '
+        f"SELECT search_id, url, price, created_at, 'known' FROM outbox WHERE batch IS NULL AND {OF_KIND}",
         (kind,),
     )
     conn.execute(f'DELETE FROM outbox WHERE batch IS NULL AND {OF_KIND}', (kind,))
@@ -161,11 +161,12 @@ def _record_delivery(batch, entries, outcome, error):
             store.put_setting(conn, 'mail_error', f'{error} Neuer Versuch in 10 Minuten.')
             return
         # Only the entries still belonging to this batch count; an edit or deletion may have removed them.
-        now = time.time()
+        # 'sent' only after the server accepted the mail; an uncertain one is known, so it never comes twice.
+        now, reason = time.time(), 'sent' if outcome == 'sent' else 'uncertain'
         conn.executemany(
-            'INSERT OR REPLACE INTO notifications SELECT search_id,url,?,? FROM outbox '
-            'WHERE search_id=? AND url=? AND batch=?',
-            [(price, now, search['id'], offer['url'], batch) for search, offer, price in entries],
+            'INSERT OR REPLACE INTO notifications(search_id,url,price,sent_at,reason) SELECT search_id,url,?,?,? '
+            'FROM outbox WHERE search_id=? AND url=? AND batch=?',
+            [(price, now, reason, search['id'], offer['url'], batch) for search, offer, price in entries],
         )
         conn.execute('DELETE FROM outbox WHERE batch=?', (batch,))
         if outcome == 'sent' and error is None:

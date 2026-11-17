@@ -1341,7 +1341,7 @@ class FieldWarningTests(TempData):
         pages.save_result(flat_search, 'immoscout24', [], 0, time.time())
         with store.db() as conn:
             conn.execute('ALTER TABLE source_status DROP COLUMN warning')
-            conn.execute(f'PRAGMA user_version={len(store.MIGRATIONS) - 1}')
+            conn.execute(f'PRAGMA user_version={store.MIGRATIONS.index(store._add_status_warning)}')
         store.init()
         store.init()  # migrations also remain safe on the next startup
         with store.db() as conn:
@@ -2213,7 +2213,10 @@ class ApiAndMailTests(TempData):
         outbox.queue_mails()
         self.assertEqual(self.queued(), ['2'])
         with store.db() as conn:  # the mail went out
-            conn.execute('INSERT INTO notifications SELECT search_id, url, price, ? FROM outbox', (time.time() - 30,))
+            conn.execute(
+                'INSERT INTO notifications(search_id,url,price,sent_at) SELECT search_id, url, price, ? FROM outbox',
+                (time.time() - 30,),
+            )
             conn.execute('DELETE FROM outbox')
         pages.save_result(flat_search, 'immoscout24', dear, len(dear), time.time())
         outbox.queue_mails()

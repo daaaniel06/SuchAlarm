@@ -349,6 +349,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
             (self.count('notifications'), self.count('outbox'), self.count('batches', "WHERE status='unknown'")),
             (1, 0, 1),
         )
+        self.assertEqual(self.count('notifications', "WHERE reason='sent'"), 0)  # no history without the server's yes
         await self.found(self.offer)
         self.assertEqual(self.count('outbox'), 0)
 
@@ -502,7 +503,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
             await worker.send_digest(time.time() + 86401)
             deliver.assert_called_once()
 
-    async def test_restart_during_delivery_counts_as_sent(self):
+    async def test_restart_during_delivery_is_known_but_not_sent(self):
         with store.db() as conn:
             conn.execute("INSERT INTO outbox VALUES (1,'https://www.ebay.de/itm/12345',3000,1,'b1')")
             conn.execute("INSERT INTO batches VALUES ('b1','a@example.com','x',1,'sending',NULL,1,NULL)")
@@ -511,6 +512,16 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
             (self.count('outbox'), self.count('notifications'), self.count('batches', "WHERE status='unknown'")),
             (0, 1, 1),
         )
+        self.assertEqual(self.count('notifications', "WHERE reason='uncertain'"), 1)
+
+    async def test_history_names_why_a_hit_is_known(self):
+        await self.found(self.offer)
+        with patch('suchalarm.mailer.deliver', return_value={'b@example.com': 550}):
+            await worker.send_digest()  # accepted for the others: sent
+        self.assertEqual(self.count('notifications', "WHERE reason='sent'"), 1)
+        self.setting('mail_enabled', '0')
+        await self.found(self.offer, replace(self.offer, url='https://www.ebay.de/itm/2'))
+        self.assertEqual(self.count('notifications', "WHERE reason='known'"), 1)
 
     async def test_refusal_pause_shows_and_keeps_offers(self):
         await self.found(self.offer)
@@ -883,7 +894,9 @@ class ApiTests(unittest.TestCase):
                 "INSERT INTO offers VALUES (?,'ebay',?,'Resident Evil Requiem',?,0,'','',1,1)", (sid, url, price)
             )
             if notified:
-                conn.execute('INSERT INTO notifications VALUES (?,?,?,1)', (sid, url, price))
+                conn.execute(
+                    'INSERT INTO notifications(search_id,url,price,sent_at) VALUES (?,?,?,1)', (sid, url, price)
+                )
 
     def state(self):
         return self.client.get('/api/state').json()
