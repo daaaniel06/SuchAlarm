@@ -17,7 +17,7 @@ from suchalarm import status, store, worker
 from suchalarm.core import browser, cadence, http
 from suchalarm.core.browser import Unreadable
 from suchalarm.models import TEMPLATE_CHARS
-from suchalarm.wohnung import catalog, details, domain, outbox, pages, portals, sources
+from suchalarm.wohnung import catalog, details, domain, outbox, pages, portals, sources, tables
 from suchalarm.wohnung import worker as flats
 from suchalarm.wohnung.domain import Listing, match, profile
 
@@ -942,6 +942,22 @@ class PlaceTests(TempData):
         self.assertTrue(sources.needs_district_area(district))
         self.assertIsNone(sources.out_of_area(district, 'nhw'))  # the outline is known
         self.assertFalse(sources.needs_district_area(dict(district, radius=10)))
+
+    def test_an_older_district_search_takes_its_whole_stock_in_anew(self):
+        place = {'kind': 'city', 'label': 'Darmstadt-Dieburg (Kreis)', 'query': 'Darmstadt-Dieburg'}
+        district = self.stored_search(query='Darmstadt-Dieburg (Kreis)', sources=['nhw', 'immoscout24'],
+                                      filters={'min_area': 0, 'min_rooms': 1, 'exclusions': [], 'place': place})  # fmt: skip
+        town = self.stored_search(query='Darmstadt', sources=['nhw'])
+        for search_id in (district['id'], town['id']):
+            pages.save_result(store.search(search_id), 'nhw', [], 0, time.time())  # the empty first result
+        pages.save_result(district, 'immoscout24', [], 0, time.time())
+        with store.db() as conn:
+            conn.execute(f'PRAGMA wohnung.user_version={len(tables.MIGRATIONS) - 1}')
+        store.init()
+        with store.db() as conn:
+            self.assertFalse(status.started(conn, district['id'], 'nhw'))  # starts over with its stock
+            self.assertTrue(status.started(conn, district['id'], 'immoscout24'))
+            self.assertTrue(status.started(conn, town['id'], 'nhw'))
 
     def test_a_place_a_portal_does_not_know_rests_the_source(self):
         flat_search = self.stored_search(query='Darmstadt-Dieburg', sources=['immowelt', 'kleinanzeigen-wohnung'])
