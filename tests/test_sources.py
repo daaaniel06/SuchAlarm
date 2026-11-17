@@ -199,6 +199,11 @@ class SourceLoadingTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AvailabilityTests(unittest.TestCase):
+    def test_price_is_the_amount_next_to_the_euro_mark(self):
+        self.assertEqual(sources.row_price({'price': 'US $20.00 (EUR 18,50)'}), 1850)
+        self.assertEqual(sources.row_price({'price': '1.299 € VB'}), 129900)
+        self.assertIsNone(sources.row_price({'price': 'US $20.00'}))
+
     def card(self, title, status=''):
         return dict(
             title=title,

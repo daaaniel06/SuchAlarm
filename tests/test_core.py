@@ -8,6 +8,7 @@ import time
 import unittest
 from contextlib import contextmanager
 from dataclasses import replace
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 from fastapi.testclient import TestClient
@@ -15,7 +16,7 @@ from PIL import Image
 
 from suchalarm import mailer, mailserver, scheduler, store, worker
 from suchalarm.app import app, create, delete, update
-from suchalarm.core import browser, cadence, images
+from suchalarm.core import browser, cadence, http, images
 from suchalarm.preis import sources
 from suchalarm.preis.models import Search as ProductSearch
 from suchalarm.preis.money import money, shipping
@@ -37,6 +38,13 @@ def without_smtp_env():
 
 
 class DomainTests(unittest.TestCase):
+    def test_browser_404_is_a_deleted_page_like_over_http(self):
+        with self.assertRaises(http.NotFound):
+            browser.check_response(SimpleNamespace(status=404))
+        with self.assertRaises(RuntimeError) as other:
+            browser.check_response(SimpleNamespace(status=500))
+        self.assertNotIsInstance(other.exception, http.NotFound)
+
     def test_free_shipping_with_an_order_minimum_is_unknown(self):
         for label in (
             'Kostenloser Versand für Bestellungen ab 50 €',
@@ -228,6 +236,14 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
             await worker.send_digest(time.time() + 86401)
         deliver.assert_called_once()
         self.assertIn(self.offer.url, deliver.call_args.args[0].get_body(('plain',)).get_content())
+
+    async def test_a_queued_offer_is_not_mailed_after_a_filter_only_the_provider_applies(self):
+        self.setting('frequency', 'Täglich')
+        await self.found(self.offer)
+        await update(1, ProductSearch(query='Spiel', max_price=3500, category='videospiele', sources=['ebay']))
+        with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
+            await worker.send_digest(time.time() + 86401)
+        deliver.assert_not_called()
 
     async def test_a_queued_offer_with_a_newly_excluded_word_is_not_mailed(self):
         await self.found(replace(self.offer, title='Spiel defekt'))

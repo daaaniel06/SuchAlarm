@@ -80,6 +80,15 @@ class ImageCacheTests(unittest.IsolatedAsyncioTestCase):
         download.assert_not_called()
         self.assertEqual(images.photos(['https://www.ebay.de/itm/1']), ({}, set()))
 
+    def test_given_up_pictures_do_not_fill_the_queue(self):
+        self.job('a', 'https://www.ebay.de/itm/1')
+        with images.db() as conn:
+            conn.execute('UPDATE pictures SET attempts=?', (images.MAX_ATTEMPTS,))
+        with patch('suchalarm.core.images.MAX_PENDING', 1):
+            images.remember('ebay', {'https://www.ebay.de/itm/2': 'https://i.ebayimg.com/b.jpg'})
+        with images.db() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM pictures').fetchone()[0], 2)
+
     async def test_refusal_pauses_the_image_budget(self):
         self.job('a', 'https://www.ebay.de/itm/1')
         with (

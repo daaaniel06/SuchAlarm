@@ -246,6 +246,14 @@ class FilterTests(unittest.TestCase):
         postcode = {**town, 'place': {'kind': 'plz', 'label': '64283 Darmstadt', 'query': '64283'}}
         self.assertEqual(match(flat(place='64285 Darmstadt'), postcode), ('excluded', ['Nicht in 64283']))
 
+    def test_a_district_search_keeps_its_towns(self):
+        town = {**PROFILE, 'city': 'Darmstadt-Dieburg', 'exclusions': [], 'minArea': 0, 'minRooms': 1}
+        district = {
+            **town,
+            'place': {'kind': 'city', 'label': 'Darmstadt-Dieburg (Kreis)', 'query': 'Darmstadt-Dieburg'},
+        }
+        self.assertEqual(match(flat(place='64807 Dieburg'), district)[0], 'matched')
+
     def test_a_postcode_search_judges_an_address_without_postcode_by_its_town(self):
         town = {**PROFILE, 'city': '64283', 'exclusions': [], 'minArea': 0, 'minRooms': 1}
         postcode = {**town, 'place': {'kind': 'plz', 'label': '64283 Darmstadt', 'query': '64283'}}

@@ -240,12 +240,15 @@ async def _serve_followers(job, completed):
 
 async def _run_job(job):
     first, source = job['searches'][0], job['source']
-    with cadence.manual_check(job.get('manual_at')):
-        completed = await check(first, [source])
-    await _serve_followers(job, completed)
-    if source in completed:
-        scheduler.cancel(first['id'], source)
-    scheduler.finish(job)
+    try:
+        with cadence.manual_check(job.get('manual_at')):
+            completed = await check(first, [source])
+        await _serve_followers(job, completed)
+        if source in completed:
+            scheduler.cancel(first['id'], source)
+    finally:
+        # Also after an unexpected error: the job moves to the back instead of being picked again at once.
+        scheduler.finish(job)
 
 
 async def daily_backup():
@@ -255,7 +258,8 @@ async def daily_backup():
     try:
         for kind in KINDS.values():
             kind.cleanup()
-        await asyncio.to_thread(store.backup)
+        # On the event loop, not in a thread: no API write can land between the copies of two files.
+        store.backup()
         backup.due = time.time() + BACKUP_EVERY
     except Exception:
         log.exception('Backup failed')

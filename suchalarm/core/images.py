@@ -70,7 +70,10 @@ def remember(source, pictures):
     """PICTURES maps an offer URL to its picture at SOURCE; new pictures are queued for download."""
     now = time.time()
     with db() as conn:
-        pending = conn.execute("SELECT COUNT(*) FROM pictures WHERE state='pending'").fetchone()[0]
+        # Pictures out of attempts are never fetched again; they must not fill the queue.
+        pending = conn.execute(
+            "SELECT COUNT(*) FROM pictures WHERE state='pending' AND attempts<?", (MAX_ATTEMPTS,)
+        ).fetchone()[0]
         for url, remote in pictures.items():
             if not valid(source, remote):
                 continue

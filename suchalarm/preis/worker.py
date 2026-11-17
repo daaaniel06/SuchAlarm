@@ -23,6 +23,7 @@ from .titles import all_terms, title_fits, wanted_words
 
 FRESH_USED = 3 * 3600  # a shop comparison only uses second-hand results this recent
 SHIPPING_WAIT = 15 * 60  # a Vinted hit waits this long for its shipping lookup before it is mailed without
+UNJUDGED_FILTERS = ('category', 'delivery', 'plz', 'radius', 'filters')  # only the provider's query applies them
 HITS = 'offers'  # key of the hit rows in /api/state
 MODEL = Search  # the request body of a product search
 # What the search editor offers; the providers' section IDs stay on the server.
@@ -308,6 +309,9 @@ def reset(conn: Connection, search_id: int, old: Mapping[str, Any], payload: Sea
     a paused search is not checked again on its own, so wiping them would empty its list."""
     changed = any(old[name] != payload.comparable(name) for name in SEARCH_FILTERS)
     dropped = [source for source in old['sources'] if source not in payload.sources]
+    if any(old[name] != payload.comparable(name) for name in UNJUDGED_FILTERS):
+        # take_pending cannot judge a waiting hit by these again (the card text is gone): it waits no longer.
+        conn.execute('DELETE FROM outbox WHERE search_id=? AND batch IS NULL', (search_id,))
     if old['negotiable'] and not payload.negotiable:
         conn.execute(
             'DELETE FROM outbox WHERE search_id=? AND batch IS NULL '

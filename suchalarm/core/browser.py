@@ -23,6 +23,10 @@ BLOCK = re.compile(
 )
 
 
+class NotFound(RuntimeError):
+    """HTTP 404: the provider does not know what was asked for (a deleted listing, a page past the last)."""
+
+
 class Blocked(cadence.Refused):
     """The provider refuses the browser (401/403/429 or a security check)."""
 
@@ -56,6 +60,8 @@ def check_response(response):
         raise Blocked(
             f'Anbieter blockiert die Browser-Abfrage (HTTP {status}). Kein Verbindungsfehler; später erneut versuchen.'
         )
+    if status == 404:
+        raise NotFound('Anbieter antwortet mit HTTP 404.')
     raise RuntimeError(f'Anbieter antwortet mit HTTP {status}.')
 
 

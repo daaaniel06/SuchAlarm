@@ -381,7 +381,8 @@ $('server-form').addEventListener('change', () => {
       await api('mail/server', { method: 'PUT', body: JSON.stringify(body) });
       await refresh();
       // A new address or server forgets the old password, so the field asks for it again.
-      if (body.password !== undefined) $('server-password').value = '';
+      // Only the password just saved: one typed meanwhile is still to be saved.
+      if (body.password !== undefined && $('server-password').value === body.password) $('server-password').value = '';
       $('server-password').placeholder = state.mail.server.password_set ? 'Gespeichert' : 'Passwort';
     } catch (err) {
       message(err.message, true);
