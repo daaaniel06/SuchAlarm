@@ -6,6 +6,8 @@ check writing its offers (app.editable refuses while that search is being checke
 """
 
 import asyncio
+import email
+import email.policy
 import logging
 import time
 import uuid
@@ -43,6 +45,7 @@ PACKAGE_WAIT = 7200  # "Sofort" with packages: never wait longer than this for a
 GATHER_WAIT = 300  # while other searches are still being checked, let their offers share the mail
 IMAGE_WAIT = 300  # "Sofort" waits this long at most for pictures still being cached
 MAIL_LIMIT = 100  # offers per mail; the rest follows with the next one
+RECIPIENT_RETRY, RECIPIENT_ATTEMPTS = 900, 4  # a recipient refused for now (4xx): again after 15, 30, 60 minutes
 BATCH_HISTORY = 200  # mails kept in the history
 INTERVALS = {'Alle 30 Minuten': 30 * 60, 'Täglich': 24 * 3600}
 BACKUP_EVERY, BACKUP_RETRY = 24 * 3600, 3600
@@ -112,8 +115,11 @@ def _rhythm_allows(conn, mail, now, kind):
     ).fetchone()
     if not first:
         return False
+    # The pause after a failure is the kind's own; mails from before kinds were recorded (NULL) count for all.
     last = conn.execute(
-        "SELECT status, created_at FROM batches WHERE status IN ('failed','sent') ORDER BY created_at DESC LIMIT 1"
+        "SELECT status, created_at FROM batches WHERE status IN ('failed','sent') AND (kind=? OR kind IS NULL) "
+        'ORDER BY created_at DESC LIMIT 1',
+        (kind,),
     ).fetchone()
     if last and last['status'] == 'failed' and last['created_at'] > now - MAIL_RETRY_AFTER:
         return False
@@ -141,8 +147,8 @@ def _claim_batch(conn, mail, now, kind):
     batch = uuid.uuid4().hex
     message = mailer.compose_digest([(search, offer) for search, offer, _ in entries], mail['recipients'], batch)
     conn.execute(
-        "INSERT INTO batches VALUES (?,?,?,?,'sending',NULL,?,NULL)",
-        (batch, ', '.join(mail['recipients']), message['Subject'], len(entries), now),
+        'INSERT INTO batches(id,recipients,subject,count,status,created_at,kind) VALUES (?,?,?,?,?,?,?)',
+        (batch, ', '.join(mail['recipients']), message['Subject'], len(entries), 'sending', now, kind),
     )
     conn.executemany(
         'UPDATE outbox SET batch=? WHERE search_id=? AND url=?',
@@ -151,10 +157,28 @@ def _claim_batch(conn, mail, now, kind):
     return batch, message, entries
 
 
-def _record_delivery(batch, entries, outcome, error):
+def _record_recipients(conn, batch, message, outcome, refused):
+    """What each recipient's server said. A temporary refusal (4xx) gets the same mail again later, to that
+    address only; the mail is kept until then. Everyone else never gets it twice."""
+    status = {'sent': 'accepted', 'unknown': 'uncertain'}[outcome]
+    rows: list[tuple] = []
+    for address in (a.strip() for a in message['To'].split(',')):
+        code = refused.get(address)
+        if code is None:
+            rows.append((batch, address, status, None, 0))
+        else:
+            rows.append((batch, address, 'retry' if code < 500 else 'refused', code, time.time() + RECIPIENT_RETRY))
+    conn.executemany('INSERT OR REPLACE INTO deliveries(batch,address,status,code,next_at) VALUES (?,?,?,?,?)', rows)
+    if any(row[2] == 'retry' for row in rows):
+        conn.execute('UPDATE batches SET message=? WHERE id=?', (message.as_bytes(), batch))
+
+
+def _record_delivery(batch, entries, outcome, error, message=None, refused=None):
     with store.db() as conn:
         sent_at = time.time() if outcome == 'sent' else None
         conn.execute('UPDATE batches SET status=?, error=?, sent_at=? WHERE id=?', (outcome, error, sent_at, batch))
+        if message is not None and outcome != 'failed':
+            _record_recipients(conn, batch, message, outcome, refused or {})
         if outcome == 'failed':
             # The server definitely did not accept it: keep the offers for a later retry.
             conn.execute('UPDATE outbox SET batch=NULL WHERE batch=?', (batch,))
@@ -194,6 +218,42 @@ async def send_digest(now=None):
         return
     for kind in KINDS:
         await _send_kind(kind, now)
+    await _retry_recipients(now)
+
+
+async def _retry_recipients(now):
+    """The mail once more to an address its server refused for now (4xx), to that address alone."""
+    with store.db() as conn:
+        row = conn.execute(
+            'SELECT d.batch, d.address, d.attempts, b.message FROM deliveries d JOIN batches b ON b.id=d.batch '
+            "WHERE d.status='retry' AND d.next_at<=? AND b.message IS NOT NULL ORDER BY d.next_at LIMIT 1",
+            (now,),
+        ).fetchone()
+    if row is None:
+        return
+    message = email.message_from_bytes(row['message'], policy=email.policy.default)
+    del message['To']
+    message['To'] = row['address']
+    attempts = row['attempts'] + 1
+    try:
+        refused = await asyncio.to_thread(mailer.deliver, message)
+        code = refused.get(row['address'])
+        status = 'accepted' if code is None else ('refused' if code >= 500 else 'retry')
+    except mailer.DeliveryError as exc:
+        code, status = None, 'uncertain' if exc.maybe_sent else 'retry'
+    if status == 'retry' and attempts >= RECIPIENT_ATTEMPTS:
+        status = 'failed'
+    with store.db() as conn:
+        conn.execute(
+            'UPDATE deliveries SET status=?, code=?, attempts=?, next_at=? WHERE batch=? AND address=?',
+            (status, code, attempts, time.time() + RECIPIENT_RETRY * 2**attempts, row['batch'], row['address']),
+        )
+        if status == 'failed':
+            store.put_setting(
+                conn, 'mail_error', f'{row["address"]} hat die Mail auch nach {attempts} Versuchen nicht angenommen.'
+            )
+        if not conn.execute("SELECT 1 FROM deliveries WHERE batch=? AND status='retry'", (row['batch'],)).fetchone():
+            conn.execute('UPDATE batches SET message=NULL WHERE id=?', (row['batch'],))
 
 
 async def _send_kind(kind, now):
@@ -206,6 +266,7 @@ async def _send_kind(kind, now):
     if claimed is None:
         return
     batch, message, entries = claimed
+    refused = {}
     try:
         refused = await asyncio.to_thread(mailer.deliver, message)
         # The others got it: never sent again, the refused addresses are shown instead.
@@ -213,7 +274,7 @@ async def _send_kind(kind, now):
     except mailer.DeliveryError as exc:
         outcome, error = ('unknown' if exc.maybe_sent else 'failed'), str(exc)
         log.warning('Mail %s', outcome)
-    _record_delivery(batch, entries, outcome, error)
+    _record_delivery(batch, entries, outcome, error, message, refused)
 
 
 # The loop

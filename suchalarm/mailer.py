@@ -101,15 +101,17 @@ def deliver(message):
 
 def refusal(refused):
     """What to show when the server took a mail but refused some of its recipients (address -> SMTP code).
-    A 4xx code is temporary (RFC 5321): the address is fine, that copy just did not arrive. Nothing is resent
-    either way: the others already have the mail."""
+    A 4xx code is temporary (RFC 5321): the address is fine, that copy just did not arrive yet; the worker sends
+    it again to that address alone. The others already have the mail and never get it twice."""
     lasting = [address for address, code in refused.items() if code >= 500]
     passing = [address for address, code in refused.items() if code < 500]
     parts = []
     if lasting:
         parts.append(f'Der Mailserver hat {", ".join(lasting)} nicht angenommen – Adresse prüfen.')
     if passing:
-        parts.append(f'Der Mailserver hat {", ".join(passing)} vorübergehend abgelehnt; dort kam diese Mail nicht an.')
+        parts.append(
+            f'Der Mailserver hat {", ".join(passing)} vorübergehend abgelehnt; die Mail geht später noch einmal nur dorthin.'
+        )
     return ' '.join(parts)
 
 

@@ -374,6 +374,37 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         await self.found(self.offer)
         self.assertEqual(self.count('outbox'), 0)
 
+    async def test_a_recipient_refused_for_now_gets_the_mail_again_alone(self):
+        self.setting('recipients', '["a@example.com","b@example.com","c@example.com"]')
+        await self.found(self.offer)
+        with patch('suchalarm.mailer.deliver', return_value={'b@example.com': 451, 'c@example.com': 550}):
+            await worker.send_digest()
+        with patch('suchalarm.mailer.deliver', return_value={}) as deliver:
+            await worker.send_digest()  # not yet due
+            deliver.assert_not_called()
+            await worker.send_digest(time.time() + worker.RECIPIENT_RETRY + 1)
+        deliver.assert_called_once()
+        again = deliver.call_args.args[0]
+        self.assertEqual(again['To'], 'b@example.com')  # never a, and c refused for good
+        self.assertIn(self.offer.url, again.get_body(('plain',)).get_content())
+        with store.db() as conn:
+            states = dict(conn.execute('SELECT address, status FROM deliveries'))
+            kept = conn.execute('SELECT message FROM batches').fetchone()[0]
+        self.assertEqual(states, {'a@example.com': 'accepted', 'b@example.com': 'accepted', 'c@example.com': 'refused'})
+        self.assertIsNone(kept)  # the stored mail goes once nobody waits for it
+
+    async def test_a_failed_mail_of_one_kind_does_not_pause_the_other(self):
+        with store.db() as conn:
+            conn.execute(
+                'INSERT INTO batches(id,recipients,subject,count,status,created_at,kind) '
+                "VALUES ('w1','a@example.com','x',1,'failed',?,'wohnung')",
+                (time.time(),),
+            )
+        await self.found(self.offer)
+        with patch('suchalarm.mailer.deliver', return_value={}) as deliver:
+            await worker.send_digest()
+        deliver.assert_called_once()
+
     async def test_a_refused_recipient_is_shown_and_the_others_get_nothing_twice(self):
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', return_value={'b@example.com': 550}):
@@ -527,7 +558,10 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
     async def test_restart_during_delivery_is_known_but_not_sent(self):
         with store.db() as conn:
             conn.execute("INSERT INTO outbox VALUES (1,'https://www.ebay.de/itm/12345',3000,1,'b1')")
-            conn.execute("INSERT INTO batches VALUES ('b1','a@example.com','x',1,'sending',NULL,1,NULL)")
+            conn.execute(
+                'INSERT INTO batches(id,recipients,subject,count,status,created_at) '
+                "VALUES ('b1','a@example.com','x',1,'sending',1)"
+            )
         store.init()
         self.assertEqual(
             (self.count('outbox'), self.count('notifications'), self.count('batches', "WHERE status='unknown'")),

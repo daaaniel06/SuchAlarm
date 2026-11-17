@@ -173,7 +173,8 @@ def _migrate_legacy(conn):
     # The old mail log becomes the delivery history.
     if not conn.execute('SELECT 1 FROM batches LIMIT 1').fetchone():
         conn.execute(
-            "INSERT INTO batches SELECT 'log-' || id, '', subject, count, 'sent', NULL, sent_at, sent_at FROM mail_log"
+            'INSERT INTO batches(id,recipients,subject,count,status,error,created_at,sent_at) '
+            "SELECT 'log-' || id, '', subject, count, 'sent', NULL, sent_at, sent_at FROM mail_log"
         )
 
 
@@ -273,6 +274,21 @@ def _add_status_warning(conn):
         conn.execute('ALTER TABLE source_status ADD COLUMN warning TEXT')
 
 
+def _add_deliveries(conn):
+    """Which search kind a mail was for (its rhythm and pause after a failure are the kind's own), the mail itself
+    while a recipient still waits for a retry, and what each recipient's server said."""
+    columns = {r[1] for r in conn.execute('PRAGMA table_info(batches)')}
+    if 'kind' not in columns:
+        conn.execute('ALTER TABLE batches ADD COLUMN kind TEXT')
+    if 'message' not in columns:
+        conn.execute('ALTER TABLE batches ADD COLUMN message BLOB')
+    conn.execute(
+        'CREATE TABLE IF NOT EXISTS deliveries (batch TEXT NOT NULL REFERENCES batches(id) ON DELETE CASCADE, '
+        'address TEXT NOT NULL, status TEXT NOT NULL, code INTEGER, attempts INTEGER NOT NULL DEFAULT 0, '
+        'next_at REAL NOT NULL DEFAULT 0, PRIMARY KEY(batch, address))'
+    )
+
+
 def _add_report_reason(conn):
     """Why a hit counts as known (REASONS). Rows from before stay NULL: their reason was not recorded."""
     if 'reason' not in {r[1] for r in conn.execute('PRAGMA table_info(notifications)')}:
@@ -298,6 +314,7 @@ MIGRATIONS = (
     _add_status_unread,
     _add_status_warning,
     _add_report_reason,
+    _add_deliveries,
 )
 
 

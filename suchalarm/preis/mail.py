@@ -68,8 +68,10 @@ def reason(offer):
 def subject(entries, title):
     if len(entries) > 1:
         return f'Preisalarm: {len(entries)} neue Angebote'
-    value = price(*entries[0])
-    return f'Preisalarm: {title} ' + ('zu verschenken' if value == 0 else f'für {price_text(*entries[0])}')
+    if price(*entries[0]) == 0:
+        return f'Preisalarm: {title} zu verschenken'
+    text = price_text(*entries[0])
+    return f'Preisalarm: {title} ' + (text if text.startswith('ab ') else f'für {text}')
 
 
 def card(search, offer, photo_src, links):
