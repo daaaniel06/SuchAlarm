@@ -8,6 +8,7 @@ import math
 import re
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
+from typing import Literal, TypedDict
 
 from ..core.text import excluded_word
 
@@ -281,7 +282,21 @@ def wanted_ad(listing):
 # --- A search as the filter rules see it ---------------------------------------------
 
 
-def profile(search):
+class Profile(TypedDict):
+    city: str
+    place: dict[str, str | None] | None
+    radius: float
+    max_rent: float
+    min_area: float
+    min_rooms: float
+    exclusions: list[str]
+    exclude_words: list[str]
+    excluded_districts: list[str]
+    move_in_from: str | None
+    move_in_by: str | None
+
+
+def profile(search) -> Profile:
     """The flat filters of a stored search (kind 'wohnung').
 
     The place is the search's query; filters may hold the picked place ({kind, label, query, geopath})
@@ -293,18 +308,18 @@ def profile(search):
         'city': search.get('query') or '',
         'place': filters.get('place'),
         'radius': search.get('radius') or 0,
-        'maxRent': (search.get('max_price') or 0) / 100,
-        'minArea': filters.get('min_area') or 0,
-        'minRooms': filters.get('min_rooms') or 0,
+        'max_rent': (search.get('max_price') or 0) / 100,
+        'min_area': filters.get('min_area') or 0,
+        'min_rooms': filters.get('min_rooms') or 0,
         'exclusions': [trait for trait in filters.get('exclusions') or [] if trait in TRAITS],
-        'excludeWords': [word for word in words if word],
-        'excludedDistricts': filters.get('excluded_districts') or [],
-        'moveInFrom': filters.get('move_in_from'),
-        'moveInBy': filters.get('move_in_by'),
+        'exclude_words': [word for word in words if word],
+        'excluded_districts': filters.get('excluded_districts') or [],
+        'move_in_from': filters.get('move_in_from'),
+        'move_in_by': filters.get('move_in_by'),
     }
 
 
-def place_query(profile):
+def place_query(profile: Profile):
     """What the portals' and OpenStreetMap's place searches get: the picked place, else the typed one."""
     return (profile.get('place') or {}).get('query') or profile['city']
 
@@ -325,14 +340,15 @@ def query_text(source, search):
 
 
 WHOLE_STOCK = ('bauverein', 'nhw')
-ALL_LIMITS = ('maxRent', 'minArea', 'minRooms')
-PORTAL_LIMITS = {  # the search's limits each portal applies itself
+ProfileLimit = Literal['max_rent', 'min_area', 'min_rooms']
+ALL_LIMITS: tuple[ProfileLimit, ...] = ('max_rent', 'min_area', 'min_rooms')
+PORTAL_LIMITS: dict[str, tuple[ProfileLimit, ...]] = {  # the search's limits each portal applies itself
     'immoscout24': ALL_LIMITS,
     'kleinanzeigen-wohnung': ALL_LIMITS,
     'wg-gesucht': ALL_LIMITS,
     'immowelt': ALL_LIMITS,
     'immobilien-de': ALL_LIMITS,
-    'ohne-makler': ('maxRent', 'minArea'),
+    'ohne-makler': ('max_rent', 'min_area'),
 }
 PORTAL_EXCLUSIONS = {  # the excluded traits each portal leaves out itself (checked live 31.10.2026)
     'immoscout24': ('WBS',),
@@ -380,7 +396,7 @@ def _day(value):
 POSTCODE = re.compile(r'\b\d{5}\b')
 
 
-def home_town(profile):
+def home_town(profile: Profile):
     """The town of the searched place; for a postcode the town its label names, '' if it names none."""
     place = profile.get('place') or {}
     text = place.get('label') or profile.get('city') or ''
@@ -397,13 +413,13 @@ def is_district(place):
     )
 
 
-def home_area(profile):
+def home_area(profile: Profile):
     """The town (or postcode) a search without radius is limited to."""
     query = place_query(profile)
     return query if POSTCODE.fullmatch(query) else home_town(profile)
 
 
-def outside_home(listing, profile):
+def outside_home(listing, profile: Profile):
     """Portals mix in neighbouring towns; a search without radius keeps what lies in the town itself.
 
     An address without postcode (NHW names only the town) is judged by the postcode's town: the
@@ -426,7 +442,7 @@ def outside_home(listing, profile):
 RADIUS_MARGIN_KM = 1.5
 
 
-def beyond_radius(listing, profile, centre):
+def beyond_radius(listing, profile: Profile, centre):
     """Distance from the searched place's centre if the offer lies clearly outside the radius."""
     if not profile.get('radius') or not centre or listing.lat is None or listing.lon is None:
         return None
@@ -438,63 +454,63 @@ def excluded_district(place, districts):
     return next((name for name in districts if re.search(rf'(?<!\w){re.escape(name)}(?!\w)', place, re.I)), None)
 
 
-def _exclude_wanted(listing, profile, centre):
+def _exclude_wanted(listing, profile: Profile, centre):
     return ['Gesuch, kein Angebot'] if wanted_ad(listing) else None
 
 
-def _exclude_home(listing, profile, centre):
+def _exclude_home(listing, profile: Profile, centre):
     return [f'Nicht in {home_area(profile)}'] if outside_home(listing, profile) else None
 
 
-def _exclude_radius(listing, profile, centre):
+def _exclude_radius(listing, profile: Profile, centre):
     if (km := beyond_radius(listing, profile, centre)) is not None:
         return [f'{km:.1f} km von der Mitte (bis {profile["radius"]} km)'.replace('.', ',')]
     return None
 
 
-def _exclude_district(listing, profile, centre):
-    if district := excluded_district(listing.place, profile.get('excludedDistricts', [])):
+def _exclude_district(listing, profile: Profile, centre):
+    if district := excluded_district(listing.place, profile.get('excluded_districts', [])):
         return [f'Ortsteil „{district}“ ausgeschlossen']
     return None
 
 
-def _exclude_traits(listing, profile, centre):
+def _exclude_traits(listing, profile: Profile, centre):
     excluded = set(profile['exclusions']) & set(listing.traits)
     return sorted(excluded) if excluded else None
 
 
-def _exclude_words(listing, profile, centre):
-    word = excluded_word(f'{listing.title}\n{listing.text}', profile.get('excludeWords', []))
+def _exclude_words(listing, profile: Profile, centre):
+    word = excluded_word(f'{listing.title}\n{listing.text}', profile.get('exclude_words', []))
     return [f'Enthält „{word}“'] if word else None
 
 
-def _exclude_late_move(listing, profile, centre):
+def _exclude_late_move(listing, profile: Profile, centre):
     available = listing.available_from
-    if available and profile.get('moveInBy') and available > profile['moveInBy']:
+    if available and profile.get('move_in_by') and available > profile['move_in_by']:
         return [f'Frei erst ab {_day(available)}']
     return None
 
 
-def _exclude_early_move(listing, profile, centre):
+def _exclude_early_move(listing, profile: Profile, centre):
     available = listing.available_from
-    if available and profile.get('moveInFrom') and available < profile['moveInFrom']:
+    if available and profile.get('move_in_from') and available < profile['move_in_from']:
         return [f'Schon ab {_day(available)} frei']
     return None
 
 
-def _exclude_rent(listing, profile, centre):
+def _exclude_rent(listing, profile: Profile, centre):
     rent = warm_rent(listing)
-    if rent is not None and rent > profile['maxRent']:
+    if rent is not None and rent > profile['max_rent']:
         return ['Warmmiete zu hoch' if listing.rent is not None else 'Warmmiete (geschätzt) zu hoch']
     return None
 
 
-def _exclude_area(listing, profile, centre):
-    return ['Fläche zu klein'] if listing.area is not None and listing.area < profile['minArea'] else None
+def _exclude_area(listing, profile: Profile, centre):
+    return ['Fläche zu klein'] if listing.area is not None and listing.area < profile['min_area'] else None
 
 
-def _exclude_rooms(listing, profile, centre):
-    return ['Zu wenige Zimmer'] if listing.rooms is not None and listing.rooms < profile['minRooms'] else None
+def _exclude_rooms(listing, profile: Profile, centre):
+    return ['Zu wenige Zimmer'] if listing.rooms is not None and listing.rooms < profile['min_rooms'] else None
 
 
 # First exclusion wins, including when several rules apply to the same listing.
@@ -513,22 +529,22 @@ EXCLUSION_RULES = (
 )
 
 
-def _missing_facts(listing, profile):
+def _missing_facts(listing, profile: Profile):
     missing = []
     if warm_rent(listing) is None:
         missing.append('Miete fehlt')
     for value, minimum, label in (
-        (listing.area, profile['minArea'], 'Fläche'),
-        (listing.rooms, profile['minRooms'], 'Zimmer'),
+        (listing.area, profile['min_area'], 'Fläche'),
+        (listing.rooms, profile['min_rooms'], 'Zimmer'),
     ):
         if value is None and minimum:  # without a minimum a missing value rules nothing out
             missing.append(label + ' fehlt')
-    if (profile['exclusions'] or profile.get('excludeWords')) and not listing.exclusions_known:
+    if (profile['exclusions'] or profile.get('exclude_words')) and not listing.exclusions_known:
         missing.append('Beschreibung noch nicht geprüft')
     return missing
 
 
-def match(listing, profile, centre=None):
+def match(listing, profile: Profile, centre=None):
     """("matched" | "unclear" | "excluded", reasons) of one listing for one search.
 
     The portal search applies place, radius and its own filters; the radius is checked again here for
@@ -541,13 +557,13 @@ def match(listing, profile, centre=None):
     return ('unclear', missing) if missing else ('matched', ['Alle Filter erfüllt'])
 
 
-def could_match(listing, profile, centre=None):
+def could_match(listing, profile: Profile, centre=None):
     """Whether a detail page is worth a request: nothing on the card already rules the listing out.
 
     The same rules as match(), except that an estimated warm rent never rules out (the detail page may
     state a lower one); a cold rent above the limit does, since the warm rent can only be higher.
     """
-    if listing.cold_rent is not None and listing.cold_rent > profile['maxRent']:
+    if listing.cold_rent is not None and listing.cold_rent > profile['max_rent']:
         return False
     verdict, _ = match(replace(listing, cold_rent=None), profile, centre)
     return verdict != 'excluded'

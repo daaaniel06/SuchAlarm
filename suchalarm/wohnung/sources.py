@@ -16,6 +16,7 @@ from .domain import (
     SOURCES,
     WHOLE_STOCK,
     Listing,
+    Profile,
     beyond_radius,
     distance_km,
     home_area,
@@ -282,7 +283,7 @@ async def _location(source, query, resolve):
 # --- Result lists -----------------------------------------------------------------------
 
 
-async def _immoscout(p, page=1):
+async def _immoscout(p: Profile, page=1):
     query, place = place_query(p), p['place'] or {}
     headers = {'User-Agent': portals.IMMOSCOUT_UA, 'Content-Type': 'application/json'}
     if place.get('kind') == 'plz':

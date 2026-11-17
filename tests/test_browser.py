@@ -241,7 +241,7 @@ class BrowserExtractionTests(unittest.IsolatedAsyncioTestCase):
 
         await page.route('https://www.immowelt.de/**', answer)
         path = '/suche/mieten/wohnung/hessen/darmstadt-64283/ad08de2508'
-        address, request = portals.immowelt_search(path, {'maxRent': 900, 'minArea': 40, 'minRooms': 2})
+        address, request = portals.immowelt_search(path, {'max_rent': 900, 'min_area': 40, 'min_rooms': 2})
         await page.goto(address)
         data = await page.evaluate(flat_sources._immowelt_list(request), 'immowelt')
         self.assertEqual(data['total'], 31)

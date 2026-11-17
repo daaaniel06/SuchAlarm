@@ -9,6 +9,7 @@ from urllib.parse import quote, urlencode
 
 from ...core.browser import Unreadable
 from ..domain import (
+    Profile,
     area,
     available_from,
     clip,
@@ -72,15 +73,15 @@ FLATS = '1+2'
 PAGE_SIZE = 100  # the most one page holds (20 without it, 200 breaks the list; checked live on 31.10.2026)
 
 
-def wg_url(city, profile, page=1):
+def wg_url(city, profile: Profile, page=1):
     """The town's list of flats and one-room flats, already cut to the search's rent, size, rooms and
     excluded traits. rMax is the total rent the cards show; the limits are widened to whole numbers, the
     exact check stays local."""
     slug, identifier = city
     limits = {
-        'rMax': math.ceil(profile['maxRent']),
-        'sMin': math.floor(profile['minArea']),
-        'rmMin': math.floor(profile['minRooms']),
+        'rMax': math.ceil(profile['max_rent']),
+        'sMin': math.floor(profile['min_area']),
+        'rmMin': math.floor(profile['min_rooms']),
     }
     query = [(name, value) for name, value in limits.items() if value] + [('limit', PAGE_SIZE)]
     exclusions = profile.get('exclusions', [])

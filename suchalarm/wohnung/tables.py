@@ -1,6 +1,6 @@
 """The tables of flat searches in DATA_DIR/wohnung.db (store.register). Each entry runs once; only ever append."""
 
-from .. import store
+from .. import migrations
 
 TABLES = ('listings', 'listing_details', 'more_pages', 'separated')
 
@@ -35,7 +35,7 @@ def _create(conn):
 def _move(conn):
     """The tables lived in suchalarm.db before."""
     for table in TABLES:
-        store.move(conn, 'wohnung', table)
+        migrations.move(conn, 'wohnung', table)
 
 
 def _cheaper_at(conn):

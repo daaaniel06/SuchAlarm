@@ -7,6 +7,7 @@ from urllib.parse import quote, urlencode, urlsplit
 
 from ...core.browser import Unreadable
 from ..domain import (
+    Profile,
     area,
     available_from,
     clip,
@@ -41,15 +42,15 @@ def immowelt_location(final_url, city):
     return path
 
 
-def immowelt_search(path, profile, page=1):
+def immowelt_search(path, profile: Profile, page=1):
     """(result page, search request) for the place's PATH and the result PAGE. The page shows the same
     search on the site, so the request is sent from there. priceMax limits the cold rent, so the warm limit is a safe bound;
     the limits are widened to whole numbers, the exact check stays local."""
     place = path.rsplit('/', 1)[-1].upper()  # ".../darmstadt-64283/ad08de2508" -> "AD08DE2508"
     limits = {
-        'priceMax': math.ceil(profile['maxRent']),
-        'spaceMin': math.floor(profile['minArea']),
-        'numberOfRoomsMin': math.floor(profile['minRooms']),
+        'priceMax': math.ceil(profile['max_rent']),
+        'spaceMin': math.floor(profile['min_area']),
+        'numberOfRoomsMin': math.floor(profile['min_rooms']),
     }
     limits = {name: value for name, value in limits.items() if value}
     limits.update(_excluded(profile.get('exclusions', [])))

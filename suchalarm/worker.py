@@ -11,7 +11,7 @@ import time
 from contextlib import suppress
 from dataclasses import dataclass
 
-from . import digest, scheduler, status, store
+from . import backups, digest, scheduler, status, store
 from .core import cadence
 from .kinds import KINDS
 
@@ -127,7 +127,7 @@ async def daily_backup():
         for kind in KINDS.values():
             kind.cleanup()
         # On the event loop, not in a thread: no API write can land between the copies of two files.
-        store.backup()
+        backups.make()
         backup.due = time.time() + BACKUP_EVERY
     except Exception:
         log.exception('Backup failed')

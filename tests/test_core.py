@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from suchalarm import digest, mailer, mailserver, scheduler, store, worker
+from suchalarm import backups, digest, mailer, mailserver, migrations, scheduler, store, worker
 from suchalarm.app import app, create, delete, update
 from suchalarm.core import browser, cadence, http, images
 from suchalarm.kinds import KINDS
@@ -808,10 +808,10 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_migrations_run_once(self):
         with store.db() as conn:
-            self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], len(store.MIGRATIONS))
-        with patch.object(store, 'MIGRATIONS', (Mock(),) * len(store.MIGRATIONS)) as migrations:
+            self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], len(migrations.MIGRATIONS))
+        with patch.object(migrations, 'MIGRATIONS', (Mock(),) * len(migrations.MIGRATIONS)) as applied:
             store.init()
-        migrations[0].assert_not_called()
+        applied[0].assert_not_called()
 
     async def test_restart_cleans_saved_ebay_titles_without_changing_history(self):
         await self.found(replace(self.offer, title='Neues AngebotSpielWird in neuem Fenster oder Tab geöffnet'))
@@ -852,31 +852,31 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
     async def test_daily_backup(self):
         worker.backup = worker.BackupClock()
         await worker.daily_backup()
-        backups = store.db_path().parent / 'backups'
-        (generation,) = [p for p in backups.iterdir() if p.is_dir()]
+        folder = store.db_path().parent / 'backups'
+        (generation,) = [p for p in folder.iterdir() if p.is_dir()]
         manifest = json.loads((generation / 'manifest.json').read_text())
         for name in ('suchalarm', *store.PARTS):
             self.assertIn(f'{name}.db', manifest['files'], name)
             self.assertTrue((generation / f'{name}.db').exists(), name)
-        self.assertFalse(list(backups.glob('*.tmp')))
+        self.assertFalse(list(folder.glob('*.tmp')))
 
     def test_backups_from_before_generations_stay_until_enough_generations_replace_them(self):
-        backups = store.db_path().parent / 'backups'
-        backups.mkdir(exist_ok=True)
-        (backups / 'suchalarm-2026-01-01.db').write_bytes(b'')
-        store.backup(keep=7)
-        self.assertTrue((backups / 'suchalarm-2026-01-01.db').exists())
+        folder = store.db_path().parent / 'backups'
+        folder.mkdir(exist_ok=True)
+        (folder / 'suchalarm-2026-01-01.db').write_bytes(b'')
+        backups.make(keep=7)
+        self.assertTrue((folder / 'suchalarm-2026-01-01.db').exists())
 
     def test_backup_keeps_complete_generations_only(self):
-        backups = store.db_path().parent / 'backups'
-        backups.mkdir(exist_ok=True)
-        (backups / 'suchalarm-2026-01-01.db').write_bytes(b'')  # a single file from before generations
+        folder = store.db_path().parent / 'backups'
+        folder.mkdir(exist_ok=True)
+        (folder / 'suchalarm-2026-01-01.db').write_bytes(b'')  # a single file from before generations
         for day in range(9):
-            (backups / f'2026-01-{day + 1:02d}').mkdir()
-            (backups / f'2026-01-{day + 1:02d}' / 'manifest.json').write_text('{}')
-        (backups / '2026-02-01.tmp').mkdir()  # an interrupted one is never a generation
-        store.backup(keep=3)
-        names = sorted(p.name for p in backups.iterdir())
+            (folder / f'2026-01-{day + 1:02d}').mkdir()
+            (folder / f'2026-01-{day + 1:02d}' / 'manifest.json').write_text('{}')
+        (folder / '2026-02-01.tmp').mkdir()  # an interrupted one is never a generation
+        backups.make(keep=3)
+        names = sorted(p.name for p in folder.iterdir())
         self.assertEqual(names, ['2026-01-08', '2026-01-09', time.strftime('%Y-%m-%d')])
 
 

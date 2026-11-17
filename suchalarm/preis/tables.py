@@ -1,6 +1,6 @@
 """The tables of product searches in DATA_DIR/preis.db (store.register). Each entry runs once; only ever append."""
 
-from .. import store
+from .. import migrations
 from .titles import clean_title
 
 TABLES = ('offers', 'shipping_baselines', 'idealo_references', 'hidden_titles', 'negotiable_offers')
@@ -22,7 +22,7 @@ def _create(conn):
 def _move(conn):
     """The tables lived in suchalarm.db before."""
     for table in TABLES:
-        store.move(conn, 'preis', table)
+        migrations.move(conn, 'preis', table)
 
 
 def _clean_titles(conn):
