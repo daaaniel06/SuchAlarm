@@ -12,7 +12,7 @@ from invisible_playwright._pw.async_api import Error as PlaywrightError
 from invisible_playwright.async_api import InvisiblePlaywright
 
 from . import cadence
-from .cadence import note
+from .cadence import NotFound, note
 
 EMPTY = re.compile(
     r'keine (?:ergebnisse|treffer|anzeigen|artikel|angebote)|0 ergebnisse|nichts gefunden|no results', re.I
@@ -21,10 +21,6 @@ BLOCK = re.compile(
     r'captcha|zugriff verweigert|access denied|verify you are human|bestätige.{0,30}(?:mensch|kein roboter)|pardon our interruption|sicherheitsüberprüfung',
     re.I,
 )
-
-
-class NotFound(RuntimeError):
-    """HTTP 404: the provider does not know what was asked for (a deleted listing, a page past the last)."""
 
 
 class Blocked(cadence.Refused):

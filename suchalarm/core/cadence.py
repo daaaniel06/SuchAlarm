@@ -92,9 +92,21 @@ def manual_check(requested_at):
         MANUAL.reset(token)
 
 
+# How a fetch fails, the same for browser, HTTP and pictures; the kinds decide what it means for them:
+# - Deferred: the budget does not allow it yet; nothing happened, nothing counts.
+# - Refused: the provider refuses (401/403/429, a security check): pause the provider, never count it
+#   against the thing asked for (a listing, a picture).
+# - NotFound: HTTP 404, the thing asked for is gone (a deleted listing, a page past the last).
+# - any other RuntimeError: this request failed (a timeout, a 5xx, an unreadable page); retried later.
+
+
 class Refused(RuntimeError):
     """The provider refuses or hides its page (HTTP 401/403/429, a security check, an unreadable page).
     Pauses the whole provider with growing backoff; any other error only retries this one query."""
+
+
+class NotFound(RuntimeError):
+    """HTTP 404: the provider does not know what was asked for (a deleted listing, a page past the last)."""
 
 
 GENERIC_ERROR = 'Browser-Abfrage fehlgeschlagen oder Zeitlimit erreicht.'

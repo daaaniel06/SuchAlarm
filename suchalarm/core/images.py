@@ -295,9 +295,13 @@ async def step():
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            until = time.time() + 21600
             if isinstance(exc, ImageFailure) and exc.blocked:
+                # A refusal pauses the CDN and says nothing about the picture: it keeps its attempts.
                 until = cadence.outcome(job['source'], 'image', True, exc.retry_at)
+                with db() as conn:
+                    conn.execute('UPDATE pictures SET next_at=? WHERE key=?', (until, job['key']))
+                return
+            until = time.time() + 21600
             with db() as conn:
                 conn.execute(
                     'UPDATE pictures SET attempts=attempts+1,next_at=?,'

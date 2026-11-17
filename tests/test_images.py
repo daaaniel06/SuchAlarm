@@ -161,6 +161,11 @@ class ImageCacheTests(unittest.IsolatedAsyncioTestCase):
         ):
             await images.step()
         outcome.assert_called_once_with('ebay', 'image', True, 0)
+        with images.db() as conn:
+            row = conn.execute('SELECT state,attempts,next_at FROM pictures').fetchone()
+        # The CDN refused, the picture is not broken: no attempt used up.
+        self.assertEqual((row['state'], row['attempts']), ('queued', 0))
+        self.assertGreater(row['next_at'], time.time() + 1700)
 
     def test_cleanup_drops_old_and_orphaned_files(self):
         root = images.root()
