@@ -197,14 +197,9 @@ def out_of_area(search, source):
     place counts as inside, so the portal is asked as before."""
     p = profile(search)
     place = p['place'] or {}
-    if source == 'wg-gesucht':
-        if place.get('kind') == 'plz':
-            return 'Sucht nur nach Ortsnamen, nicht nach Postleitzahl'
-        if cadence.location('wg-gesucht', _key(_wg_place(p))) == UNKNOWN_PLACE:
-            return 'Kennt diesen Ort nicht'
-    looked_up_as = {'ohne-makler': 'ohne-makler', 'immobilien-de': 'immobilien-de', 'immowelt': 'immowelt',
-                    'kleinanzeigen-wohnung': 'kleinanzeigen'}  # fmt: skip
-    if source in looked_up_as and cadence.location(looked_up_as[source], _key(place_query(p))) == UNKNOWN_PLACE:
+    if source == 'wg-gesucht' and place.get('kind') == 'plz':
+        return 'Sucht nur nach Ortsnamen, nicht nach Postleitzahl'
+    if cadence.location(_place_key(source), _key(_place_query(source, p))) == UNKNOWN_PLACE:
         return 'Kennt diesen Ort nicht'
     if source in WHOLE_STOCK and needs_district_area(search):
         # Without the outline every flat of the stock would be left out, and that empty result would become the
@@ -254,30 +249,48 @@ async def suggest(text):
     return places
 
 
-UNKNOWN_PLACE = ''  # kept for a town a portal's place search does not know, so it is asked only once
+# A portal's own place search is asked once per place; what it found is kept for good (cadence.location).
+UNKNOWN_PLACE = ''  # kept for a place the portal does not know: asked once, then the source rests (out_of_area)
+PLACE_KEYS = {'kleinanzeigen-wohnung': 'kleinanzeigen'}  # Kleinanzeigen keeps flats' and products' places together
 
 
-def _wg_place(p):
-    return (p['place'] or {}).get('label') or place_query(p)
+def _place_key(source):
+    return PLACE_KEYS.get(source, source)
+
+
+def _place_query(source, p):
+    """What the portal's place search is asked: WG-Gesucht takes the place as the suggestion named it."""
+    if source == 'wg-gesucht':
+        return (p['place'] or {}).get('label') or place_query(p)
+    return place_query(p)
+
+
+async def _resolve_place(source, p, lookup, book=False):
+    """(the portal's own name or ID for the search's place, whether it was looked up just now). LOOKUP asks the
+    portal and returns None for a place it does not know; BOOK: the lookup is a page visit of its own in the
+    budget. An unknown place fails the fetch and rests the source from then on."""
+    query = _place_query(source, p)
+    known = cadence.location(_place_key(source), _key(query))
+    looked_up = known is None
+    if looked_up:
+        if book:
+            cadence.book(source, 'page')
+        found = await lookup()
+        known = UNKNOWN_PLACE if found is None else found
+        cadence.save_location(_place_key(source), _key(query), known)
+    if known == UNKNOWN_PLACE:
+        raise RuntimeError(f'{SOURCES[source]} kennt den Ort „{query}“ nicht.')
+    return known, looked_up
 
 
 async def _wg_city(place):
-    """What WG-Gesucht's place field suggests for the place, as stored: '[slug, ID]' or UNKNOWN_PLACE."""
+    """What WG-Gesucht's place field suggests for the place, as stored ('[slug, ID]'), or None."""
     try:
         answer = await http.get_json('wg-gesucht', portals.wg_cities_url(place))
     except http.NotFound:
-        return UNKNOWN_PLACE
+        return None
     city = portals.wg_city(answer, place)
-    return json.dumps(city) if city else UNKNOWN_PLACE
-
-
-async def _location(source, query, resolve):
-    known = cadence.location(source, _key(query))
-    if known is not None:
-        return known
-    value = await resolve()
-    cadence.save_location(source, _key(query), value)
-    return value
+    return json.dumps(city) if city else None
 
 
 # --- Result lists -----------------------------------------------------------------------
@@ -296,8 +309,7 @@ async def _immoscout(p: Profile, page=1):
         entries = await http.get_json('immoscout24', portals.immoscout_locations_url(query))
         return portals.immoscout_region(entries, query)
 
-    looked_up = not place.get('geopath') and cadence.location('immoscout24', _key(query)) is None
-    geopath = place.get('geopath') or await _location('immoscout24', query, region)
+    geopath, looked_up = (place['geopath'], False) if place.get('geopath') else await _resolve_place('immoscout24', p, region)
     coords = (await locate(query))[:2] if p['radius'] else None
     url = portals.immoscout_url(p, geopath, coords, page)
     return await http.get_json('immoscout24', url, headers, portals.IMMOSCOUT_BODY, follow=looked_up)
@@ -318,16 +330,10 @@ async def _kleinanzeigen(p, number=1):
                 found = json.loads(await response.text())  # Firefox shows JSON in its viewer, not as body text
             except ValueError:
                 raise browser.Unreadable('Ortssuche von Kleinanzeigen nicht lesbar.') from None
-            identifier = portals.kleinanzeigen_location(found, query, exact=is_district(p['place'] or {}))
-            return UNKNOWN_PLACE if identifier is None else identifier
+            return portals.kleinanzeigen_location(found, query, exact=is_district(p['place'] or {}))
 
         # The place lookup is a visit of its own in the site's budget; the list then waits for the next slot.
-        looked_up = cadence.location('kleinanzeigen', _key(query)) is None
-        if looked_up:
-            cadence.book(source, 'page')
-        identifier = await _location('kleinanzeigen', query, location)
-        if identifier == UNKNOWN_PLACE:
-            raise RuntimeError(f'Kleinanzeigen kennt den Ort „{query}“ nicht.')
+        identifier, looked_up = await _resolve_place(source, p, location, book=True)
         data = await browser.load_page(
             page,
             source,
@@ -381,15 +387,10 @@ async def _immowelt(p, number=1):
             try:
                 browser.check_response(response)
             except browser.NotFound:
-                return UNKNOWN_PLACE  # no page for this place ("Darmstadt-Dieburg" answers 410)
+                return None  # no page for this place ("Darmstadt-Dieburg" answers 410)
             return portals.immowelt_location(page.url, query)
 
-        looked_up = cadence.location(source, _key(query)) is None
-        if looked_up:
-            cadence.book(source, 'page')
-        place = await _location(source, query, location)
-        if place == UNKNOWN_PLACE:
-            raise RuntimeError(f'Immowelt kennt den Ort „{query}“ nicht.')
+        place, looked_up = await _resolve_place(source, p, location, book=True)
         address, request = portals.immowelt_search(place, p, number)
         data = await browser.load_page(
             page,
@@ -405,25 +406,12 @@ async def _immowelt(p, number=1):
 async def _wg_gesucht(p, page=1):
     """The town's list; its ID is found once through the site's place field, which takes a visit of
     its own in the budget, so the list then follows as a further request of the same fetch."""
-    source, place = 'wg-gesucht', _wg_place(p)
+    source = 'wg-gesucht'
     if (p['place'] or {}).get('kind') == 'plz':
         raise RuntimeError('WG-Gesucht sucht nur nach Ortsnamen, nicht nach Postleitzahl.')
-    looked_up = cadence.location(source, _key(place)) is None
-    city = await _location(source, place, lambda: _wg_city(place))
-    if city == UNKNOWN_PLACE:
-        raise RuntimeError(f'WG-Gesucht kennt den Ort „{place}“ nicht.')
+    city, looked_up = await _resolve_place(source, p, lambda: _wg_city(_place_query(source, p)))
     html = await http.get_html(source, portals.wg_url(json.loads(city), p, page), follow=looked_up)
     return portals.wg_parse(html), portals.wg_total(html)
-
-
-async def _listed_place(source, p, resolve):
-    """(place, looked up now) of a portal whose place is found once through its own place search."""
-    query = place_query(p)
-    looked_up = cadence.location(source, _key(query)) is None
-    place = await _location(source, query, resolve)
-    if place == UNKNOWN_PLACE:
-        raise RuntimeError(f'{SOURCES[source]} kennt den Ort „{query}“ nicht.')
-    return place, looked_up
 
 
 async def _result_page(source, url, page, follow):
@@ -443,7 +431,7 @@ async def _ohne_makler(p, page=1):
     if (p['place'] or {}).get('kind') == 'plz':
         place, looked_up = place_query(p), False
     else:
-        place, looked_up = await _listed_place(source, p, lambda: _om_path(p))
+        place, looked_up = await _resolve_place(source, p, lambda: _om_path(p))
     html = await _result_page(source, portals.om_url(place, p, page), page, looked_up)
     return (portals.om_parse(html), portals.om_total(html)) if html else ([], None)
 
@@ -452,14 +440,14 @@ async def _om_path(p):
     town = home_area(p)
     name = portals.om_town(await http.get_json('ohne-makler', portals.om_places_url(town)), town)
     state = (await locate(place_query(p), follow=True))[2] if name else ''
-    return portals.om_path(state, name) if state else UNKNOWN_PLACE
+    return portals.om_path(state, name) if state else None
 
 
 async def _immobilien_de(p, page=1):
     """The town's newest offers (a postcode stands for its town: the site has no radius). The town's
     token is found once through the site's place search, then the list follows as a further request."""
     source = 'immobilien-de'
-    slug, looked_up = await _listed_place(source, p, lambda: _id_slug(p))
+    slug, looked_up = await _resolve_place(source, p, lambda: _id_slug(p))
     html = await _result_page(source, portals.id_url(slug, p, page), page, looked_up)
     return (portals.id_parse(html), portals.id_total(html)) if html else ([], None)
 
@@ -469,9 +457,9 @@ async def _id_slug(p):
     if (p['place'] or {}).get('kind') == 'plz':
         town = portals.id_town(await http.get_json('immobilien-de', portals.id_places_url(town)))
         if not town:
-            return UNKNOWN_PLACE
+            return None
     answer = await http.get_json('immobilien-de', portals.id_places_url(town), follow=True)
-    return portals.id_city(answer, town) or UNKNOWN_PLACE
+    return portals.id_city(answer, town) or None
 
 
 async def _bauverein():
