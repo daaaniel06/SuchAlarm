@@ -564,7 +564,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('src="cid:', message.get_body(('html',)).get_content())
 
     async def test_sofort_waits_briefly_for_a_picture(self):
-        self.picture(self.offer.url, state='pending')
+        self.picture(self.offer.url, state='queued')
         await self.found(self.offer)
         with patch('suchalarm.mailer.deliver', return_value=[]) as deliver:
             await worker.send_digest()
