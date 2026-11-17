@@ -83,21 +83,29 @@ let timer,
   asked = 0,
   shown = 0;
 // Polling, tab switches and actions may overlap: an answer older than the one shown is dropped, so
-// after "await refresh()" the state is at least as new as that request.
+// after "await refresh()" the state is at least as new as that request. STRICT (after a save): an overtaken
+// answer asks again, so the caller gets a state from after its request, and a failure is thrown.
 export async function refresh({ strict = false } = {}) {
-  const ticket = ++asked;
-  try {
-    const next = await api('state', { signal: AbortSignal.timeout(20000) });
-    if (ticket < shown) return strict ? refresh({ strict }) : undefined;
-    shown = ticket;
-    state = next;
-    render();
-  } catch (err) {
-    if (ticket < shown) return strict ? refresh({ strict }) : undefined;
-    if (strict) throw err;
-    message(err.name === 'TimeoutError' ? 'Server antwortet nicht. Bitte erneut versuchen.' : err.message, true);
-    clearTimeout(timer);
-    timer = setTimeout(refresh, 15000);
+  for (;;) {
+    const ticket = ++asked;
+    try {
+      const next = await api('state', { signal: AbortSignal.timeout(20000) });
+      if (ticket >= shown) {
+        shown = ticket;
+        state = next;
+        render();
+        return;
+      }
+    } catch (err) {
+      if (ticket >= shown) {
+        if (strict) throw err;
+        message(err.name === 'TimeoutError' ? 'Server antwortet nicht. Bitte erneut versuchen.' : err.message, true);
+        clearTimeout(timer);
+        timer = setTimeout(refresh, 15000);
+        return;
+      }
+    }
+    if (!strict) return; // overtaken by a newer answer, which is already shown
   }
 }
 // Poll fast while a check runs, otherwise every 15 seconds; hidden tabs catch up when shown again.
