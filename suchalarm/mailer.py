@@ -8,6 +8,7 @@ import io
 import logging
 import smtplib
 import ssl
+from copy import deepcopy
 from email.message import EmailMessage
 from email.utils import make_msgid
 from html import escape
@@ -28,6 +29,10 @@ class DeliveryError(Exception):
         super().__init__(message)
         self.maybe_sent = maybe_sent
         self.refused = refused or {}  # address -> SMTP code when the server refused every recipient
+
+
+class MessageTooLarge(DeliveryError):
+    """A definite size rejection. Sending a smaller digest may succeed."""
 
 
 UNREACHABLE = 'Mailserver nicht erreichbar – Host und Port prüfen.'
@@ -54,6 +59,12 @@ def _explain(error, sending):
     if isinstance(error, smtplib.SMTPRecipientsRefused):
         codes = {address: answer[0] for address, answer in error.recipients.items()}
         return DeliveryError('Der Mailserver lehnt die Empfängeradresse ab.', False, codes)
+    if isinstance(error, smtplib.SMTPNotSupportedError):
+        return DeliveryError('Mailserver unterstützt die benötigte SMTP-Funktion nicht.', False)
+    if isinstance(error, smtplib.SMTPResponseException) and error.smtp_code in (552, 554):
+        response = error.smtp_error.lower()
+        if any(word in response for word in (b'5.3.4', b'size', b'too big', b'too large')):
+            return MessageTooLarge('Die Nachricht ist für den Mailserver zu groß.', False)
     for kind, text in REFUSALS:
         if isinstance(error, kind):
             return DeliveryError(text, False)
@@ -94,6 +105,7 @@ def deliver(message):
     message['To'] = ', '.join(recipients)
     context = ssl.create_default_context()
     sending = False
+    unsupported = {}
     client: smtplib.SMTP
     try:
         if current.security == 'ssl':
@@ -105,13 +117,27 @@ def deliver(message):
                 client.starttls(context=context)
             if current.user:
                 client.login(current.user, current.password)
+            outgoing = message
+            if any(not address.isascii() for address in recipients):
+                client.ehlo_or_helo_if_needed()
+                if not client.has_extn('smtputf8'):
+                    unsupported = {address: 553 for address in recipients if not address.isascii()}
+                    accepted_format = [address for address in recipients if address not in unsupported]
+                    if not accepted_format:
+                        raise DeliveryError(refusal(unsupported), False, unsupported)
+                    outgoing = deepcopy(message)
+                    outgoing.replace_header('To', ', '.join(accepted_format))
             sending = True
-            refused = client.send_message(message)
+            refused = client.send_message(outgoing)
         finally:
             _hang_up(client)
+    except DeliveryError:
+        raise
     except Exception as error:
-        raise _explain(error, sending) from None
-    return {address: refused[address][0] for address in sorted(refused)}
+        failure = _explain(error, sending)
+        failure.refused.update(unsupported)
+        raise failure from None
+    return dict(sorted((unsupported | {address: answer[0] for address, answer in refused.items()}).items()))
 
 
 def refusal(refused):

@@ -315,6 +315,19 @@ class FilterTests(unittest.TestCase):
         self.assertNotEqual(domain.query_text('immoscout24', no_wbs), domain.query_text('immoscout24', search()))
         self.assertEqual(domain.query_text('wg-gesucht', no_wbs), domain.query_text('wg-gesucht', search()))
 
+    def test_selected_immoscout_regions_share_only_radius_requests(self):
+        def town(region, radius):
+            return search(
+                query='Neustadt',
+                radius=radius,
+                filters={'place': {'kind': 'city', 'query': 'Neustadt', 'geopath': f'/de/{region}/neustadt'}},
+            )
+
+        for radius, shared in ((0, False), (2, True)):
+            with self.subTest(radius=radius):
+                a, b = town('ost', radius), town('west', radius)
+                self.assertEqual(domain.query_text('immoscout24', a) == domain.query_text('immoscout24', b), shared)
+
     def test_detail_page_completes_a_card(self):
         card = flat(rent=None, traits=['Tauschwohnung'], exclusions_known=False)
         done = card.with_detail({'rent': 1250.0, 'area': None, 'traits': ['WBS'], 'text': 'Nur mit WBS'})
@@ -944,7 +957,7 @@ class PlaceTests(TempData):
             pages.save_result(store.search(search_id), 'nhw', [], 0, time.time())  # the empty first result
         pages.save_result(district, 'immoscout24', [], 0, time.time())
         with store.db() as conn:
-            conn.execute(f'PRAGMA wohnung.user_version={len(tables.MIGRATIONS) - 1}')
+            conn.execute(f'PRAGMA wohnung.user_version={tables.MIGRATIONS.index(tables._restart_district_stock)}')
         store.init()
         with store.db() as conn:
             self.assertFalse(status.started(conn, district['id'], 'nhw'))  # starts over with its stock
@@ -1869,6 +1882,22 @@ class WorkerTests(TempData):
         self.assertIn('plötzlich keine Angebote', status['error'])
         self.assertEqual(len(catalog.listings(flat_search)), 6)  # the stock stays visible
 
+    def test_unreadable_first_page_cannot_establish_the_stock(self):
+        flat_search = self.stored_search()
+        with patch.object(
+            sources, '_immoscout', new=AsyncMock(return_value={'resultListItems': [], 'totalResults': 12})
+        ):
+            asyncio.run(worker.check(flat_search))
+        with store.db() as conn:
+            row = status.of(conn, flat_search['id'], 'immoscout24')
+            self.assertFalse(row['started'])
+            self.assertIn('keines davon lesbar', row['error'])
+        self.run_check([self.card(n) for n in range(12)], flat_search)
+        rows = catalog.listings(flat_search)
+        self.assertEqual(sum(r['start'] for r in rows), 12)
+        with store.db() as conn:
+            self.assertEqual(store.pending(conn, 'wohnung'), 0)
+
     def test_an_empty_page_the_portal_confirms_is_no_failure(self):
         """Every flat let, or only offers elsewhere: the portal's own count or its page says so."""
         for found_counts, disturbed in (
@@ -2342,7 +2371,9 @@ class ApiAndMailTests(TempData):
         self.assertEqual(self.queued(), ['1'])
 
     def test_a_queued_flat_survives_a_wider_radius(self):
-        flat_search = self.create(sources=['immoscout24'], filters={'min_area': 40, 'min_rooms': 2, 'exclusions': []})
+        flat_search = self.create(
+            radius=2, sources=['immoscout24'], filters={'min_area': 40, 'min_rooms': 2, 'exclusions': []}
+        )
         with store.db() as conn:
             store.put_setting(conn, 'recipients', json.dumps(['a@example.com']))
             store.put_setting(conn, 'mail_enabled:wohnung', '1')
@@ -2365,6 +2396,32 @@ class ApiAndMailTests(TempData):
         pages.save_result(wider, 'immoscout24', [self.card(1), self.card(2)], 2, time.time())
         rows = {row['url'][-1]: row for row in catalog.listings(wider)}
         self.assertEqual((rows['1']['start'], rows['2']['start']), (False, True))  # the rest is the new stock
+
+    def test_changing_from_town_to_circle_waits_for_evidence(self):
+        options = dict(
+            kind='wohnung', query='Darmstadt', max_price=130000, sources=['immoscout24'], filters={'exclusions': []}
+        )
+        flat_search = self.create(**options)
+        near = self.card(1, lat=49.87, lon=8.65)
+        unknown = self.card(2, place='Darmstadt-Wixhausen')
+        with store.db() as conn:
+            store.put_setting(conn, 'recipients', '["a@example.com"]')
+            store.put_setting(conn, 'mail_enabled:wohnung', '1')
+        pages.save_result(flat_search, 'immoscout24', [], 0, time.time())
+        pages.save_result(flat_search, 'immoscout24', [near, unknown], 2, time.time())
+        with store.db() as conn:
+            conn.execute("UPDATE listing_details SET state='done', body='{}'")
+        outbox.queue_mails()
+        with patch.object(sources, 'centre', return_value=(49.87, 8.65)):
+            response = self.client.put(f'/api/searches/{flat_search["id"]}', json={**options, 'radius': 2})
+        self.assertEqual(response.status_code, 200)
+        with store.db() as conn:
+            self.assertEqual([o['url'] for _, o, _ in outbox.take_pending(conn)], [near.url])
+        updated = store.search(flat_search['id'])
+        self.assertEqual([r['url'] for r in catalog.listings(updated)], [near.url])
+        pages.save_result(updated, 'immoscout24', [unknown], 1, time.time())
+        with store.db() as conn:
+            self.assertEqual({o['url'] for _, o, _ in outbox.take_pending(conn)}, {near.url, unknown.url})
 
     def test_queued_flats_of_the_old_place_are_dropped_when_the_place_changes(self):
         flat_search = self.create(sources=['immoscout24'], filters={'min_area': 40, 'min_rooms': 2, 'exclusions': []})
@@ -2560,6 +2617,30 @@ class DuplicateTests(unittest.TestCase):
 
 
 class DuplicateMailTests(ApiAndMailTests):
+    def test_a_detached_copy_is_compared_with_the_rent_actually_mailed(self):
+        flat_search = self.create(sources=['immoscout24', 'immowelt'], filters={'exclusions': []})
+        with store.db() as conn:
+            store.put_setting(conn, 'recipients', '["a@example.com"]')
+            store.put_setting(conn, 'mail_enabled:wohnung', '1')
+        now = time.time() - 3600
+        leader = self.card(1, rent=1100, place='Heinrichstraße 12, 64283 Darmstadt')
+        copy = replace(leader, source='immowelt', url='https://www.immowelt.de/expose/x', rent=1120)
+        for i, item in enumerate((leader, copy)):
+            pages.save_result(flat_search, item.source, [], 0, now)
+            pages.save_result(flat_search, item.source, [item], 1, now + 1 + i)
+        with store.db() as conn:
+            conn.execute("UPDATE listing_details SET state='done', body='{}'")
+        outbox.queue_mails()
+        with patch('suchalarm.mailer.deliver', return_value={}):
+            asyncio.run(digest.send_digest())
+        for rent, expected in ((1150, []), (1110, []), (900, [copy.url])):
+            pages.save_result(flat_search, copy.source, [replace(copy, rent=rent)], 1, time.time())
+            with store.db() as conn:
+                conn.execute("UPDATE listing_details SET state='done', body='{}'")
+            outbox.queue_mails()
+            with store.db() as conn:
+                self.assertEqual([o['url'] for _, o, _ in outbox.take_pending(conn)], expected)
+
     def test_a_flat_on_two_portals_is_listed_and_mailed_once(self):
         flat_search = self.create(
             sources=['immoscout24', 'immowelt'], filters={'min_area': 40, 'min_rooms': 2, 'exclusions': []}

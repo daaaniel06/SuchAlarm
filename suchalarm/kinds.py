@@ -80,7 +80,7 @@ class Kind[Item, Extra, Saved, Payload: BaseModel](Protocol):
 ASYNC = ('prepare', 'fetch', 'idle')
 
 # These assignments check each worker against its concrete fetch/save/finish and request-body types.
-_preis: Kind[Offer, Row | None, tuple[list[Offer], set[str]], Search] = preis
+_preis: Kind[Offer, Row | None, list[Offer], Search] = preis
 _wohnung: Kind[Listing, PageCounts, set[str], FlatSearch] = wohnung
 KINDS: dict[str, Kind[Any, Any, Any, Any]] = {'preis': _preis, 'wohnung': _wohnung}
 DEFAULT = 'preis'  # a search without kind is a product search, as before flats existed

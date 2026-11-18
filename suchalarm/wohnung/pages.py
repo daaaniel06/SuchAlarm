@@ -158,7 +158,7 @@ def _store(conn, search, page, seen, now):
     }
     conn.executemany(
         'INSERT INTO listings(search_id,source,url,body,first_seen,last_seen) VALUES (?,?,?,?,?,?) '
-        'ON CONFLICT(search_id,url) DO UPDATE SET body=excluded.body, last_seen=excluded.last_seen',
+        'ON CONFLICT(search_id,url) DO UPDATE SET body=excluded.body, last_seen=excluded.last_seen, awaiting_area=0',
         [(sid, source, item.url, json.dumps(asdict(item)), seen.get(item.url) or now, now) for item in listings],
     )
     moved = [item for item in listings if item.url in before and other_rent(before[item.url], item)]

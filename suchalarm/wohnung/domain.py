@@ -336,6 +336,9 @@ def query_text(source, search):
     p = profile(search)
     radius = SENT_RADIUS[source](p) if source in SENT_RADIUS else ''
     values = [place_query(p).casefold(), (p['place'] or {}).get('kind') or '', radius]
+    place = p['place'] or {}
+    if source == 'immoscout24' and not p['radius'] and place.get('kind') != 'plz' and place.get('geopath'):
+        values.append(place['geopath'])
     values += [str(sent(p[limit])) for limit, sent in PORTAL_LIMITS.get(source, {}).items()]
     values += [trait for trait in PORTAL_EXCLUSIONS.get(source, ()) if trait in p['exclusions']]
     return '\n'.join(values)

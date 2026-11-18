@@ -85,10 +85,13 @@ def _claim_batch(conn, mail, now, kind):
     if not _rhythm_allows(conn, mail, now, kind):
         return None
     first = conn.execute(f'SELECT MIN(created_at) FROM outbox WHERE batch IS NULL AND {OF_KIND}', (kind,)).fetchone()[0]
-    entries = sorted(KINDS[kind].take_pending(conn), key=lambda entry: entry[2])[:MAIL_LIMIT]
+    # A size refusal halves the next batch. Zero means one offer without its picture.
+    row = conn.execute('SELECT value FROM settings WHERE key=?', (f'digest_limit:{kind}',)).fetchone()
+    limit = int(row[0]) if row else MAIL_LIMIT
+    entries = sorted(KINDS[kind].take_pending(conn), key=lambda entry: entry[2])[: max(1, limit)]
     if not entries:
         return None
-    ready, coming = images.photos([offer['url'] for _, offer, _ in entries])
+    ready, coming = images.photos([offer['url'] for _, offer, _ in entries]) if limit else ({}, False)
     if mail['frequency'] == 'Sofort' and coming and first > now - IMAGE_WAIT:
         return None
     for _, offer, _ in entries:
@@ -131,7 +134,7 @@ def _record_recipients(conn, batch, message, outcome: BatchStatus, refused):
         conn.execute('UPDATE batches SET message=? WHERE id=?', (message.as_bytes(), batch))
 
 
-def _record_delivery(batch, entries, outcome: BatchStatus, error, message=None, refused=None):
+def _record_delivery(batch, entries, outcome: BatchStatus, error, message=None, refused=None, too_large=False):
     with store.db() as conn:
         sent_at = time.time() if outcome == BATCH_SENT else None
         conn.execute('UPDATE batches SET status=?, error=?, sent_at=? WHERE id=?', (outcome, error, sent_at, batch))
@@ -140,6 +143,9 @@ def _record_delivery(batch, entries, outcome: BatchStatus, error, message=None, 
         if outcome == BATCH_FAILED:
             # The server definitely did not accept it: keep the offers for a later retry.
             conn.execute('UPDATE outbox SET batch=NULL WHERE batch=?', (batch,))
+            if too_large:
+                kind = entries[0][0]['kind']
+                store.put_setting(conn, f'digest_limit:{kind}', str(len(entries) // 2))
             store.put_setting(conn, 'mail_error', f'{error} Neuer Versuch in 10 Minuten.')
             return
         # Only the entries still belonging to this batch count; an edit or deletion may have removed them.
@@ -151,6 +157,9 @@ def _record_delivery(batch, entries, outcome: BatchStatus, error, message=None, 
             [(price, now, reason, search['id'], offer['url'], batch) for search, offer, price in entries],
         )
         conn.execute('DELETE FROM outbox WHERE batch=?', (batch,))
+        kind = entries[0][0]['kind']
+        if not store.pending(conn, kind):
+            store.delete_setting(conn, f'digest_limit:{kind}')
         if outcome == BATCH_SENT and error is None:
             store.delete_setting(conn, 'mail_error')
         elif outcome == BATCH_SENT:
@@ -199,14 +208,17 @@ async def _send_warnings(now):
             'SELECT s.search_id, s.source, s.warning, q.query, q.kind FROM source_status s '
             'JOIN searches q ON q.id=s.search_id WHERE s.warning IS NOT NULL AND s.error IS NULL AND q.active=1'
         ).fetchall()
-    sent = json.loads(store.settings().get('warnings_mailed', '{}'))
+    settings = store.settings()
+    if float(settings.get('warning_retry_at', 0)) > now:
+        return
+    sent = json.loads(settings.get('warnings_mailed', '{}'))
     sent = {key: at for key, at in sent.items() if at > now - WARNING_AGAIN}
     due = [
         row
         for row in rows
-        if _warning_key(row) not in sent and store.mail_settings(kind=row['kind'] or kinds.DEFAULT)['enabled']
+        if _warning_key(row) not in sent and store.mail_settings(settings, kind=row['kind'] or kinds.DEFAULT)['enabled']
     ]
-    recipients = store.mail_settings()['recipients']
+    recipients = store.mail_settings(settings)['recipients']
     if not due or not recipients:
         return
     message = mailer.warning_message(recipients, [(row['query'], row['source'], row['warning']) for row in due])
@@ -215,7 +227,10 @@ async def _send_warnings(now):
     except mailer.DeliveryError as exc:
         log.warning('Source warning mail %s (%s)', 'maybe sent' if exc.maybe_sent else 'not sent', exc)
         if not exc.maybe_sent:
-            return  # tried again on the next pass
+            with store.db() as conn:
+                store.put_setting(conn, 'warning_retry_at', str(now + MAIL_RETRY_AFTER))
+                store.put_setting(conn, 'warning_mail_error', f'Quellenwarnung: {exc} Neuer Versuch in 10 Minuten.')
+            return
         # The server may have it: never twice, like a digest.
     else:
         if refused:
@@ -224,6 +239,8 @@ async def _send_warnings(now):
     sent.update({_warning_key(row): now for row in due})
     with store.db() as conn:
         store.put_setting(conn, 'warnings_mailed', json.dumps(sent))
+        store.delete_setting(conn, 'warning_mail_error')
+        store.delete_setting(conn, 'warning_retry_at')
 
 
 async def _retry_recipients(now):
@@ -295,12 +312,15 @@ async def _send_kind(kind, now):
         return
     batch, message, entries = claimed
     refused = {}
+    too_large = False
     outcome: BatchStatus
     try:
         refused = await asyncio.to_thread(mailer.deliver, message)
         # The others got it: never sent again, the refused addresses are shown instead.
         outcome, error = BATCH_SENT, (mailer.refusal(refused) if refused else None)
     except mailer.DeliveryError as exc:
+        too_large = isinstance(exc, mailer.MessageTooLarge)
+        refused = exc.refused
         outcome, error = (BATCH_UNKNOWN if exc.maybe_sent else BATCH_FAILED), str(exc)
         log.warning('Mail %s', outcome)
-    _record_delivery(batch, entries, outcome, error, message, refused)
+    _record_delivery(batch, entries, outcome, error, message, refused, too_large)

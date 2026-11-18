@@ -55,7 +55,7 @@ def listings(search, conn=None):
             'SELECT l.*, d.body AS detail, d.state AS detail_state, d.created_at AS asked_at, s.url AS start '
             'FROM listings l LEFT JOIN listing_details d ON d.url=l.url '
             'LEFT JOIN start_offers s ON s.search_id=l.search_id AND s.url=l.url '
-            'WHERE l.search_id=? ORDER BY l.first_seen DESC',
+            'WHERE l.search_id=? AND NOT l.awaiting_area ORDER BY l.first_seen DESC',
             (search['id'],),
         ).fetchall()
         separated = apart(search['id'], reader)

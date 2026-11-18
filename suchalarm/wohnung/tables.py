@@ -77,4 +77,21 @@ def _restart_district_stock(conn):
     )
 
 
-MIGRATIONS = (_create, _move, _cheaper_at, _stock_pages, _page_jobs, _detail_requests, _restart_district_stock)
+def _mail_context(conn):
+    columns = {row[1] for row in conn.execute('PRAGMA wohnung.table_info(listings)')}
+    if 'copy_url' not in columns:
+        conn.execute('ALTER TABLE wohnung.listings ADD COLUMN copy_url TEXT')
+    if 'awaiting_area' not in columns:
+        conn.execute('ALTER TABLE wohnung.listings ADD COLUMN awaiting_area INTEGER NOT NULL DEFAULT 0')
+
+
+MIGRATIONS = (
+    _create,
+    _move,
+    _cheaper_at,
+    _stock_pages,
+    _page_jobs,
+    _detail_requests,
+    _restart_district_stock,
+    _mail_context,
+)

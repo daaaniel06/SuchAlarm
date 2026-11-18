@@ -8,6 +8,7 @@ import time
 import unittest
 from contextlib import contextmanager
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 from typing import ClassVar
 from unittest.mock import AsyncMock, Mock, patch
@@ -208,6 +209,68 @@ class WorkerTests(AsyncTempDataTest):
         self.assertEqual((self.count('outbox'), self.count('notifications')), (0, 1))
         await self.found(self.offer, replace(self.offer, url='https://www.ebay.de/itm/2'))
         self.assertEqual(self.count('outbox'), 1)
+
+    async def test_restart_between_save_and_finish_keeps_the_first_price(self):
+        with store.db() as conn:
+            conn.execute('DELETE FROM source_status')
+        KINDS['preis'].save(self.search, 'ebay', [self.offer], None, time.time())
+        store.init()
+        await self.found(self.offer)
+        self.assertEqual(self.count('outbox'), 0)
+        with store.db() as conn:
+            self.assertEqual(
+                tuple(conn.execute('SELECT price,reason FROM notifications').fetchone()),
+                (self.offer.price, store.KNOWN),
+            )
+        await self.found(replace(self.offer, price=self.offer.price - 100))
+        self.assertEqual(self.count('outbox'), 1)
+
+    async def test_legacy_utf8_recipient_does_not_lose_the_other_delivery(self):
+        self.setting('recipients', json.dumps(['älter@example.com', 'a@example.com']))
+        await self.found(self.offer)
+        smtp = Mock()
+        smtp.has_extn.return_value = False
+        smtp.send_message.return_value = {}
+        with patch('smtplib.SMTP', return_value=smtp):
+            await digest.send_digest()
+        self.assertEqual(smtp.send_message.call_args.args[0]['To'], 'a@example.com')
+        with store.db() as conn:
+            self.assertEqual(
+                dict(conn.execute('SELECT address,status FROM deliveries')),
+                {'älter@example.com': 'refused', 'a@example.com': 'accepted'},
+            )
+        self.assertIn('älter@example.com', store.settings()['mail_error'])
+        self.assertEqual(self.count('notifications', "WHERE reason='sent'"), 1)
+
+    async def test_explicit_size_refusal_reduces_the_batch_then_omits_photos(self):
+        offers = [replace(self.offer, url=f'https://www.ebay.de/itm/{i}') for i in range(3)]
+        await self.found(*offers)
+        path = Path(self.tmp.name) / 'preview.jpg'
+        Image.new('RGB', (20, 20)).save(path)
+        tried = []
+
+        def send(message):
+            plain = message.get_body(('plain',)).get_content()
+            count = sum(o.url in plain for o in offers)
+            photo = any(part.get_content_maintype() == 'image' for part in message.walk())
+            tried.append((count, photo))
+            if count > 1 or photo:
+                raise smtplib.SMTPDataError(552, b'5.3.4 message size exceeds limit')
+            return {}
+
+        start = time.time()
+        with (
+            patch('smtplib.SMTP') as connect,
+            patch.object(images, 'photos', return_value=({o.url: path for o in offers}, False)),
+        ):
+            connect.return_value.send_message.side_effect = send
+            for attempt in range(5):
+                await digest.send_digest(start + 601 * attempt)
+                store.init()
+        self.assertEqual(tried, [(3, True), (1, True), (1, False), (1, False), (1, False)])
+        self.assertEqual(self.count('outbox'), 0)
+        self.assertEqual(self.count('notifications', "WHERE reason='sent'"), 3)
+        self.assertNotIn('digest_limit:preis', store.settings())
 
     async def test_a_queued_offer_pushed_off_the_first_page_still_goes_out(self):
         self.setting('frequency', 'Täglich')
@@ -455,11 +518,18 @@ class WorkerTests(AsyncTempDataTest):
     async def test_a_source_warning_is_mailed_once_a_day(self):
         with store.db() as conn:
             status.source_ok(conn, 1, 'ebay', time.time(), 0, warning='Liefert nur 0 statt sonst etwa 30 Angebote')
-        with patch('suchalarm.mailer.deliver', side_effect=mailer.DeliveryError('weg', False)):
-            await digest.send_digest()  # not taken: tried again on the next pass
+        now = time.time()
+        with patch('suchalarm.mailer.deliver', side_effect=mailer.DeliveryError('weg', False)) as failed:
+            await digest.send_digest(now)
+            store.init()
+            await digest.send_digest(now + 1)
+        failed.assert_called_once()
+        self.assertIn('Quellenwarnung: weg', store.settings()['warning_mail_error'])
+        retry = now + digest.MAIL_RETRY_AFTER
         with patch('suchalarm.mailer.deliver', return_value={}) as deliver:
-            await digest.send_digest()
-            await digest.send_digest()
+            await digest.send_digest(retry)
+            await digest.send_digest(retry + 1)
+        self.assertNotIn('warning_mail_error', store.settings())
         deliver.assert_called_once()
         mail = deliver.call_args.args[0]
         self.assertEqual(mail['Subject'], 'Suchalarm: 1 Quelle auffällig')
@@ -470,7 +540,7 @@ class WorkerTests(AsyncTempDataTest):
             await digest.send_digest()
         deliver.assert_not_called()
         with patch('suchalarm.mailer.deliver', return_value={}) as deliver:
-            await digest.send_digest(time.time() + digest.WARNING_AGAIN + 1)
+            await digest.send_digest(retry + digest.WARNING_AGAIN + 1)
         deliver.assert_called_once()
 
     async def test_an_uncertain_source_warning_mail_is_not_sent_again(self):
@@ -944,6 +1014,21 @@ class WorkerTests(AsyncTempDataTest):
         names = sorted(p.name for p in folder.iterdir())
         self.assertEqual(names, ['2026-01-08', '2026-01-09', time.strftime('%Y-%m-%d')])
 
+    def test_failed_replacement_preserves_a_restorable_generation(self):
+        first = backups.make()
+        self.setting('after_first_backup', 'yes')
+        with patch.object(Path, 'rename', side_effect=OSError('interrupted')), self.assertRaises(OSError):
+            backups.make()
+
+        def saved_setting(folder):
+            with sqlite3.connect(folder / 'suchalarm.db') as conn:
+                return conn.execute("SELECT value FROM settings WHERE key='after_first_backup'").fetchone()
+
+        self.assertIsNone(saved_setting(first))
+        fresh = backups.make()
+        self.assertEqual(saved_setting(fresh), ('yes',))
+        self.assertFalse(first.exists())
+
 
 class ApiTests(TempDataTest):
     def setUp(self):
@@ -1335,7 +1420,7 @@ class DeliveryOutcomeTests(unittest.TestCase):
         self.assertEqual(self.outcome(send=smtplib.SMTPSenderRefused(550, b'no', 'a'))[1], False)
         self.assertEqual(
             self.outcome(send=smtplib.SMTPDataError(552, b'too big')),
-            ('Mailserver lehnt die Nachricht ab (Code 552).', False),
+            ('Die Nachricht ist für den Mailserver zu groß.', False),
         )
 
     def test_an_error_on_quit_after_the_handover_is_still_sent(self):

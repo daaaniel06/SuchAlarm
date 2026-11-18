@@ -19,7 +19,7 @@ from . import details, maps, pages, sources
 from . import mail as mail  # the kind's mail presentation (kinds.py)
 from .catalog import listings
 from .domain import SOURCES as SOURCES  # the kind's source labels (kinds.py)
-from .domain import TRAITS, Listing, place_query, profile, query_text
+from .domain import TRAITS, Listing, distance_km, place_query, profile, query_text
 from .models import FLAT_RADII, FlatSearch
 from .outbox import queue_mails as queue_mails  # the kind's mail queue (kinds.py)
 from .outbox import take_pending as take_pending
@@ -116,19 +116,37 @@ def cleanup(now: float | None = None) -> int:
 def reset(conn: Connection, search_id: int, old: store.Search, payload: FlatSearch) -> None:
     """Another place or radius makes the stored flats wrong; other filters are judged per listing. A portal
     that applies a changed limit itself may now list older flats: its stock is read again."""
-    moved = old['query'] != payload.query or old['radius'] != payload.radius
+    old_place = profile(old)['place'] or {}
+    new_place = payload.place()
+    changed_place = old['query'] != payload.query or old_place.get('geopath') != new_place.get('geopath')
+    moved = changed_place or old['radius'] != payload.radius
     dropped = [source for source in old['sources'] if source not in payload.sources]
     removed = old['sources'] if moved else dropped
     status.forget(conn, search_id, removed)
     conn.executemany('DELETE FROM more_pages WHERE search_id=? AND source=?', [(search_id, s) for s in removed])
     conn.executemany('DELETE FROM listings WHERE search_id=? AND source=?', [(search_id, s) for s in dropped])
     if moved:
-        if old['query'] != payload.query or payload.radius < old['radius']:
+        if changed_place or payload.radius < old['radius']:
             # Another place or a smaller radius: flats waiting for the mail may lie outside, and without a
             # position the radius could not even tell. What lies in the new area comes with its first result. A
             # wider radius around the same place still holds them.
             conn.execute('DELETE FROM outbox WHERE search_id=? AND batch IS NULL', (search_id,))
         store.keep_waiting_only(conn, 'listings', search_id)
+        if not changed_place and old['radius'] == 0 and payload.radius:
+            # The old administrative area can extend beyond the new circle. A new portal result
+            # releases a waiting flat without coordinates; a known position can confirm it now.
+            middle = sources.centre(old)
+            for row in listings(old, conn):
+                inside = (
+                    middle
+                    and row['lat'] is not None
+                    and row['lon'] is not None
+                    and (distance_km(middle, (row['lat'], row['lon'])) <= payload.radius)
+                )
+                if not inside:
+                    conn.execute(
+                        'UPDATE listings SET awaiting_area=1 WHERE search_id=? AND url=?', (search_id, row['url'])
+                    )
         conn.execute('DELETE FROM start_offers WHERE search_id=?', (search_id,))
         return
     new = store.read_search(conn, search_id)

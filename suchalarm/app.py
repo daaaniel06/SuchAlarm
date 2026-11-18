@@ -199,7 +199,7 @@ async def state():
         'recipients': store.mail_settings(settings)['recipients'],
         'configured': mailserver.configured(),
         'server': _mail_server(),
-        'error': settings.get('mail_error'),
+        'error': ' '.join(filter(None, (settings.get('mail_error'), settings.get('warning_mail_error')))) or None,
         'pending': pending,
         **{kind: _area_mail(store.mail_settings(settings, kind)) for kind in KINDS},
     }
