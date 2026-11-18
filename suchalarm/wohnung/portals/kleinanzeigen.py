@@ -1,6 +1,7 @@
 """Kleinanzeigen flats, read in the browser."""
 
 import logging
+import math
 import re
 from html import unescape
 from urllib.parse import quote, urlencode
@@ -60,11 +61,11 @@ def kleinanzeigen_url(profile: Profile, location_id, page=1):
     if profile.get('min_rooms'):
         filters += f'+wohnung_mieten.zimmer_d:{profile["min_rooms"]:g},'
     # No swap filter: swap_s:nein also drops every ad that leaves the field empty, most of them.
-    # The price filter is the cold rent; a warm-rent limit is a safe upper bound for it.
+    # The price filter is the cold rent in whole euros; the warm-rent limit, rounded up, is a safe upper bound.
     # "anzeige:angebote" leaves out requests from flat seekers.
     paging = f'seite:{page}/' if page > 1 else ''
     path = (
-        f'/s-wohnung-mieten/anzeige:angebote/sortierung:neuste/{paging}preis::{int(profile["max_rent"])}'
+        f'/s-wohnung-mieten/anzeige:angebote/sortierung:neuste/{paging}preis::{math.ceil(profile["max_rent"])}'
         f'/c203l{location_id}{radius}{filters}'
     )
     return KLEINANZEIGEN + quote(path, safe='/:+') + f'?pageSize={PAGE_SIZE}'

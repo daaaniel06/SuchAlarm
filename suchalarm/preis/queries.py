@@ -132,6 +132,8 @@ def _query_options(source, search, place):
         parts.append('negotiable')
     if search.get('free') and source == 'kleinanzeigen':
         parts.append('free')
+    if source == 'kleinanzeigen':
+        parts.append('offers-only')  # the request leaves out requests from buyers ("anzeige:angebote")
     if search.get('delivery') == 'beides' and place:
         parts.append('and-nationwide-shipping')
     if platform_ids(source, search):

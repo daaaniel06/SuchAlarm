@@ -149,7 +149,7 @@ Das Passwort wird nie an den Browser ausgeliefert. Alternativ die `SMTP_*`-Varia
 
 | Thema | Kurz |
 | --- | --- |
-| Backups | Täglich nach `/data/backups/<Datum>/`, geprüft (`integrity_check`), mit `manifest.json`, sieben Generationen. Wiederherstellen: App stoppen, `.db`-Dateien nach `/data/` kopieren, starten. Zusätzlich extern sichern. |
+| Backups | Sieben geprüfte Tagesgenerationen unter `/data/backups/`, jeweils mit `manifest.json`. Ein erneutes Backup am selben Tag erhält einen Zeitstempel im Ordnernamen. Zur Wiederherstellung die App stoppen, die `.db`-Dateien der gewünschten Generation nach `/data/` kopieren und die App starten. Zusätzlich extern sichern. |
 | Deploy | Zuerst die Test-Stage bauen und ausführen (`docker build --target test .`), dann das Image. Images mit Commit-SHA taggen. |
 | Rollback | Auf einen vorhandenen SHA-Tag zurückgehen; vor Schemaänderungen Daten sichern. |
 | Zugriff | Nur der Reverse-Proxy veröffentlicht einen Port; schreibende Anfragen fremder Origins werden abgewiesen. |

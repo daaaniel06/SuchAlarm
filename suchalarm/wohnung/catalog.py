@@ -55,7 +55,7 @@ def listings(search, conn=None):
             'SELECT l.*, d.body AS detail, d.state AS detail_state, d.created_at AS asked_at, s.url AS start '
             'FROM listings l LEFT JOIN listing_details d ON d.url=l.url '
             'LEFT JOIN start_offers s ON s.search_id=l.search_id AND s.url=l.url '
-            'WHERE l.search_id=? ORDER BY l.first_seen DESC',
+            'WHERE l.search_id=? AND NOT l.awaiting_area ORDER BY l.first_seen DESC',
             (search['id'],),
         ).fetchall()
         separated = apart(search['id'], reader)
@@ -148,6 +148,22 @@ def separate(conn, search_id, url):
     conn.executemany(
         'INSERT OR IGNORE INTO separated(search_id,url,other) VALUES (?,?,?)',
         [(search_id, url, row['url']) for row in group if row['url'] != url],
+    )
+    # Held back only as copies of the group: each is judged on its own again (a falsely matched flat would else
+    # stay silent for good, even after a rent cut).
+    # Copies from before they had their own reason were kept as known at 0.
+    held = [
+        row['url']
+        for row in group
+        if conn.execute(
+            'SELECT 1 FROM notifications WHERE search_id=? AND url=? AND (reason=? OR (price=0 AND COALESCE(reason, ?)=?))',
+            (search_id, row['url'], store.COPY, store.KNOWN, store.KNOWN),
+        ).fetchone()
+    ]
+    conn.executemany('DELETE FROM notifications WHERE search_id=? AND url=?', [(search_id, url) for url in held])
+    # The mail queue only looks at recent flats: one held back for weeks is looked at again now (outbox.QUEUE_SQL).
+    conn.executemany(
+        'UPDATE listings SET cheaper_at=? WHERE search_id=? AND url=?', [(time.time(), search_id, url) for url in held]
     )
     return True
 

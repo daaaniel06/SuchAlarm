@@ -52,11 +52,11 @@ class CategoryTests(unittest.TestCase):
         cadence.save_location('kleinanzeigen', '10115', '9668')
         self.assertEqual(
             search_url('kleinanzeigen', 'Ecksofa', self.sofa),
-            'https://www.kleinanzeigen.de/s-preis::300/Ecksofa/k0c80l9668r25?sortingField=SORTING_DATE',
+            'https://www.kleinanzeigen.de/s-anzeige:angebote/preis::300/Ecksofa/k0c80l9668r25?sortingField=SORTING_DATE',
         )
         self.assertEqual(
             search_url('kleinanzeigen', 'VW Golf', self.car),
-            'https://www.kleinanzeigen.de/s-preis::300/VW-Golf/k0c216l9668r100+autos.ez_i:2012%2C+autos.km_i:%2C150000?sortingField=SORTING_DATE',
+            'https://www.kleinanzeigen.de/s-anzeige:angebote/preis::300/VW-Golf/k0c216l9668r100+autos.ez_i:2012%2C+autos.km_i:%2C150000?sortingField=SORTING_DATE',
         )
 
     def test_ebay_searches_around_postcode_instead_of_germany(self):
@@ -317,8 +317,10 @@ class CategoryTests(unittest.TestCase):
         self.assertFalse(eligible(Offer('kleinanzeigen', offer.url, offer.title, 0, None), with_shipping))
         cadence.save_location('kleinanzeigen', '10115', '9668')
         # A lower bound at the provider would hide given-away offers.
-        self.assertIn('/s-preis::300/', search_url('kleinanzeigen', 'Ecksofa', dict(search, free=True)))
-        self.assertIn('/s-preis:50:300/', search_url('kleinanzeigen', 'Ecksofa', search))
+        self.assertIn(
+            '/s-anzeige:angebote/preis::300/', search_url('kleinanzeigen', 'Ecksofa', dict(search, free=True))
+        )
+        self.assertIn('/s-anzeige:angebote/preis:50:300/', search_url('kleinanzeigen', 'Ecksofa', search))
 
     def test_both_reads_the_area_and_shippable_offers_from_everywhere(self):
         cadence.save_location('kleinanzeigen', '10115', '9668')

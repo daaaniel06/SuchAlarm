@@ -6,12 +6,11 @@ import unicodedata
 from urllib.parse import quote, urlencode
 
 from ...core.browser import Unreadable
-from ..domain import Profile, area, available_from, clip, detect_traits, line, money, number, rooms
+from ..domain import OM_RADII, Profile, area, available_from, clip, detect_traits, line, money, number, rooms
 from .common import attribute, plain
 
 OHNE_MAKLER = 'https://www.ohne-makler.net'
 OM_LIST = f'{OHNE_MAKLER}/immobilien/wohnung-mieten/'
-OM_RADII = (10, 25, 50, 100)  # the steps of the site's radius field, in km
 
 # A town's list sits at /immobilien/wohnung-mieten/<state>/<town>/, both named the way the site spells
 # them: "Frankfurt (Main)" in Hessen is .../hessen/frankfurt-main/. A postcode needs no path (?zip=), but

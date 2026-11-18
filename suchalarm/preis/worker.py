@@ -121,28 +121,19 @@ def empty_is_suspicious(reference: Row | None) -> bool:
     return False
 
 
-def save(
-    search: store.Search, source: str, offers: list[Offer], reference: Row | None, observed: float
-) -> tuple[list[Offer], set[str]]:
-    """Store a successful result; returns (offers, the starting point's URLs) for finish()."""
-    return offers, save_result(search, source, offers, reference, observed)
+def save(search: store.Search, source: str, offers: list[Offer], reference: Row | None, observed: float) -> list[Offer]:
+    """Replace the result and record its mail decision in the same transaction."""
+    save_result(search, source, offers, reference, observed)
+    return offers
 
 
-def finish(search: store.Search, saved: list[tuple[list[Offer], set[str]]]) -> None:
-    """After all sources: remember Vinted offers without shipping, queue what is new for the mail."""
-    found = {offer.url: offer for offers, _ in saved for offer in offers}
-    baseline = set().union(*(urls for _, urls in saved)) if saved else set()
-    # Shipping only adds to the item price: an item already at the limit can never become a hit.
-    delivery.remember(offer for offer in found.values() if offer.price < search['max_price'])
-    enqueue(search, found, baseline)
+def finish(search: store.Search, saved: list[list[Offer]]) -> None:
+    """Queue missing shipping lookups after the provider results were saved."""
+    delivery.remember(offer for offers in saved for offer in offers if offer.price < search['max_price'])
 
 
 def save_result(search, source, offers, reference, now):
-    """Replace a source's stored offers with a successful result. Returns the URLs that form its
-    starting point: the first readable result of a source is not news and is never mailed.
-
-    An offer waiting for the mail stays until it is sent: only the first result page is read, so newer
-    offers may just have pushed it off, which does not mean it is gone."""
+    """Keep a pending offer when it drops off the first page, and remember the first readable stock."""
     sid = search['id']
     with store.db() as conn:
         seen = dict(conn.execute('SELECT url, first_seen FROM offers WHERE search_id=? AND source=?', (sid, source)))
@@ -194,31 +185,30 @@ def save_result(search, source, offers, reference, now):
             conn.execute('INSERT OR REPLACE INTO idealo_references(search_id,value) VALUES (?,?)', (sid, value))
         elif source == NEW_PRICE_SOURCE:
             conn.execute('DELETE FROM idealo_references WHERE search_id=?', (sid,))
-    return baseline
+        enqueue(conn, search, offers, baseline)
 
 
-def enqueue(search, found, baseline):
+def enqueue(conn, search, offers, baseline):
     """New offers under the limit go to the outbox. The starting point, and anything found while mails
     are off, no mailserver is configured or the search is paused, only counts as known,
     so switching on later sends no flood."""
     mail = store.mail_settings()
     mailing = search['active'] and mail['enabled'] and mail['recipients'] and mailserver.configured()
     sid, now = search['id'], time.time()
-    wanted = [offer for offer in found.values() if eligible(offer, search)]
+    wanted = [offer for offer in offers if eligible(offer, search)]
     images.prioritize([offer.url for offer in wanted])
-    with store.db() as conn:
-        hidden = {r[0] for r in conn.execute('SELECT url FROM hidden WHERE search_id=?', (sid,))}
-        reported = dict(conn.execute('SELECT url, price FROM notifications WHERE search_id=?', (sid,)))
-        for offer in wanted:
-            price = offer.compared_price(search)
-            if offer.url in hidden:
-                continue  # hidden by a swipe: never mailed
-            if offer.url in reported and price >= reported[offer.url]:
-                continue  # already reported at this price or cheaper
-            if offer.url in baseline or not mailing:
-                store.remember_reported(conn, sid, offer.url, price, now)
-            else:
-                store.queue(conn, sid, offer.url, price, now)
+    hidden = {r[0] for r in conn.execute('SELECT url FROM hidden WHERE search_id=?', (sid,))}
+    reported = dict(conn.execute('SELECT url, price FROM notifications WHERE search_id=?', (sid,)))
+    for offer in wanted:
+        price = offer.compared_price(search)
+        if offer.url in hidden:
+            continue  # hidden by a swipe: never mailed
+        if offer.url in reported and price >= reported[offer.url]:
+            continue  # already reported at this price or cheaper
+        if offer.url in baseline or not mailing:
+            store.remember_reported(conn, sid, offer.url, price, now)
+        else:
+            store.queue(conn, sid, offer.url, price, now)
 
 
 # Mail
@@ -333,11 +323,10 @@ def _apply_shipping(url, amount):
             'UPDATE offers SET shipping=? WHERE search_id=? AND url=?', [(amount, r['search_id'], url) for r in rows]
         )
         conn.execute("UPDATE saved SET shipping=? WHERE source='vinted' AND url=?", (amount, url))
-    if amount is None:
-        return
-    for row in rows:
-        offer = Offer.from_row(dict(row, shipping=amount))
-        enqueue(searches[row['search_id']], {url: offer}, {url} if row['search_id'] in baselines else set())
+        if amount is not None:
+            for row in rows:
+                offer = Offer.from_row(dict(row, shipping=amount))
+                enqueue(conn, searches[row['search_id']], [offer], {url} if row['search_id'] in baselines else set())
 
 
 async def update_shipping():

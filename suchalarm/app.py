@@ -199,7 +199,7 @@ async def state():
         'recipients': store.mail_settings(settings)['recipients'],
         'configured': mailserver.configured(),
         'server': _mail_server(),
-        'error': settings.get('mail_error'),
+        'error': ' '.join(filter(None, (settings.get('mail_error'), settings.get('warning_mail_error')))) or None,
         'pending': pending,
         **{kind: _area_mail(store.mail_settings(settings, kind)) for kind in KINDS},
     }
@@ -247,6 +247,7 @@ async def update(search_id: int, payload: AnySearch):
     with store.db() as conn:
         store.change_search(conn, search_id, columns, values)
         KINDS[payload.kind].reset(conn, search_id, old, payload)
+        status.forget_counts(conn, search_id)
     scheduler.wake.set()
     return {'ok': True}
 

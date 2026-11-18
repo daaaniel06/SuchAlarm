@@ -8,6 +8,7 @@ import io
 import logging
 import smtplib
 import ssl
+from copy import deepcopy
 from email.message import EmailMessage
 from email.utils import make_msgid
 from html import escape
@@ -16,7 +17,7 @@ from pathlib import Path
 from PIL import Image
 
 from . import kinds, mailhtml, maillinks
-from .mailserver import configured, server
+from .mailserver import ascii_address, configured, server
 
 log = logging.getLogger('suchalarm')
 
@@ -28,6 +29,10 @@ class DeliveryError(Exception):
         super().__init__(message)
         self.maybe_sent = maybe_sent
         self.refused = refused or {}  # address -> SMTP code when the server refused every recipient
+
+
+class MessageTooLarge(DeliveryError):
+    """A definite size rejection. Sending a smaller digest may succeed."""
 
 
 UNREACHABLE = 'Mailserver nicht erreichbar – Host und Port prüfen.'
@@ -54,6 +59,12 @@ def _explain(error, sending):
     if isinstance(error, smtplib.SMTPRecipientsRefused):
         codes = {address: answer[0] for address, answer in error.recipients.items()}
         return DeliveryError('Der Mailserver lehnt die Empfängeradresse ab.', False, codes)
+    if isinstance(error, smtplib.SMTPNotSupportedError):
+        return DeliveryError('Mailserver unterstützt die benötigte SMTP-Funktion nicht.', False)
+    if isinstance(error, smtplib.SMTPResponseException) and error.smtp_code in (552, 554):
+        response = error.smtp_error.lower()
+        if any(word in response for word in (b'5.3.4', b'size', b'too big', b'too large')):
+            return MessageTooLarge('Die Nachricht ist für den Mailserver zu groß.', False)
     for kind, text in REFUSALS:
         if isinstance(error, kind):
             return DeliveryError(text, False)
@@ -75,14 +86,26 @@ def _hang_up(client):
         client.close()
 
 
+def ascii_or_same(address):
+    """ADDRESS with an ASCII domain as it goes out; unchanged if it cannot be (the server answers for it)."""
+    try:
+        return ascii_address(address)
+    except ValueError:
+        return address  # the server answers for it, as for any other address
+
+
 def deliver(message):
     """Send over SMTP. Returns the recipients the server refused while it took the others, each with its SMTP
     code (address -> code, sorted). Raises DeliveryError with a short German reason, never secrets."""
     current = _usable_server()
     del message['From']  # the mailbox that sends it, whatever the server is set to now
     message['From'] = current.sender
+    recipients = list(dict.fromkeys(ascii_or_same(a.strip()) for a in (message['To'] or '').split(',') if a.strip()))
+    del message['To']  # recipients saved before addresses were made ASCII may still carry an umlaut domain
+    message['To'] = ', '.join(recipients)
     context = ssl.create_default_context()
     sending = False
+    unsupported = {}
     client: smtplib.SMTP
     try:
         if current.security == 'ssl':
@@ -94,13 +117,27 @@ def deliver(message):
                 client.starttls(context=context)
             if current.user:
                 client.login(current.user, current.password)
+            outgoing = message
+            if any(not address.isascii() for address in recipients):
+                client.ehlo_or_helo_if_needed()
+                if not client.has_extn('smtputf8'):
+                    unsupported = {address: 553 for address in recipients if not address.isascii()}
+                    accepted_format = [address for address in recipients if address not in unsupported]
+                    if not accepted_format:
+                        raise DeliveryError(refusal(unsupported), False, unsupported)
+                    outgoing = deepcopy(message)
+                    outgoing.replace_header('To', ', '.join(accepted_format))
             sending = True
-            refused = client.send_message(message)
+            refused = client.send_message(outgoing)
         finally:
             _hang_up(client)
+    except DeliveryError:
+        raise
     except Exception as error:
-        raise _explain(error, sending) from None
-    return {address: refused[address][0] for address in sorted(refused)}
+        failure = _explain(error, sending)
+        failure.refused.update(unsupported)
+        raise failure from None
+    return dict(sorted((unsupported | {address: answer[0] for address, answer in refused.items()}).items()))
 
 
 def refusal(refused):
@@ -261,6 +298,21 @@ def jpeg(path):
     except Exception as exc:
         log.warning('Mail picture %s unreadable (%s)', Path(path).name, type(exc).__name__)
         return None
+
+
+def warning_message(recipients, warnings):
+    """A plain mail about sources that answer but look broken; WARNINGS: (search query, source, warning)."""
+    message = EmailMessage()
+    message['To'] = ', '.join(recipients)
+    message['Subject'] = f'Suchalarm: {len(warnings)} Quelle{"n" if len(warnings) != 1 else ""} auffällig'
+    lines = [f'Suche „{query}“ · {kinds.source_label(source)}: {warning}' for query, source, warning in warnings]
+    message.set_content(
+        'Diese Quellen antworten, liefern aber auffällig wenig oder unvollständige Angebote. Vermutlich hat der '
+        'Anbieter seine Seite umgebaut; bis das behoben ist, können Treffer fehlen.\n\n'
+        + '\n'.join(lines)
+        + f'\n\n{maillinks.app_url()}'.rstrip()
+    )
+    return message
 
 
 def test_message(recipients, entries, batch):

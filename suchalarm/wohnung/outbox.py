@@ -14,10 +14,13 @@ DETAIL_WAIT = 15 * 60  # a matching listing waits this long for its detail page 
 
 QUEUE_SQL = (
     'SELECT l.search_id, l.url, l.body, MAX(l.first_seen, COALESCE(l.cheaper_at, 0)) AS seen, d.state, '
-    'd.body AS detail, n.price AS reported FROM listings l '
+    'd.body AS detail, n.price AS reported, n.reason, l.copy_url, leader.price AS group_price, '
+    'l.cheaper_at, n.sent_at FROM listings l '
     'LEFT JOIN listing_details d ON d.url=l.url '
     'LEFT JOIN notifications n ON n.search_id=l.search_id AND n.url=l.url '
-    'WHERE (l.first_seen>=? OR l.cheaper_at>=?) AND (n.url IS NULL OR l.cheaper_at>n.sent_at) '
+    "LEFT JOIN notifications leader ON leader.search_id=l.search_id AND leader.url=l.copy_url AND leader.reason!='copy' "
+    'WHERE NOT l.awaiting_area AND (l.first_seen>=? OR l.cheaper_at>=?) '
+    "AND (n.url IS NULL OR l.cheaper_at>n.sent_at OR n.reason='copy') "
     'AND NOT EXISTS (SELECT 1 FROM start_offers s WHERE s.search_id=l.search_id AND s.url=l.url) '
     'AND NOT EXISTS (SELECT 1 FROM outbox x WHERE x.search_id=l.search_id AND x.url=l.url) '
     'AND NOT EXISTS (SELECT 1 FROM hidden h WHERE h.search_id=l.search_id AND h.url=l.url)'
@@ -44,22 +47,40 @@ def queue_mails(now: float | None = None) -> None:
     mailing = mail['enabled'] and mail['recipients'] and mailserver.configured()
     searches = {s['id']: s for s in store.searches('wohnung')}
     wanted = _wanted(searches)
-    followers = {
-        (search_id, row['url']) for search_id, search in searches.items() for row in listings(search) if row['copy']
-    }
+    followers = {}
+    for sid, flat_search in searches.items():
+        rows = listings(flat_search)
+        mailed = {r['same_as'] or r['url']: r['url'] for r in rows if not r['copy']}
+        followers.update({(sid, r['url']): mailed[r['same_as'] or r['url']] for r in rows if r['copy']})
     with store.db() as conn:
         recent = now - DETAIL_WINDOW
         for row in conn.execute(QUEUE_SQL, (recent, recent)).fetchall():
             search = searches.get(row['search_id'])
             if search is None or (row['state'] == PENDING and row['seen'] > now - DETAIL_WAIT):
                 continue  # the detail page decides; a paused portal must not hold a clear match for hours
-            if (row['search_id'], row['url']) in followers:
-                # Another portal's copy of a flat that is mailed through its fitting listing: only known.
-                store.remember_reported(conn, row['search_id'], row['url'], 0, now)
+            key = (row['search_id'], row['url'])
+            reported = row['reported']
+            if leader := followers.get(key):
+                # Another portal's copy of a flat that is mailed through its fitting listing: known while the
+                # group lasts ("Nicht dieselbe Wohnung" ends it, catalog.separate). A copy mailed or known
+                # before keeps that record.
+                if reported is None:
+                    store.remember_reported(conn, *key, 0, now, store.COPY)
+                if (reported is None or row['reason'] == store.COPY) and row['copy_url'] != leader:
+                    conn.execute('UPDATE listings SET copy_url=? WHERE search_id=? AND url=?', (leader, *key))
                 continue
+            if row['reason'] == store.COPY:
+                # Older copies have no recorded leader. Reconsider them on a real rent cut.
+                if not row['copy_url'] and (row['cheaper_at'] or 0) <= row['sent_at']:
+                    continue
+                reported = row['group_price']
+                if reported is None:
+                    conn.execute('DELETE FROM notifications WHERE search_id=? AND url=?', key)
+                else:
+                    store.remember_reported(conn, *key, reported, row['sent_at'], store.KNOWN)
             item = completed(row)
             verdict, _ = match(item, *wanted[search['id']])
-            if not _worth_a_mail(item, verdict, row['state'], row['reported']):
+            if not _worth_a_mail(item, verdict, row['state'], reported):
                 continue  # looked at again while it is recent: a changed search or a lower rent may still count
             price = cents(warm_rent(item)) or 0
             if search['active'] and mailing:
@@ -82,7 +103,7 @@ def take_pending(conn: Connection) -> list[MailEntry]:
         twins[sid] = twins_by_url(rows)
     entries, dropped = [], []
     rows = conn.execute(
-        'SELECT x.search_id, x.url, l.body, d.body AS detail, d.state, h.url AS hidden, n.price AS reported '
+        'SELECT x.search_id, x.url, l.body, l.awaiting_area, l.last_seen, d.body AS detail, d.state, h.url AS hidden, n.price AS reported '
         'FROM outbox x '
         'JOIN searches s ON s.id=x.search_id AND s.kind=? '
         'LEFT JOIN listings l ON l.search_id=x.search_id AND l.url=x.url '
@@ -93,6 +114,11 @@ def take_pending(conn: Connection) -> list[MailEntry]:
         ('wohnung', DONE, FAILED, GONE),
     ).fetchall()
     for row in rows:
+        if row['awaiting_area']:
+            # Waits for the new area's result to list it again; one no portal shows any more is dropped.
+            if row['last_seen'] < time.time() - DETAIL_WINDOW:
+                dropped.append((row['search_id'], row['url']))
+            continue
         search = searches.get(row['search_id'])
         if (
             search

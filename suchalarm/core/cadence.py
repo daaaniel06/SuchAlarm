@@ -112,6 +112,10 @@ class Refused(RuntimeError):
     Pauses the whole provider with growing backoff; any other error only retries this one query."""
 
 
+class IncompleteResult(RuntimeError):
+    """The source explicitly lists results but none could be read. Show this failure on the first attempt."""
+
+
 class NotFound(RuntimeError):
     """HTTP 404 or 410: the provider does not know what was asked for (a deleted listing, a page past the last,
     a place it has no page for)."""
@@ -460,7 +464,7 @@ def _record_failure(key, source, row, exc, now, detail=None):
             (key, source, until, failures, BLOCKED if refused else RETRYING),
         )
     recent = not row or not row['at'] or now - row['at'] < RETRY_SILENTLY_WITHIN
-    return until, not refused and failures <= len(RETRIES) and recent
+    return until, not isinstance(exc, (Refused, IncompleteResult)) and failures <= len(RETRIES) and recent
 
 
 def _record_success(key, source, offers, reference, cache_version):

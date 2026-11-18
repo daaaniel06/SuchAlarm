@@ -6,9 +6,10 @@ warm rent in cents like every search (searches.max_price).
 
 import math
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
-from typing import Literal, TypedDict
+from typing import Any, Literal, TypedDict
 
 from ..core.text import excluded_word
 
@@ -333,22 +334,58 @@ def query_text(source, search):
     if source in WHOLE_STOCK:
         return 'whole stock'
     p = profile(search)
-    values = [place_query(p).casefold(), (p['place'] or {}).get('kind') or '', str(p['radius'])]
-    values += [f'{p[limit]:g}' for limit in PORTAL_LIMITS.get(source, ())]
+    radius = SENT_RADIUS[source](p) if source in SENT_RADIUS else ''
+    values = [place_query(p).casefold(), (p['place'] or {}).get('kind') or '', radius]
+    place = p['place'] or {}
+    if source == 'immoscout24' and not p['radius'] and place.get('kind') != 'plz' and place.get('geopath'):
+        values.append(place['geopath'])
+    values += [str(sent(p[limit])) for limit, sent in PORTAL_LIMITS.get(source, {}).items()]
     values += [trait for trait in PORTAL_EXCLUSIONS.get(source, ()) if trait in p['exclusions']]
     return '\n'.join(values)
 
 
 WHOLE_STOCK = ('bauverein', 'nhw')
 ProfileLimit = Literal['max_rent', 'min_area', 'min_rooms']
-ALL_LIMITS: tuple[ProfileLimit, ...] = ('max_rent', 'min_area', 'min_rooms')
-PORTAL_LIMITS: dict[str, tuple[ProfileLimit, ...]] = {  # the search's limits each portal applies itself
-    'immoscout24': ALL_LIMITS,
-    'kleinanzeigen-wohnung': ALL_LIMITS,
-    'wg-gesucht': ALL_LIMITS,
-    'immowelt': ALL_LIMITS,
-    'immobilien-de': ALL_LIMITS,
-    'ohne-makler': ('max_rent', 'min_area'),
+OM_RADII = (10, 25, 50, 100)  # the steps of ohne-makler's radius field, in km
+
+
+def _tenth(value):
+    return f'{value:.1f}'
+
+
+def _plain(value):
+    return f'{value:g}'
+
+
+# The search's limits each portal applies itself, as the request sends them (portals/*.py): searches whose requests
+# are the same share one, also when their own limits differ in what the portal rounds away (rent 900.50 and 901).
+WHOLE_UNITS: dict[ProfileLimit, Callable[[float], Any]] = {
+    'max_rent': math.ceil,
+    'min_area': math.floor,
+    'min_rooms': math.floor,
+}
+PORTAL_LIMITS: dict[str, dict[ProfileLimit, Callable[[float], Any]]] = {
+    'immoscout24': {'max_rent': _tenth, 'min_area': _tenth, 'min_rooms': _tenth},
+    'kleinanzeigen-wohnung': {'max_rent': math.ceil, 'min_area': _plain, 'min_rooms': _plain},
+    'wg-gesucht': WHOLE_UNITS,
+    'immowelt': WHOLE_UNITS,
+    'immobilien-de': WHOLE_UNITS,
+    'ohne-makler': {'max_rent': math.ceil, 'min_area': math.floor},
+}
+
+
+def _om_radius(p):
+    """ohne-makler's step for a town; a postcode search ignores the radius (live 17.11.2026: same 16 offers)."""
+    if (p['place'] or {}).get('kind') == 'plz' or re.fullmatch(r'\d{5}', place_query(p)) or not p['radius']:
+        return ''
+    return str(next((step for step in OM_RADII if step >= p['radius']), OM_RADII[-1]))
+
+
+# The radius each portal sends; the others search their place (town) and select() keeps what lies within it.
+SENT_RADIUS: dict[str, Callable[[Profile], str]] = {
+    'immoscout24': lambda p: _tenth(p['radius']) if p['radius'] else '',
+    'kleinanzeigen-wohnung': lambda p: str(int(p['radius'])) if p['radius'] else '',
+    'ohne-makler': _om_radius,
 }
 PORTAL_EXCLUSIONS = {  # the excluded traits each portal leaves out itself (checked live 31.10.2026)
     'immoscout24': ('WBS',),

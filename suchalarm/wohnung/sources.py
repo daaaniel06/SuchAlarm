@@ -352,8 +352,11 @@ def _immowelt_list(request):
     """A function expression for page.evaluate: the offers of REQUEST (portals.immowelt_search), asked for
     from inside Immowelt's own result page, then their contents in batches of portals.IMMOWELT_BATCH. A
     refusal reads as a blocked page; any other failed answer leaves 'total' empty, so the page counts as
-    unreadable."""
+    unreadable. load_page may read a page several times while it settles: the requests go out once per document,
+    every further read gets the same answer (window.__suchalarmList)."""
     return f"""async () => {{
+  if (window.__suchalarmList) return await window.__suchalarmList;
+  window.__suchalarmList = (async () => {{
   const page = {{ title: document.title, text: document.body ? document.body.innerText.slice(0, 20000) : '',
                  rows: [], total: null }};
   const read = async response => {{
@@ -372,6 +375,8 @@ def _immowelt_list(request):
   }}
   page.total = found.totalCount;
   return page;
+  }})();
+  return await window.__suchalarmList;
 }}"""
 
 
@@ -531,7 +536,7 @@ async def cards(source, search, page=1):
     return await LISTS[source](profile(search), page)
 
 
-@cadence.shared_search(cache_version=4)  # 4: field warnings alongside the page counts
+@cadence.shared_search(cache_version=5)  # older results may contain an unreadable page saved as empty
 async def fetch(source, search):
     """(listings, counts) of one portal query; the decorator shares, caches and times it, select() filters per
     search. COUNTS: how many the page held ('listed', tells pages.py whether it was full) and how many of the
@@ -551,6 +556,8 @@ async def _page(source, search, page=1):
     listings = [Listing.from_card(source, card) for card in found]
     images.remember(source, {listing.url: listing.image for listing in listings if listing.image})
     missed = unread(source, page, len(found), total)
+    if missed and not found:
+        raise cadence.IncompleteResult(f'Anbieter meldet {missed} Angebote auf Seite {page}, keines davon lesbar.')
     if missed:
         log.warning('%s: page %s lists %s offers the parser could not read', source, page, missed)
     warning = field_warning(source, listings)

@@ -2,7 +2,7 @@ import json
 import re
 from dataclasses import asdict
 from pathlib import Path
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlparse
 
 from ..core import browser, cadence, images
 from ..core.browser import EMPTY, Unreadable, check_response
@@ -11,7 +11,7 @@ from .categories import HOSTS, NEW_PRICE_SOURCE, SHIPPING_LOOKUP_SOURCES
 from .money import money, shipping
 from .prices import Offer, portal_price_bounds
 from .queries import around, canonical, kleinanzeigen_attributes, section, vehicle, vehicle_fits
-from .titles import clean_title, phrases, platform_ids, title_fits, wanted_words
+from .titles import clean_title, normalized, phrases, platform_ids, title_fits, wanted_words
 
 DEFAULT_CARD_LIMIT = 100
 PAGE_SIZES = {'ebay': 240}
@@ -69,8 +69,10 @@ def kleinanzeigen_url(query, search):
         else ''
     )
     slug = quote(query.replace(' ', '-'), safe='')
-    # Newest first: checked every 15 minutes, every new offer is on page one at least once.
-    return f'https://www.kleinanzeigen.de/s-{price}{slug}/k0{kleinanzeigen_code(category, place, search)}?sortingField=SORTING_DATE'
+    # Newest first: checked every 15 minutes, every new offer is on page one at least once. "anzeige:angebote" leaves
+    # out requests ("Suche Zelda"), which never were offers (live 17.11.2026: 3.065 -> 3.034 for "zelda").
+    code = kleinanzeigen_code(category, place, search)
+    return f'https://www.kleinanzeigen.de/s-anzeige:angebote/{price}{slug}/k0{code}?sortingField=SORTING_DATE'
 
 
 def vinted_url(query, search):
@@ -187,6 +189,29 @@ def markup_changed(source, rows):
         and has_price_text(r.get('price', ''))
     )
     return len(rows) >= MARKUP_SAMPLE and usable < len(rows) * MARKUP_USABLE_SHARE
+
+
+TITLE_EVIDENCE, TITLE_LOST_SHARE = 5, 0.8  # cards whose link names the search; share whose title does not
+
+
+def titles_lost(source, rows, phrase):
+    """Cards whose link names every word of the search while hardly any title does: the parser reads the wrong
+    element as title (Vinted 11/2026: only the brand, "Nintendo", while the link said "nintendo-switch-oled"). Every
+    card would fail the title check and the source would look like an honest empty result."""
+    words = normalized(phrase).split()
+    named = [
+        row
+        for row in rows
+        if words
+        and all(word in normalized(urlparse(row.get('url', '')).path.replace('-', ' ')).split() for word in words)
+    ]
+    if len(named) < TITLE_EVIDENCE:
+        return False
+    # A title may glue words together ("iPhone13" for the link's "iphone-13"): each word only has to appear.
+    lost = sum(
+        1 for row in named if not all(word in normalized(row.get('title', '')).replace(' ', '') for word in words)
+    )
+    return lost >= len(named) * TITLE_LOST_SHARE
 
 
 MAX_TITLE, MAX_SELLER, MAX_CONDITION = 400, 200, 100
@@ -493,6 +518,8 @@ async def _phrase_rows(page, source, search, phrase, follow):
             page, source, search_url(source, wanted_words(source, nationwide, phrase), nationwide), follow=True
         )
         rows += [row for row in listing_rows(source, wide) if shippable(source, row)]
+    if titles_lost(source, rows, phrase or search['query']):
+        raise RuntimeError('Seitenaufbau des Anbieters geändert: Die Links nennen die Suche, die Titel nicht.')
     return rows
 
 

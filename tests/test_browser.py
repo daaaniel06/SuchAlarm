@@ -253,6 +253,9 @@ class BrowserExtractionTests(unittest.IsolatedAsyncioTestCase):
             [('/classifiedList/' + ','.join(ids[:30]), None, 'de'), ('/classifiedList/' + ids[30], None, 'de')],
         )
         refuse.append(True)
+        again = await page.evaluate(flat_sources._immowelt_list(request), 'immowelt')  # load_page reads again
+        self.assertEqual((again['total'], len(asked)), (31, 4))  # the same answer, no request sent twice
+        await page.goto(address)  # a new document asks anew
         data = await page.evaluate(flat_sources._immowelt_list(request), 'immowelt')
         self.assertIsNone(data['total'])
         self.assertRegex(data['text'], flat_sources.browser.BLOCK)

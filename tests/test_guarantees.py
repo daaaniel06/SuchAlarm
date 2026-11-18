@@ -126,6 +126,30 @@ class SharedResultTests(TempDataTest):
             )
 
 
+class SharedFlatRequestTests(unittest.TestCase):
+    """Searches whose portal requests are the same share one, whatever the portal rounds away or does not send."""
+
+    def key(self, source, **changes):
+        filters = {'min_area': 40.5, 'min_rooms': 2, 'exclusions': []}
+        search = dict(id=1, kind='wohnung', query='Darmstadt', max_price=90050, excluded='', radius=0, filters=filters)
+        return flat_query(source, {**search, **changes})
+
+    def test_a_radius_the_portal_does_not_send_shares_the_request(self):
+        for source in ('immowelt', 'wg-gesucht', 'immobilien-de'):
+            with self.subTest(source=source):
+                self.assertEqual(self.key(source), self.key(source, radius=10))
+        self.assertNotEqual(self.key('immoscout24'), self.key('immoscout24', radius=10))
+        self.assertEqual(self.key('ohne-makler', radius=11), self.key('ohne-makler', radius=20))  # both send 25
+
+    def test_limits_the_portal_rounds_away_share_the_request(self):
+        self.assertEqual(self.key('immowelt'), self.key('immowelt', max_price=90100))  # 900.50 and 901 send 901
+        self.assertNotEqual(self.key('immoscout24'), self.key('immoscout24', max_price=90100))  # sends 900.5
+
+    def test_kleinanzeigen_rounds_the_rent_up(self):
+        p = profile(dict(query='Darmstadt', max_price=90050, radius=0, filters={}))
+        self.assertIn('preis::901/', portals.kleinanzeigen_url(p, '4881'))  # 900 would lose a flat at 900.50
+
+
 class PriceTests(unittest.TestCase):
     def test_unknown_included_shipping_is_no_total(self):
         offer = Offer('ebay', 'https://www.ebay.de/itm/1', 'Spiel', 1000, None)

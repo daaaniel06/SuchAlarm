@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, Union
 from pydantic import BaseModel, Discriminator, Field, Tag, create_model, field_validator
 
 from .kinds import DEFAULT, KINDS
+from .mailserver import ascii_address
 
 EMAIL = re.compile(r'[^\s@<>\r\n,;]+@[^\s@<>\r\n,;]+\.[^\s@<>\r\n,;]+')  # no header injection, no lists
 
@@ -60,6 +61,7 @@ class Recipients(BaseModel):
             value = value.strip()
             if len(value) > 254 or not EMAIL.fullmatch(value):
                 raise ValueError('Gültige Mailadresse eingeben.')
+            value = ascii_address(value)
             if value.casefold() not in (item.casefold() for item in result):
                 result.append(value)
         return result
@@ -82,7 +84,7 @@ class MailServer(BaseModel):
         value = value.strip()
         if value and not EMAIL.fullmatch(value):
             raise ValueError('Gültige Mailadresse eingeben.')
-        return value
+        return ascii_address(value) if value else value
 
     @field_validator('host')
     @classmethod

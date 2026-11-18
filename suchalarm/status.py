@@ -30,9 +30,56 @@ def _show(conn, sid, source, now, error=None, count=0, failures=0, note=None):
     )
 
 
+# A source that usually brings many offers and suddenly brings almost none has most likely changed its layout in a
+# way no single page shows (every card read, but none passes). HISTORY_KEEP results per search and source are kept.
+HISTORY_KEEP, HISTORY_NEEDED, USUAL_AT_LEAST, DROP_FACTOR = 20, 5, 10, 10
+DROP_WARNING = 'Liefert nur {count} statt sonst etwa {usual} Angebote – Seitenaufbau geändert?'
+
+
+def _drop_warning(conn, sid, source, count):
+    """A warning when COUNT is far below what the source usually brought for this search, else None."""
+    earlier = sorted(
+        r[0]
+        for r in conn.execute(
+            'SELECT count FROM source_history WHERE search_id=? AND source=? ORDER BY checked_at DESC LIMIT ?',
+            (sid, source, HISTORY_KEEP),
+        )
+    )
+    if len(earlier) < HISTORY_NEEDED:
+        return None
+    usual = earlier[len(earlier) // 2]  # the median: one odd result does not move it
+    if usual < USUAL_AT_LEAST or count * DROP_FACTOR > usual:
+        return None
+    return DROP_WARNING.format(count=count, usual=usual)
+
+
+def forget_counts(conn, search_id):
+    """An edited search finds something else: what its sources usually brought says nothing about it any more
+    (a lower rent limit is no broken page)."""
+    conn.execute('DELETE FROM source_history WHERE search_id=?', (search_id,))
+
+
+def _remember_count(conn, sid, source, now, count):
+    conn.execute(
+        'INSERT INTO source_history(search_id,source,checked_at,count) VALUES (?,?,?,?)', (sid, source, now, count)
+    )
+    conn.execute(
+        'DELETE FROM source_history WHERE search_id=?1 AND source=?2 AND rowid NOT IN (SELECT rowid FROM '
+        'source_history WHERE search_id=?1 AND source=?2 ORDER BY checked_at DESC LIMIT ?3)',
+        (sid, source, HISTORY_KEEP),
+    )
+
+
 def source_ok(conn, sid, source, now, count, unread=None, warning=None):
     """A readable result with COUNT offers. From now on the source has started for the search (started()).
-    UNREAD: offers the parser missed. WARNING: a layout hint beside the successful result."""
+    UNREAD: offers the parser missed. WARNING: a layout hint beside the successful result; a sudden drop against
+    the source's usual count for this search is one too (_drop_warning)."""
+    drop = _drop_warning(conn, sid, source, count)
+    warning = warning or drop
+    if drop is None:
+        # A drop stays out of the usual count: a page that stays broken keeps its warning instead of becoming the
+        # new normal. It ends when the counts come back or the search is edited.
+        _remember_count(conn, sid, source, now, count)
     _show(conn, sid, source, now, count=count)
     conn.execute(
         'UPDATE source_status SET started=1, unread=?, warning=? WHERE search_id=? AND source=?',
@@ -96,13 +143,17 @@ def by_search_and_source(conn):
 
 
 def forget(conn, search_id, sources):
-    """An edit makes these sources' results invalid: their next result is a new starting stock (started())."""
-    conn.executemany('DELETE FROM source_status WHERE search_id=? AND source=?', [(search_id, s) for s in sources])
+    """An edit makes these sources' results invalid: their next result is a new starting stock (started()), and
+    what they usually brought says nothing about the changed search."""
+    pairs = [(search_id, s) for s in sources]
+    conn.executemany('DELETE FROM source_status WHERE search_id=? AND source=?', pairs)
+    conn.executemany('DELETE FROM source_history WHERE search_id=? AND source=?', pairs)
 
 
 def forget_kind(conn, kind):
     """Every row of one search kind's searches (the kind's offers were all deleted)."""
     conn.execute('DELETE FROM source_status WHERE search_id IN (SELECT id FROM searches WHERE kind=?)', (kind,))
+    conn.execute('DELETE FROM source_history WHERE search_id IN (SELECT id FROM searches WHERE kind=?)', (kind,))
 
 
 def share_error(first_id, follower, source):
