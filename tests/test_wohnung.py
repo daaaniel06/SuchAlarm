@@ -2423,6 +2423,29 @@ class ApiAndMailTests(TempData):
         with store.db() as conn:
             self.assertEqual({o['url'] for _, o, _ in outbox.take_pending(conn)}, {near.url, unknown.url})
 
+    def test_a_flat_awaiting_the_new_area_leaves_the_outbox_when_no_portal_lists_it(self):
+        options = dict(
+            kind='wohnung', query='Darmstadt', max_price=130000, sources=['immoscout24'], filters={'exclusions': []}
+        )
+        flat_search = self.create(**options)
+        unknown = self.card(2, place='Darmstadt-Wixhausen')
+        with store.db() as conn:
+            store.put_setting(conn, 'recipients', '["a@example.com"]')
+            store.put_setting(conn, 'mail_enabled:wohnung', '1')
+        pages.save_result(flat_search, 'immoscout24', [], 0, time.time())
+        pages.save_result(flat_search, 'immoscout24', [unknown], 1, time.time())
+        with store.db() as conn:
+            conn.execute("UPDATE listing_details SET state='done', body='{}'")
+        outbox.queue_mails()
+        with patch.object(sources, 'centre', return_value=(49.87, 8.65)):
+            self.client.put(f'/api/searches/{flat_search["id"]}', json={**options, 'radius': 2})
+        with store.db() as conn:
+            self.assertEqual(outbox.take_pending(conn), [])
+            self.assertEqual(store.pending(conn, 'wohnung'), 1)  # still waiting for the new result
+            conn.execute('UPDATE listings SET last_seen=?', (time.time() - catalog.DETAIL_WINDOW - 1,))
+            outbox.take_pending(conn)
+            self.assertEqual(store.pending(conn, 'wohnung'), 0)
+
     def test_queued_flats_of_the_old_place_are_dropped_when_the_place_changes(self):
         flat_search = self.create(sources=['immoscout24'], filters={'min_area': 40, 'min_rooms': 2, 'exclusions': []})
         with store.db() as conn:

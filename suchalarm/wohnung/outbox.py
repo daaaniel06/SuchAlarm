@@ -103,7 +103,7 @@ def take_pending(conn: Connection) -> list[MailEntry]:
         twins[sid] = twins_by_url(rows)
     entries, dropped = [], []
     rows = conn.execute(
-        'SELECT x.search_id, x.url, l.body, l.awaiting_area, d.body AS detail, d.state, h.url AS hidden, n.price AS reported '
+        'SELECT x.search_id, x.url, l.body, l.awaiting_area, l.last_seen, d.body AS detail, d.state, h.url AS hidden, n.price AS reported '
         'FROM outbox x '
         'JOIN searches s ON s.id=x.search_id AND s.kind=? '
         'LEFT JOIN listings l ON l.search_id=x.search_id AND l.url=x.url '
@@ -115,6 +115,9 @@ def take_pending(conn: Connection) -> list[MailEntry]:
     ).fetchall()
     for row in rows:
         if row['awaiting_area']:
+            # Waits for the new area's result to list it again; one no portal shows any more is dropped.
+            if row['last_seen'] < time.time() - DETAIL_WINDOW:
+                dropped.append((row['search_id'], row['url']))
             continue
         search = searches.get(row['search_id'])
         if (
