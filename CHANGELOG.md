@@ -15,6 +15,7 @@
 - Autos: Kilometerstand und Erstzulassung werden beim Angebot gespeichert. Wird „Erstzulassung ab“ oder „Kilometer bis“ geändert, prüft die nächste Mail wartende Treffer erneut statt sie zu verwerfen. Andere Änderungen, die nur der Anbieter anwendet (Kategorie, Abholung, PLZ, Umkreis, Kraftstoff, Getriebe), verwerfen wartende Treffer; vorher wurden sie trotzdem gemailt.
 
 ### Wohnungen
+- WG-Gesucht: Seit dem neuen Kartenlayout (25.11.2026) fehlten Fläche, Zimmer, Adresse, Einzugsdatum und „Befristet“. Die Karte wird jetzt nach ihrem Text gelesen statt nach Klassennamen; altes und neues Layout gehen beide.
 - Ein Kreis („Darmstadt-Dieburg (Kreis)“) ist eine eigene Ortsart. Eine Kreis-Suche ohne Umkreis behält die Wohnungen seiner Gemeinden (vorher alle verworfen). NHW und bauverein werden über den Umriss des Kreises aus OpenStreetMap zugeordnet (einmal abgerufen, dann gespeichert). Die Ortsvorschläge zeigen „Stadt“ oder „Kreis“.
 - Kleinanzeigen und Immowelt kennen keine Kreise: Eine Kreis-Suche lässt sie mit „Kennt diesen Ort nicht“ ruhen, statt (wie bisher bei Kleinanzeigen) die Stadt Darmstadt für „Darmstadt-Dieburg“ zu durchsuchen. Bestehende Kreis-Suchen nehmen den Bestand von NHW und bauverein einmal neu als Anfangsbestand auf, ohne Mails.
 - Gelöschte Inserate, deren Detailseite im Browser mit 404 oder 410 antwortet, gelten als entfernt und werden nicht mehr gemailt.
