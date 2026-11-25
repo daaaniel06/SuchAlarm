@@ -17,6 +17,7 @@
 
 ### Wohnungen
 - Backup für alle Wohnungsportale: Findet der Parser eines Portals ein Feld nicht (meist nach einer umbenannten Klasse), kommen Ort, Miete, Fläche, Zimmer und Einzug aus dem Text der Karte. Die Warnung „Seitenaufbau geändert?“ bleibt, weil sie nur die eigene Lesung des Portals prüft. Eine Beschriftung direkt vor dem Preis („Warmmiete 480 €“) zählt jetzt auch im Ausweich-Parser.
+- Backup auch für Detailseiten (WG-Gesucht, Kleinanzeigen, ohne-makler, immobilien.de, NHW, Immowelt): Was der Parser dort nicht findet, kommt aus beschrifteten Werten des Seitentexts („Wohnfläche ca. 55 m²“, „Kaltmiete 540 €“, „frei ab 01.12.2026“). Nur genannte Warmmieten zählen, keine geschätzten.
 - WG-Gesucht: Seit dem neuen Kartenlayout (25.11.2026) fehlten Fläche, Zimmer, Adresse, Einzugsdatum und „Befristet“. Die Karte wird jetzt nach ihrem Text gelesen statt nach Klassennamen; altes und neues Layout gehen beide.
 - Ein Kreis („Darmstadt-Dieburg (Kreis)“) ist eine eigene Ortsart. Eine Kreis-Suche ohne Umkreis behält die Wohnungen seiner Gemeinden (vorher alle verworfen). NHW und bauverein werden über den Umriss des Kreises aus OpenStreetMap zugeordnet (einmal abgerufen, dann gespeichert). Die Ortsvorschläge zeigen „Stadt“ oder „Kreis“.
 - Kleinanzeigen und Immowelt kennen keine Kreise: Eine Kreis-Suche lässt sie mit „Kennt diesen Ort nicht“ ruhen, statt (wie bisher bei Kleinanzeigen) die Stadt Darmstadt für „Darmstadt-Dieburg“ zu durchsuchen. Bestehende Kreis-Suchen nehmen den Bestand von NHW und bauverein einmal neu als Anfangsbestand auf, ohne Mails.

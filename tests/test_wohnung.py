@@ -863,6 +863,29 @@ class ParserTests(unittest.TestCase):
         )
         self.assertEqual(portals.common.complete('Test', [({'area': 70}, pieces)]), [{'area': 70}])
 
+    def test_a_field_the_detail_parser_misses_comes_from_the_labelled_page_text(self):
+        # Kleinanzeigen renamed its detail list: the labelled values of the page fill in.
+        renamed = KLEINANZEIGEN_DETAIL.replace('addetailslist--detail', 'renamed')
+        with self.assertLogs('suchalarm', 'WARNING') as logs:
+            detail = sources.read_detail('kleinanzeigen-wohnung', portals.kleinanzeigen_detail, renamed)
+        self.assertEqual((detail['rent'], detail['area'], detail['rooms']), (1290, 62.5, 2))
+        self.assertEqual(detail['fromText'], ['rent', 'area', 'rooms'])
+        self.assertIn('Felder aus dem Seitentext ergänzt', logs.output[0])
+        # An estimated warm rent stays unknown: only a stated one counts, never Immowelt's guess.
+        estimated = fixture('immowelt', 'expose_estimated.html')
+        self.assertIsNone(sources.read_detail('immowelt', portals.immowelt_detail, estimated)['rent'])
+        # A page the parser reads fully is left as it is.
+        complete = sources.read_detail('immobilien-de', portals.id_detail, fixture('immobilien-de', 'detail.html'))
+        self.assertNotIn('fromText', complete)
+
+    def test_labelled_values_of_a_page(self):
+        facts = portals.common.page_facts(
+            ['Kaltmiete', '9,82 €/m²', '540 €', 'Wohnfläche ca.', '55 m²', 'Zimmer:', '2', 'frei ab', '01.12.2026']
+        )
+        self.assertEqual(facts, {'rent': None, 'coldRent': 540, 'area': 55, 'rooms': 2, 'availableFrom': '2026-12-01'})
+        self.assertIsNone(portals.common.page_facts(['2 Zimmer', '55 m²'])['rooms'])  # no label, no guess
+        self.assertIsNone(portals.common.page_facts(['geschätzte Warmmiete', '900 €'])['rent'])
+
     def test_a_label_before_the_card_price_names_its_kind(self):
         facts = portals.common.text_facts
         self.assertEqual(facts(['Kaltmiete', '795 €', 'Warmmiete', '1.106 €'])['coldRent'], 795)

@@ -252,7 +252,8 @@ def rescue(portal, html, link, base='', skip_wanted=False, warm=False):
 
 # --- Fallback for single fields ------------------------------------------
 # A portal's own reading stays first. Where it misses a field, mostly after a renamed class, the card's text
-# fills it (text_facts), as the fallback parser does for whole cards.
+# fills it (text_facts), as the fallback parser does for whole cards, and a detail page's text its labelled
+# values (page_facts).
 
 
 FROM_TEXT = 'fromText'
@@ -280,17 +281,57 @@ def json_pieces(value):
 
 def complete(portal, cards, warm=False):
     """The listings of (listing, text pieces of its card) pairs, each field the portal reads but found empty
-    taken from the card's text. Fields the portal does not read stay out: a cold-rent portal gets no warm rent.
-    A listing names its filled fields under FROM_TEXT (see own_reading); they are logged as a hint that the
-    portal's markup changed."""
+    taken from the card's text (text_facts)."""
+    return _fill(portal, 'Kartentext', [(listing, text_facts(pieces, warm)) for listing, pieces in cards])
+
+
+def complete_detail(portal, detail, pieces):
+    """A detail page as the portal's parser read it, each field it reads but found empty taken from the labelled
+    values of the page's text pieces (page_facts)."""
+    (detail,) = _fill(portal, 'Seitentext', [(detail, page_facts(pieces))])
+    return detail
+
+
+def _fill(portal, origin, readings):
+    """The readings of (portal's own, from text) pairs merged: a field the portal reads but found empty takes the
+    text's value. Fields the portal does not read stay out: a cold-rent portal gets no warm rent. A reading names
+    its filled fields under FROM_TEXT (see own_reading); they are logged as a hint that the portal's markup
+    changed."""
     filled: Counter[str] = Counter()
-    for listing, pieces in cards:
-        for field, value in text_facts(pieces, warm).items():
-            if field in listing and listing[field] in (None, '') and value not in (None, ''):
-                listing[field] = value
-                listing.setdefault(FROM_TEXT, []).append(field)
+    for own, facts in readings:
+        for field, value in facts.items():
+            if field in own and own[field] in (None, '') and value not in (None, ''):
+                own[field] = value
+                own.setdefault(FROM_TEXT, []).append(field)
                 filled[field] += 1
     if filled:
         found = ', '.join(f'{field} {count}×' for field, count in sorted(filled.items()))
-        log.warning('%s: Felder aus dem Kartentext ergänzt (Layout geändert?): %s', portal, found)
-    return [listing for listing, _ in cards]
+        log.warning('%s: Felder aus dem %s ergänzt (Layout geändert?): %s', portal, origin, found)
+    return [own for own, _ in readings]
+
+
+# The labels of a detail page and the value that follows each, a few characters on at most ("Wohnfläche ca.
+# 55 m²", "Kaltmiete 9,82 €/m² 540 €"). The first labelled value counts: the offer's own facts come before
+# what a page adds further down. Immowelt's "geschätzte Warmmiete" is its own guess, no stated rent.
+_AMOUNT = r'(?:[\d.,]+\s*€/m²\s*)?(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:,\d+)?)\s*(?:€|EUR\b)'
+PAGE_LABELS = {
+    'rent': (r'Warmmiete|Gesamtmiete', _AMOUNT),
+    'coldRent': (r'Nettokaltmiete|Kaltmiete', _AMOUNT),
+    'area': (r'Wohnfläche', r'(\d+(?:[.,]\d+)?)\s*(?:m²|m2\b|qm\b)'),
+    'rooms': (r'Zimmeranzahl|Anzahl Zimmer|Zimmer', r'(\d+(?:[.,]5)?)\b(?!\s*(?:m²|€))'),
+    'availableFrom': (r'Verfügbar ab|Bezugsfrei ab|frei ab', r'(\d{2}\.\d{2}\.\d{4}|sofort)'),
+}
+_READERS = {'rent': money, 'coldRent': money, 'area': area, 'rooms': rooms}
+
+
+def page_facts(pieces):
+    """What the labelled values among a detail page's text pieces say: rents, size, rooms and move-in date."""
+    text = ' '.join(pieces)
+    facts = {}
+    for field, (labels, value) in PAGE_LABELS.items():
+        found = re.search(rf'(?<!geschätzte )\b(?:{labels})\b\D{{0,12}}?{value}', text, re.I)
+        if field == 'availableFrom':
+            facts[field] = available_from(found.group(1)) if found else None
+        else:
+            facts[field] = _READERS[field](number(found.group(1))) if found else None
+    return facts
