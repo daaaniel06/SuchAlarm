@@ -104,6 +104,40 @@ class BrowserExtractionTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual((offer.price, offer.shipping), (10000, expected))
             await browser.close()
 
+    async def test_renamed_card_markup_is_read_from_detail_links_and_text(self):
+        renamed = {
+            'ebay': '<li class="x"><a class="x" href="https://www.ebay.de/itm/12345"><h3 class="x">Resident Evil Requiem PS5</h3></a><span class="x">29,99 €</span><span class="x">+ 4,99 € Versand</span></li>',
+            'kleinanzeigen': '<article class="x"><h2><a class="x" href="https://www.kleinanzeigen.de/s-anzeige/resident-evil/1234567890-279-1234">Resident Evil Requiem PS5</a></h2><p class="x">25 €</p></article>',
+            'vinted': '<div class="x"><a href="https://www.vinted.de/items/12345-resident-evil"><p class="x">Resident Evil Requiem PS5</p></a><p class="x">28,00 €</p></div>',
+        }
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            page = await browser.new_page()
+            for source, html in renamed.items():
+                with self.subTest(source=source):
+                    await page.set_content(html + html.replace('12345', '67890'))
+                    data = await page.evaluate(EXTRACT, source)
+                    self.assertEqual(len(data['rows']), 2)
+                    self.assertIn('card', data['rows'][0]['fromText'])
+                    offers = parse_rows(source, data['rows'], dict(query='Resident Evil Requiem PS5', excluded=''))
+                    self.assertEqual(
+                        sorted(offer.price for offer in offers),
+                        [{'ebay': 2999, 'kleinanzeigen': 2500, 'vinted': 2800}[source]] * 2,
+                    )
+            # Two amounts besides shipping (a struck-through price): the fallback does not guess.
+            await page.set_content(
+                '<li class="x"><a href="https://www.ebay.de/itm/12345"><h3>Resident Evil Requiem PS5</h3></a><s>49,99 €</s><span>29,99 €</span></li>'
+            )
+            data = await page.evaluate(EXTRACT, 'ebay')
+            self.assertEqual((data['rows'][0]['price'], data['rows'][0]['fromText']), ('', ['card', 'title', 'price']))
+            # The cards' own class still found: only the price comes from the text.
+            await page.set_content(
+                '<li class="s-card"><a class="s-card__link" href="https://www.ebay.de/itm/12345"><h3 class="s-card__title">Resident Evil Requiem PS5</h3></a><span class="renamed">EUR 30,00</span></li>'
+            )
+            data = await page.evaluate(EXTRACT, 'ebay')
+            self.assertEqual((data['rows'][0]['price'], data['rows'][0]['fromText']), ('30,00 €', ['price']))
+            await browser.close()
+
     async def test_rendered_provider_cards(self):
         async with async_playwright() as p:
             browser = await p.chromium.launch()

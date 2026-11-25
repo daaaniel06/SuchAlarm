@@ -863,6 +863,15 @@ class ParserTests(unittest.TestCase):
         )
         self.assertEqual(portals.common.complete('Test', [({'area': 70}, pieces)]), [{'area': 70}])
 
+    def test_a_label_before_the_card_price_names_its_kind(self):
+        facts = portals.common.text_facts
+        self.assertEqual(facts(['Kaltmiete', '795 €', 'Warmmiete', '1.106 €'])['coldRent'], 795)
+        self.assertEqual(
+            (facts(['Warmmiete', '480 €'])['rent'], facts(['Warmmiete', '480 €'])['coldRent']), (480, None)
+        )
+        self.assertEqual(facts(['950 € warm'])['rent'], 950)
+        self.assertEqual(facts(['950 €'], warm=True)['rent'], 950)
+
     def test_text_pieces_of_markup_and_data(self):
         self.assertEqual(
             portals.common.html_pieces('<p>840 &euro;<span>30 m²</span></p><script>x = "9 m²"</script> <b> </b>'),

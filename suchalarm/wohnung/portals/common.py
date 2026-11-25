@@ -217,12 +217,17 @@ def text_facts(pieces, warm=False):
     }
 
 
+PRICE_LABEL = re.compile(r'(\w*(?:warm|kalt)\w*)\W{0,3}$', re.I)  # "Warmmiete 950 €", "Kaltmiete: 700 €"
+
+
 def _card_price(text, warm):
-    """(warm rent, cold rent) of a card: the first price, warm if it says so or WARM and it does not say cold."""
+    """(warm rent, cold rent) of a card: the first price, warm if it says so or WARM and it does not say cold. A
+    label right before the price says it; otherwise the words after it ("950 € warm")."""
     price = PRICE.search(text)
     if not price:
         return None, None
-    cost, note = money(number(price.group(1))), price.group(2)
+    label = PRICE_LABEL.search(text[: price.start()])
+    cost, note = money(number(price.group(1))), label.group(1) if label else price.group(2)
     total = bool(re.search(r'warm', note, re.I)) or (warm and not re.search(r'kalt', note, re.I))
     return (cost, None) if total else (None, cost)
 

@@ -1,5 +1,7 @@
 import json
+import logging
 import re
+from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
 from urllib.parse import quote, urlencode
@@ -12,6 +14,8 @@ from .money import money, shipping
 from .prices import Offer, portal_price_bounds
 from .queries import around, canonical, kleinanzeigen_attributes, section, vehicle, vehicle_fits
 from .titles import clean_title, phrases, platform_ids, title_fits, wanted_words
+
+log = logging.getLogger('suchalarm')
 
 DEFAULT_CARD_LIMIT = 100
 PAGE_SIZES = {'ebay': 240}
@@ -523,7 +527,17 @@ def listing_rows(source, data):
         raise Unreadable('Angebotsliste nicht lesbar. Anbieteraufbau oder Anmeldung prüfen.')
     if markup_changed(source, data['rows']):
         raise RuntimeError('Seitenaufbau des Anbieters geändert: Angebotskarten ohne Titel, Link oder Preis.')
+    note_fallback(source, data['rows'])
     return list(data['rows'])
+
+
+def note_fallback(source, rows):
+    """Log what extract.js read from the cards' text because its selectors missed (fromText): the backup keeps
+    offers coming, the log shows that the provider's markup changed."""
+    filled = Counter(field for row in rows for field in row.get('fromText', ()))
+    if filled:
+        found = ', '.join(f'{field} {count}×' for field, count in sorted(filled.items()))
+        log.warning('%s: aus dem Kartentext gelesen (Seitenaufbau geändert?): %s', source, found)
 
 
 def shippable(source, row):
