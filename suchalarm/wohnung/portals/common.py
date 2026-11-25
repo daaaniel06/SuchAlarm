@@ -1,8 +1,9 @@
-"""Shared by the portals: plain text of markup, the place check and the fallback parser for
-renamed card markup."""
+"""Shared by the portals: plain text of markup, the place check, the fallback parser for renamed card
+markup and the fallback reader that fills fields a portal's own reading missed."""
 
 import logging
 import re
+from collections import Counter
 from html import unescape
 from html.parser import HTMLParser
 from urllib.parse import urljoin
@@ -184,27 +185,35 @@ def _card_around(tree, node, url):
 
 
 def _fallback_card(node, card, url, base, warm):
-    pieces = _strings(card)
     # Some portals put the facts only into the link's title attribute.
-    text = ' '.join(([node.attrs['title']] if node.attrs.get('title') else []) + pieces)
+    pieces = ([node.attrs['title']] if node.attrs.get('title') else []) + _strings(card)
+    text = ' '.join(pieces)
     heading = next((n for n in _descendants(card) if n.tag in ('h1', 'h2', 'h3', 'h4')), None)
-    fallback_title = node.attrs.get('title') or (pieces[0] if pieces else '')
-    title = line(' '.join(_strings(heading)) if heading else fallback_title) or 'Wohnung'
-    rent, cold = _card_price(text, warm)
-    size, count = AREA.search(text), ROOMS.search(text)
-    dates = re.findall(r'\b\d{2}\.\d{2}\.\d{4}\b', text)
+    title = line(' '.join(_strings(heading)) if heading else (pieces[0] if pieces else '')) or 'Wohnung'
     return {
         'url': url,
         'title': title,
+        **text_facts(pieces, warm),
+        'traits': detect_traits(title + '\n' + text),
+        'text': clip(text),
+        'imageSource': _card_picture(card, base),
+    }
+
+
+def text_facts(pieces, warm=False):
+    """What the text pieces of a card say, read by pattern alone: place, rents, size, rooms and move-in date.
+    `warm`: the card price is the total rent unless it says otherwise."""
+    text = ' '.join(pieces)
+    rent, cold = _card_price(text, warm)
+    size, count = AREA.search(text), ROOMS.search(text)
+    date = re.search(r'\b\d{2}\.\d{2}\.\d{4}\b', text)
+    return {
         'place': line(next((piece for piece in pieces if PLACE.search(piece)), '')),
         'rent': rent,
         'coldRent': cold,
         'area': area(number(size.group(1))) if size else None,
         'rooms': rooms(number(count.group(1))) if count else None,
-        'availableFrom': available_from(dates[0]) if dates else None,
-        'traits': detect_traits(title + '\n' + text),
-        'text': clip(text),
-        'imageSource': _card_picture(card, base),
+        'availableFrom': available_from(date.group(0)) if date else None,
     }
 
 
@@ -234,3 +243,49 @@ def rescue(portal, html, link, base='', skip_wanted=False, warm=False):
     if listings:
         log.warning('%s: Kartenlayout unbekannt, Ausweich-Parser las %d Angebote', portal, len(listings))
     return listings
+
+
+# --- Fallback for single fields ------------------------------------------
+# A portal's own reading stays first. Where it misses a field, mostly after a renamed class, the card's text
+# fills it (text_facts), as the fallback parser does for whole cards.
+
+
+FROM_TEXT = 'fromText'
+
+
+def own_reading(listing):
+    """The listing as the portal's own reading left it, without the fields filled from its card's text: what
+    the field check (sources.field_warning) judges, so a changed layout is still reported."""
+    return {**listing, **dict.fromkeys(listing.get(FROM_TEXT, ()))}
+
+
+def html_pieces(fragment):
+    """Text pieces of markup in document order, without scripts and styles."""
+    fragment = re.sub(r'<(script|style)\b.*?</\1>', ' ', fragment, flags=re.S | re.I)
+    return [piece for part in re.split(r'<[^>]+>', fragment) if (piece := ' '.join(unescape(part).split()))]
+
+
+def json_pieces(value):
+    """The text values of decoded JSON in order, for portals that answer with data instead of markup."""
+    if isinstance(value, str):
+        return [piece] if (piece := ' '.join(value.split())) else []
+    items = value.values() if isinstance(value, dict) else value if isinstance(value, list) else ()
+    return [piece for item in items for piece in json_pieces(item)]
+
+
+def complete(portal, cards, warm=False):
+    """The listings of (listing, text pieces of its card) pairs, each field the portal reads but found empty
+    taken from the card's text. Fields the portal does not read stay out: a cold-rent portal gets no warm rent.
+    A listing names its filled fields under FROM_TEXT (see own_reading); they are logged as a hint that the
+    portal's markup changed."""
+    filled: Counter[str] = Counter()
+    for listing, pieces in cards:
+        for field, value in text_facts(pieces, warm).items():
+            if field in listing and listing[field] in (None, '') and value not in (None, ''):
+                listing[field] = value
+                listing.setdefault(FROM_TEXT, []).append(field)
+                filled[field] += 1
+    if filled:
+        found = ', '.join(f'{field} {count}×' for field, count in sorted(filled.items()))
+        log.warning('%s: Felder aus dem Kartentext ergänzt (Layout geändert?): %s', portal, found)
+    return [listing for listing, _ in cards]

@@ -32,6 +32,7 @@ from .common import (  # noqa: F401
     attribute,
     fallback_cards,
     near,
+    own_reading,
     plain,
     rescue,
 )

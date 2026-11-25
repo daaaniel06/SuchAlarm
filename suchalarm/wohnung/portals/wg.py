@@ -19,7 +19,7 @@ from ..domain import (
     number,
     rooms,
 )
-from .common import AREA, attribute, plain, rescue
+from .common import AREA, attribute, complete, html_pieces, plain, rescue
 
 log = logging.getLogger('suchalarm')
 
@@ -165,20 +165,19 @@ def wg_parse(html):
             r'<img[^>]+class="[^"]*\btop-image-card\b[^"]*"[^>]+?\b(?:data-)?src="(https://img\.wg-gesucht\.de/[^"]+)"',
             card,
         )
-        listings.append(
-            {
-                'url': 'https://www.wg-gesucht.de' + unescape(href.group(1)),
-                'title': title[:300],
-                'place': wg_place(street, district),
-                'rent': money(number(unescape(price.group(1)))) if price else None,
-                'area': area(number(size.group(1))) if size else None,
-                'rooms': rooms(number(count.group(1)) if count else 1.0 if kind.startswith('1-Zimmer') else None),
-                'traits': detect_traits(title, temporary=bool(stay and stay.group(2))),
-                'availableFrom': available_from(stay.group(1)) if stay else None,
-                'imageSource': unescape(picture.group(1)) if picture else None,
-            }
-        )
-    return listings
+        listing = {
+            'url': 'https://www.wg-gesucht.de' + unescape(href.group(1)),
+            'title': title[:300],
+            'place': wg_place(street, district),
+            'rent': money(number(unescape(price.group(1)))) if price else None,
+            'area': area(number(size.group(1))) if size else None,
+            'rooms': rooms(number(count.group(1)) if count else 1.0 if kind.startswith('1-Zimmer') else None),
+            'traits': detect_traits(title, temporary=bool(stay and stay.group(2))),
+            'availableFrom': available_from(stay.group(1)) if stay else None,
+            'imageSource': unescape(picture.group(1)) if picture else None,
+        }
+        listings.append((listing, html_pieces(card)))
+    return complete('WG-Gesucht', listings, warm=True)
 
 
 def wg_detail(html):

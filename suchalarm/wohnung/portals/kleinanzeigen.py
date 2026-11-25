@@ -17,7 +17,7 @@ from ..domain import (
     number,
     rooms,
 )
-from .common import heating_included, plain, rescue, warm_from_parts
+from .common import complete, heating_included, html_pieces, plain, rescue, warm_from_parts
 
 log = logging.getLogger('suchalarm')
 
@@ -100,34 +100,34 @@ def kleinanzeigen_parse(html):
         teaser_match = re.search(rf'</h[23]>\s*<p(?![^>]*(?:{PRICE_CLASS}))[^>]*>(.*?)</p>', body, re.S)
         teaser = plain(teaser_match.group(1)) if teaser_match else ''
         facts = _facts(body, title_match, teaser_match)
+        facts_text = plain(facts)
         price_match = re.search(rf'<p[^>]*class="[^"]*(?:{PRICE_CLASS})[^"]*"[^>]*>(.*?)</p>', body, re.S)
         price = re.search(r'([\d.]+(?:,\d+)?)\s*€', plain(price_match.group(1))) if price_match else None
-        size = re.search(r'([\d.,]+)\s*m²', facts)
-        count = re.search(r'([\d.,]+)\s*Zi\.', facts)
+        size = re.search(r'([\d.,]+)\s*m²', facts_text)
+        count = re.search(r'([\d.,]+)\s*Zi\.', facts_text)
         picture = re.search(r'<img[^>]+src="(https://img\.kleinanzeigen\.de/[^"]+)"', body)
-        listings.append(
-            {
-                'url': KLEINANZEIGEN + unescape(href),
-                'title': title[:300] or 'Wohnung',
-                'place': plain(place_match.group(1))[:300] if place_match else '',
-                'coldRent': money(number(price.group(1)) if price else None),
-                'area': area(number(size.group(1)) if size else None),
-                'rooms': rooms(number(count.group(1)) if count else None),
-                'traits': detect_traits(title + '\n' + teaser),
-                'text': clip(title + ' ' + teaser),
-                # rule $_72 is 500x375, the size closest to the ImmoScout24 image.
-                'imageSource': re.sub(r'rule=[^&]+', 'rule=$_72.AUTO', unescape(picture.group(1))) if picture else None,
-            }
-        )
-    return listings
+        listing = {
+            'url': KLEINANZEIGEN + unescape(href),
+            'title': title[:300] or 'Wohnung',
+            'place': plain(place_match.group(1))[:300] if place_match else '',
+            'coldRent': money(number(price.group(1)) if price else None),
+            'area': area(number(size.group(1)) if size else None),
+            'rooms': rooms(number(count.group(1)) if count else None),
+            'traits': detect_traits(title + '\n' + teaser),
+            'text': clip(title + ' ' + teaser),
+            # rule $_72 is 500x375, the size closest to the ImmoScout24 image.
+            'imageSource': re.sub(r'rule=[^&]+', 'rule=$_72.AUTO', unescape(picture.group(1))) if picture else None,
+        }
+        listings.append((listing, html_pieces(facts)))
+    return complete('Kleinanzeigen', listings)
 
 
 def _facts(body, *parts):
-    """The card's text without title and teaser: amounts the seller writes there (deposit, parking, a garden's
-    m²) are no facts of the flat."""
+    """The card's markup without title, teaser and scripts: amounts the seller writes there (deposit, parking, a
+    garden's m²) are no facts of the flat."""
     for part in sorted((part for part in parts if part), key=lambda part: part.start(), reverse=True):
         body = body[: part.start()] + ' ' + body[part.end() :]
-    return plain(re.sub(r'<script.*?</script>', ' ', body, flags=re.S))
+    return re.sub(r'<script.*?</script>', ' ', body, flags=re.S)
 
 
 def kleinanzeigen_detail(html):

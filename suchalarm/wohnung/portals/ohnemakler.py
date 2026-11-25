@@ -7,7 +7,7 @@ from urllib.parse import quote, urlencode
 
 from ...core.browser import Unreadable
 from ..domain import Profile, area, available_from, clip, detect_traits, line, money, number, rooms
-from .common import attribute, plain
+from .common import attribute, complete, html_pieces, plain
 
 OHNE_MAKLER = 'https://www.ohne-makler.net'
 OM_LIST = f'{OHNE_MAKLER}/immobilien/wohnung-mieten/'
@@ -87,7 +87,8 @@ def om_parse(html):
     if not plain(count.group(1)):
         return []
     found = html.split('id="similar-listings"', 1)[0]
-    return [card for part in _CARD.split(found)[1:] if (card := _card(part))]
+    cards = [(card, html_pieces(part)) for part in _CARD.split(found)[1:] if (card := _card(part))]
+    return complete('ohne-makler', cards)
 
 
 def _card(part):

@@ -553,7 +553,7 @@ async def _page(source, search, page=1):
     missed = unread(source, page, len(found), total)
     if missed:
         log.warning('%s: page %s lists %s offers the parser could not read', source, page, missed)
-    warning = field_warning(source, listings)
+    warning = field_warning(source, [Listing.from_card(source, portals.own_reading(card)) for card in found])
     if warning:
         log.warning('%s: page %s: %s', source, page, warning)
     return listings, {'listed': len(listings), 'unread': missed, 'warning': warning}

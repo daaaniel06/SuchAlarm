@@ -14,7 +14,7 @@ from ..domain import (
     number,
     rooms,
 )
-from .common import plain, rescue
+from .common import complete, html_pieces, plain, rescue
 
 log = logging.getLogger('suchalarm')
 
@@ -57,21 +57,20 @@ def nhw_parse(html):
         title = plain(link.group(2))[:300] or 'Wohnung'  # a landlord: "… sucht Mieter" is an offer, never a wanted ad
         image = re.search(r'<img class="immo--item--image"[^>]*src="(/fileadmin/[^"]+)"', card)
         location = re.search(r'immo--item--location[^>]*>(.*?)</em>', card, re.S)
-        listings.append(
-            {
-                'url': nhw_url(link.group(1)),
-                'title': title,
-                'place': plain(location.group(1)).strip(' ,')[:300] if location else '',
-                'rent': money(number(facts.get('warmmiete', '').replace('.', ','))),
-                'coldRent': money(number(facts.get('nettokaltmiete', '').replace('.', ','))),
-                'area': area(number(facts.get('wohnflaeche', '').replace('.', ','))),
-                'rooms': rooms(number(facts.get('anzahl_zimmer', '').replace('.', ','))),
-                'traits': detect_traits(title + (' WBS' if facts.get('wbs') == '1' else '')),
-                'imageSource': NHW + image.group(1) if image else None,
-                **spots.get(uid.group(1), {}),
-            }
-        )
-    return listings
+        listing = {
+            'url': nhw_url(link.group(1)),
+            'title': title,
+            'place': plain(location.group(1)).strip(' ,')[:300] if location else '',
+            'rent': money(number(facts.get('warmmiete', '').replace('.', ','))),
+            'coldRent': money(number(facts.get('nettokaltmiete', '').replace('.', ','))),
+            'area': area(number(facts.get('wohnflaeche', '').replace('.', ','))),
+            'rooms': rooms(number(facts.get('anzahl_zimmer', '').replace('.', ','))),
+            'traits': detect_traits(title + (' WBS' if facts.get('wbs') == '1' else '')),
+            'imageSource': NHW + image.group(1) if image else None,
+            **spots.get(uid.group(1), {}),
+        }
+        listings.append((listing, html_pieces(card)))
+    return complete('NHW', listings)
 
 
 def nhw_detail(html):
