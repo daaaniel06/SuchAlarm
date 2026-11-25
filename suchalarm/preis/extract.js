@@ -151,15 +151,18 @@
     }
     return [...cards];
   };
-  // The one euro amount of a card besides shipping ("+ 4,50 € Versand"); none when it names two (a struck-through
-  // price, a total with fees), so a fallback never guesses between prices.
-  const SHIPPING_AMOUNT =
-    /(?:\+|versand|lieferung|shipping)\s*(?:ab\s*)?(?:EUR\s*)?\d[\d.,]*(?:\s*€)?|\d[\d.,]*\s*(?:€|EUR)\s*(?:versand|lieferung|shipping)/gi;
+  // The one euro amount of a card besides shipping and fees; none when it names two (a struck-through price) or a
+  // range ("20 bis 30 €"), so a fallback never guesses between prices. Fees: "+ 4,50 € Versand", "Versand: 4,99 €",
+  // "inkl. Käuferschutz 46,90 €", "46,90 € inkl.".
+  const FEE_AMOUNT =
+    /(?:\+|versand\w*|lieferung|shipping|käuferschutz|inkl\.?)[^\d€]{0,15}(?:EUR\s*)?\d[\d.,]*(?:\s*€)?|\d[\d.,]*\s*(?:€|EUR)\s*inkl/gi;
+  const PRICE_RANGE =
+    /(?:€|\bEUR)\s*\d[\d.,]*\s*(?:bis|[-–])|\d[\d.,]*\s*(?:€|EUR\b)?\s*(?:bis|[-–])\s*\d[\d.,]*\s*(?:€|EUR\b)/i;
   const lonePrice = cardText => {
+    const rest = cardText.replace(FEE_AMOUNT, ' ');
+    if (PRICE_RANGE.test(rest)) return '';
     const amounts = new Set(
-      [...cardText.replace(SHIPPING_AMOUNT, ' ').matchAll(/(?:€|\bEUR)\s*(\d[\d.,]*)|(\d[\d.,]*)\s*(?:€|EUR\b)/g)].map(
-        found => found[1] || found[2],
-      ),
+      [...rest.matchAll(/(?:€|\bEUR)\s*(\d[\d.,]*)|(\d[\d.,]*)\s*(?:€|EUR\b)/g)].map(found => found[1] || found[2]),
     );
     return amounts.size === 1 ? `${[...amounts][0]} €` : '';
   };
@@ -187,8 +190,10 @@
     const ownTitle =
       (source === 'vinted' && a?.title.split(/, (?:Marke|Zustand|Größe): /)[0].trim()) || title(card) || a?.title || '';
     const ownPrice = text(card, c.price);
-    if (!ownTitle) fromText.push('title');
-    if (!ownPrice) fromText.push('price');
+    const titleFromText = ownTitle ? '' : heading(card) || a?.textContent.trim() || '';
+    const priceFromText = ownPrice ? '' : lonePrice(spacedText(card));
+    if (titleFromText) fromText.push('title');
+    if (priceFromText) fromText.push('price');
     let shippingText = '';
     if (source === 'ebay') {
       shippingText = textWithout(
@@ -198,8 +203,8 @@
     }
     return {
       shippingText,
-      title: ownTitle || heading(card) || a?.textContent.trim() || '',
-      price: ownPrice || lonePrice(spacedText(card)),
+      title: ownTitle || titleFromText,
+      price: ownPrice || priceFromText,
       url: a?.href || '',
       seller: source === 'ebay' ? ebaySeller(card) : text(card, c.seller),
       owner: owner(card),

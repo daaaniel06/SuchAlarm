@@ -841,7 +841,7 @@ class ParserTests(unittest.TestCase):
             card = portals.kleinanzeigen_parse(renamed)[0]
         self.assertEqual((card['coldRent'], card['area'], card['fromText']), (1050, 62.5, ['coldRent']))
         self.assertIn(
-            'Kleinanzeigen: Felder aus dem Kartentext ergänzt (Layout geändert?): coldRent 1×', logs.output[0]
+            'Kleinanzeigen: Felder aus dem Kartentext ergänzt (Layout geändert?): coldRent 2×', logs.output[0]
         )
         self.assertIsNone(portals.own_reading(card)['coldRent'])
         # ohne-makler: price and size without their markup.
@@ -877,6 +877,39 @@ class ParserTests(unittest.TestCase):
         # A page the parser reads fully is left as it is.
         complete = sources.read_detail('immobilien-de', portals.id_detail, fixture('immobilien-de', 'detail.html'))
         self.assertNotIn('fromText', complete)
+
+    def test_a_text_value_of_the_detail_page_never_replaces_the_cards(self):
+        card = Listing.from_card('wg-gesucht', {'url': 'https://example.org/1', 'rent': 900, 'area': None})
+        done = card.with_detail({'rent': 2100, 'area': 55, 'traits': [], 'fromText': ['rent', 'area']})
+        self.assertEqual((done.rent, done.area), (900, 55))  # the card's rent stays, the empty size is filled
+        self.assertEqual(card.with_detail({'rent': 950, 'traits': []}).rent, 950)  # the parser's own value wins
+
+    def test_labelled_values_need_their_value_right_behind_the_label(self):
+        facts = portals.common.page_facts
+        for pieces, field in (
+            (['Warmmiete:', 'Kaution', '2100 €'], 'rent'),
+            (['Warmmiete:', 'NK', '150 €'], 'rent'),
+            (['Kaltmiete', '9,82 €/m²'], 'coldRent'),
+            (['geschätzte monatliche Warmmiete', '1.106 €'], 'rent'),
+            (['2', 'Zimmer', '1. OG'], 'rooms'),
+        ):
+            with self.subTest(pieces=pieces):
+                self.assertIsNone(facts(pieces)[field])
+        self.assertEqual(facts(['geschätzte Warmmiete 1.106 €', 'Warmmiete', '1.250 €'])['rent'], 1250)
+
+    def test_a_card_price_is_no_deposit_or_running_cost(self):
+        facts = portals.common.text_facts
+        self.assertEqual(facts(['Kaution 450 €', 'Warmmiete 1.250 €'], warm=True)['rent'], 1250)
+        self.assertEqual(facts(['NK 150 €', '900 €'])['coldRent'], 900)
+
+    def test_wg_move_in_and_size_come_from_the_card_not_its_title(self):
+        page = fixture('wg-gesucht', 'list-2026-11-25.html').replace(
+            'Einzimmerwohnung in Darmstadt </span>', 'Einzimmerwohnung, 99 m² Garten, Besichtigung 15.12.2026 </span>'
+        )
+        first = portals.wg_parse(page)[0]
+        self.assertEqual((first['area'], first['availableFrom']), (30, '2026-11-25'))
+        last = portals.wg_parse(page + '<footer>Impressum 01.01.2030</footer>')[-1]
+        self.assertEqual(last['availableFrom'], '2026-12-01')
 
     def test_labelled_values_of_a_page(self):
         facts = portals.common.page_facts(

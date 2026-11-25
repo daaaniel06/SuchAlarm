@@ -118,6 +118,7 @@ def wg_total(html):
 # The line under the title names kind, town with district and street. Until 11/2026 one text with "·" between
 # ("2-Zimmer-Wohnung · Darmstadt Darmstadt · Am alten Bahnhof 6"), since 25.11.2026 each part behind an icon.
 DETAILS = re.compile(r'\btitle="([^"]*-Zimmer-[^"]*)"[^>]*>(.*?)</div>', re.S)
+HEADING = re.compile(r'<h[1-6]\b.*?</h[1-6]>', re.S)
 STAY = re.compile(r'(\d{2}\.\d{2}\.\d{4})(?:\s*-\s*(\d{2}\.\d{2}\.\d{4}))?')  # "01.10.2026 - 31.03.2027"
 ICON = re.compile(r'<span\b[^>]*aria-hidden="true"[^>]*>[^<]*</span>')
 
@@ -147,7 +148,8 @@ def wg_parse(html):
         raise Unreadable('WG-Gesucht-Seite enthält keine erkennbaren Anzeigen (Layout geändert oder gesperrt).')
     listings = []
     for index, tag in enumerate(tags):
-        card = html[tag.end() : tags[index + 1].start() if index + 1 < len(tags) else len(html)]
+        # The card ends with its link; the last one would otherwise run on to the page's end.
+        card = html[tag.end() : tags[index + 1].start() if index + 1 < len(tags) else len(html)].split('</a>', 1)[0]
         href = re.search(r'\bhref="(/[^"]+\.\d+\.html)"', tag.group(0))
         if not href:
             continue
@@ -155,8 +157,8 @@ def wg_parse(html):
         kind, district, street = wg_details(card)
         price = re.search(r'class="card-main-text">\s*([^<]*?(?:&euro;|€))', card)
         # Read from the card's text, not its classes, which the site renames: the size ("30 m²") stands in the
-        # price row, the first dates are the move-in dates.
-        text = plain(card)
+        # price row, the first dates are the move-in dates. The title may name other sizes and dates.
+        text = plain(HEADING.sub(' ', card))
         size = AREA.search(text)
         stay = STAY.search(text)
         count = re.match(r'([\d,.]+)-Zimmer', kind)

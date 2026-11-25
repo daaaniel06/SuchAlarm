@@ -9,6 +9,7 @@ from html.parser import HTMLParser
 from urllib.parse import urljoin
 
 from ..domain import (
+    FROM_TEXT,
     area,
     available_from,
     clip,
@@ -150,8 +151,11 @@ def _descendants(node):
             stack.extend(reversed(item.children))
 
 
-PRICE = re.compile(r'(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:,\d+)?)\s*(?:€|EUR\b)(.{0,25})', re.I)
-AREA = re.compile(r'(\d+(?:[.,]\d+)?)\s*(?:m²|m2\b|qm\b)', re.I)
+# An amount in euros ("1.250 €", "950,50 EUR"), never a price per m² ("9,82 €/m²").
+MONEY = r'(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:,\d+)?)\s*(?:€|EUR\b)(?!\s*/\s*m)'
+SIZE = r'(\d+(?:[.,]\d+)?)\s*(?:m²|m2\b|qm\b)'
+PRICE = re.compile(MONEY + r'(?=(.{0,25}))', re.I)  # the words after it, which the next amount may share
+AREA = re.compile(SIZE, re.I)
 ROOMS = re.compile(r'(\d+(?:[.,]5)?)\s*-?\s*(?:Zi\.|Zimmer)')
 PLACE = re.compile(r'^\d{5}\s+\D|\(\d{5}\)')
 
@@ -218,12 +222,16 @@ def text_facts(pieces, warm=False):
 
 
 PRICE_LABEL = re.compile(r'(\w*(?:warm|kalt)\w*)\W{0,3}$', re.I)  # "Warmmiete 950 €", "Kaltmiete: 700 €"
+# Amounts that are no rent: "Kaution 450 € · Warmmiete 1.250 €" asks 1.250 €.
+OTHER_COST = re.compile(
+    r'\b(?:kaution|nebenkosten|nk|heizkosten|betriebskosten|provision|stellplatz|garage|ablöse)\W{0,3}$', re.I
+)
 
 
 def _card_price(text, warm):
-    """(warm rent, cold rent) of a card: the first price, warm if it says so or WARM and it does not say cold. A
-    label right before the price says it; otherwise the words after it ("950 € warm")."""
-    price = PRICE.search(text)
+    """(warm rent, cold rent) of a card: the first amount that is no other cost, warm if it says so or WARM and it
+    does not say cold. A label right before the amount says it; otherwise the words after it ("950 € warm")."""
+    price = next((found for found in PRICE.finditer(text) if not OTHER_COST.search(text[: found.start()])), None)
     if not price:
         return None, None
     label = PRICE_LABEL.search(text[: price.start()])
@@ -256,9 +264,6 @@ def rescue(portal, html, link, base='', skip_wanted=False, warm=False):
 # values (page_facts).
 
 
-FROM_TEXT = 'fromText'
-
-
 def own_reading(listing):
     """The listing as the portal's own reading left it, without the fields filled from its card's text: what
     the field check (sources.field_warning) judges, so a changed layout is still reported."""
@@ -282,46 +287,59 @@ def json_pieces(value):
 def complete(portal, cards, warm=False):
     """The listings of (listing, text pieces of its card) pairs, each field the portal reads but found empty
     taken from the card's text (text_facts)."""
-    return _fill(portal, 'Kartentext', [(listing, text_facts(pieces, warm)) for listing, pieces in cards])
+    filled = Counter(field for listing, pieces in cards for field in _fill(listing, text_facts(pieces, warm)))
+    _log_filled(portal, 'Kartentext', filled)
+    return [listing for listing, _ in cards]
 
 
 def complete_detail(portal, detail, pieces):
     """A detail page as the portal's parser read it, each field it reads but found empty taken from the labelled
     values of the page's text pieces (page_facts)."""
-    (detail,) = _fill(portal, 'Seitentext', [(detail, page_facts(pieces))])
+    _log_filled(portal, 'Seitentext', Counter(_fill(detail, page_facts(pieces))))
     return detail
 
 
-def _fill(portal, origin, readings):
-    """The readings of (portal's own, from text) pairs merged: a field the portal reads but found empty takes the
-    text's value. Fields the portal does not read stay out: a cold-rent portal gets no warm rent. A reading names
-    its filled fields under FROM_TEXT (see own_reading); they are logged as a hint that the portal's markup
-    changed."""
-    filled: Counter[str] = Counter()
-    for own, facts in readings:
-        for field, value in facts.items():
-            if field in own and own[field] in (None, '') and value not in (None, ''):
-                own[field] = value
-                own.setdefault(FROM_TEXT, []).append(field)
-                filled[field] += 1
+def _fill(own, facts):
+    """The fields of the portal's own reading OWN that it reads but found empty, taken from FACTS read from the
+    text. Fields the portal does not read stay out: a cold-rent portal gets no warm rent. OWN names them under
+    FROM_TEXT (see own_reading and Listing.with_detail)."""
+    filled = [
+        field for field, value in facts.items() if field in own and own[field] in (None, '') and value not in (None, '')
+    ]
+    for field in filled:
+        own[field] = facts[field]
+    if filled:
+        own.setdefault(FROM_TEXT, []).extend(filled)
+    return filled
+
+
+def _log_filled(portal, origin, filled):
+    """A hint that the portal's markup changed."""
     if filled:
         found = ', '.join(f'{field} {count}×' for field, count in sorted(filled.items()))
         log.warning('%s: Felder aus dem %s ergänzt (Layout geändert?): %s', portal, origin, found)
-    return [own for own, _ in readings]
 
 
-# The labels of a detail page and the value that follows each, a few characters on at most ("Wohnfläche ca.
-# 55 m²", "Kaltmiete 9,82 €/m² 540 €"). The first labelled value counts: the offer's own facts come before
-# what a page adds further down. Immowelt's "geschätzte Warmmiete" is its own guess, no stated rent.
-_AMOUNT = r'(?:[\d.,]+\s*€/m²\s*)?(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:,\d+)?)\s*(?:€|EUR\b)'
+# The labels of a detail page, each with its value right behind it ("Wohnfläche ca. 55 m²", "Zimmer: 2").
+# Immowelt also names the price per m² first ("Kaltmiete 9,82 €/m² 540 €"). The first labelled value counts: the
+# offer's own facts come before what a page adds further down.
+_LABEL_GAP = r'\W{0,3}(?:ca\.\s*)?'
 PAGE_LABELS = {
-    'rent': (r'Warmmiete|Gesamtmiete', _AMOUNT),
-    'coldRent': (r'Nettokaltmiete|Kaltmiete', _AMOUNT),
-    'area': (r'Wohnfläche', r'(\d+(?:[.,]\d+)?)\s*(?:m²|m2\b|qm\b)'),
-    'rooms': (r'Zimmeranzahl|Anzahl Zimmer|Zimmer', r'(\d+(?:[.,]5)?)\b(?!\s*(?:m²|€))'),
+    'rent': (r'Warmmiete|Gesamtmiete', rf'(?:[\d.,]+\s*€\s*/\s*m²\s*)?{MONEY}'),
+    'coldRent': (r'Nettokaltmiete|Kaltmiete', rf'(?:[\d.,]+\s*€\s*/\s*m²\s*)?{MONEY}'),
+    'area': (r'Wohnfläche', SIZE),
+    'rooms': (r'Zimmeranzahl|Anzahl Zimmer|Zimmer', r'(\d+(?:,5)?)(?![\d.,]|\s*(?:m²|€))'),  # not "1. OG"
     'availableFrom': (r'Verfügbar ab|Bezugsfrei ab|frei ab', r'(\d{2}\.\d{2}\.\d{4}|sofort)'),
 }
-_READERS = {'rent': money, 'coldRent': money, 'area': area, 'rooms': rooms}
+# A portal's own estimate ("geschätzte Warmmiete", "geschätzte monatliche Warmmiete") is no stated value.
+ESTIMATE = re.compile(r'geschätzt\w*\s+(?:\w+\s+)?$', re.I)
+_READERS = {
+    'rent': lambda value: money(number(value)),
+    'coldRent': lambda value: money(number(value)),
+    'area': lambda value: area(number(value)),
+    'rooms': lambda value: rooms(number(value)),
+    'availableFrom': available_from,
+}
 
 
 def page_facts(pieces):
@@ -329,9 +347,11 @@ def page_facts(pieces):
     text = ' '.join(pieces)
     facts = {}
     for field, (labels, value) in PAGE_LABELS.items():
-        found = re.search(rf'(?<!geschätzte )\b(?:{labels})\b\D{{0,12}}?{value}', text, re.I)
-        if field == 'availableFrom':
-            facts[field] = available_from(found.group(1)) if found else None
-        else:
-            facts[field] = _READERS[field](number(found.group(1))) if found else None
+        stated = (
+            found
+            for found in re.finditer(rf'\b(?:{labels})\b{_LABEL_GAP}{value}', text, re.I)
+            if not ESTIMATE.search(text[: found.start()])
+        )
+        found = next(stated, None)
+        facts[field] = _READERS[field](found.group(1)) if found else None
     return facts

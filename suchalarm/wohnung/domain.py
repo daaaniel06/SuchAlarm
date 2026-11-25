@@ -26,6 +26,20 @@ TRAITS = ('WBS', 'Befristet', 'Tauschwohnung', 'WG-Zimmer')
 TEXT_LIMIT = 4000  # title + description kept for the search's own exclusion words
 
 
+# A parser names the fields it took from the text instead of its portal's markup under this key.
+FROM_TEXT = 'fromText'
+# The listing's fields a detail page fills, by the parser's key.
+DETAIL_KEYS = {
+    'rent': 'rent',
+    'cold_rent': 'coldRent',
+    'area': 'area',
+    'rooms': 'rooms',
+    'available_from': 'availableFrom',
+    'place': 'place',
+    'text': 'text',
+}
+
+
 @dataclass(frozen=True)
 class Listing:
     source: str
@@ -67,19 +81,17 @@ class Listing:
         )
 
     def with_detail(self, detail):
-        """The listing completed by its detail page: known values win, traits add up."""
+        """The listing completed by its detail page: the page's values win, traits add up. A value the page gave
+        only in its text (FROM_TEXT) fills an empty field and never replaces what the card stated."""
+        guessed = set(detail.get(FROM_TEXT) or ())
         values = {
-            'rent': detail.get('rent'),
-            'cold_rent': detail.get('coldRent'),
-            'area': detail.get('area'),
-            'rooms': detail.get('rooms'),
-            'available_from': detail.get('availableFrom'),
-            'place': detail.get('place'),
-            'text': detail.get('text'),
+            field: detail[key]
+            for field, key in DETAIL_KEYS.items()
+            if detail.get(key) is not None and not (key in guessed and getattr(self, field) not in (None, ''))
         }
         return replace(
             self,
-            **{key: value for key, value in values.items() if value is not None},
+            **values,
             traits=sorted(set(self.traits) | set(detail.get('traits') or [])),
             exclusions_known=True,
         )

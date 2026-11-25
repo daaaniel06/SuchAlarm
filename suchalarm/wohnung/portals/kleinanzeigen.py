@@ -24,6 +24,7 @@ log = logging.getLogger('suchalarm')
 
 KLEINANZEIGEN = 'https://www.kleinanzeigen.de'
 PRICE_CLASS = r'price|text-title3'  # the card's price line, in the older and the newer layout
+PRICE_ONLY = re.compile(r'[\d.,]+\s*€(?:\s*VB)?|VB|Zu verschenken', re.I)  # "1.050 €", "700 € VB"
 PAGE_SIZE = 100  # the most one page holds (25 without it; checked live on 31.10.2026)
 
 
@@ -98,6 +99,8 @@ def kleinanzeigen_parse(html):
         place_match = re.search(r'<span>(\d{5}\s[^<]+)</span>', body)
         # The card's teaser (start of the description) feeds the exclusion words for free.
         teaser_match = re.search(rf'</h[23]>\s*<p(?![^>]*(?:{PRICE_CLASS}))[^>]*>(.*?)</p>', body, re.S)
+        if teaser_match and PRICE_ONLY.fullmatch(plain(teaser_match.group(1))):
+            teaser_match = None  # the price line under a renamed class, which the fallback reads
         teaser = plain(teaser_match.group(1)) if teaser_match else ''
         facts = _facts(body, title_match, teaser_match)
         facts_text = plain(facts)

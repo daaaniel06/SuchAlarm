@@ -129,7 +129,24 @@ class BrowserExtractionTests(unittest.IsolatedAsyncioTestCase):
                 '<li class="x"><a href="https://www.ebay.de/itm/12345"><h3>Resident Evil Requiem PS5</h3></a><s>49,99 €</s><span>29,99 €</span></li>'
             )
             data = await page.evaluate(EXTRACT, 'ebay')
-            self.assertEqual((data['rows'][0]['price'], data['rows'][0]['fromText']), ('', ['card', 'title', 'price']))
+            self.assertEqual((data['rows'][0]['price'], data['rows'][0]['fromText']), ('', ['card', 'title']))
+            # Ranges, shipping and fees are no item price.
+            for amounts, expected in (
+                ('<span>20 bis 30 €</span>', ''),
+                ('<span>20 € - 30 €</span>', ''),
+                ('<span>Versand: 4,99 €</span>', ''),
+                ('<span>inkl. Käuferschutz 46,90 €</span>', ''),
+                ('<span>44,00 €</span><span>46,90 € inkl.</span>', '44,00 €'),
+                ('<span>29,99 €</span><span>Versand möglich</span>', '29,99 €'),
+                ('<span>EUR 44,00</span><span>+EUR 6,19 · 2-3 Tage Lieferung</span>', '44,00 €'),
+            ):
+                with self.subTest(amounts=amounts):
+                    await page.set_content(
+                        f'<li class="x"><a href="https://www.ebay.de/itm/12345"><h3>Spiel</h3></a>{amounts}</li>'
+                    )
+                    data = await page.evaluate(EXTRACT, 'ebay')
+                    self.assertEqual(data['rows'][0]['price'], expected)
+                    self.assertEqual('price' in data['rows'][0]['fromText'], bool(expected))
             # The cards' own class still found: only the price comes from the text.
             await page.set_content(
                 '<li class="s-card"><a class="s-card__link" href="https://www.ebay.de/itm/12345"><h3 class="s-card__title">Resident Evil Requiem PS5</h3></a><span class="renamed">EUR 30,00</span></li>'
