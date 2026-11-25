@@ -17,7 +17,7 @@ from ..domain import (
     number,
     rooms,
 )
-from .common import plain, warm_from_parts
+from .common import complete, json_pieces, plain, warm_from_parts
 
 log = logging.getLogger('suchalarm')
 
@@ -107,7 +107,13 @@ def immowelt_cards(offers):
     rent of one offer and the warm rent of the next."""
     if not isinstance(offers, list):
         raise Unreadable('Immowelt-Angebote nicht lesbar (Antwort geändert).')
-    return [_card(offer) for offer in offers if _EXPOSE.fullmatch(offer.get('url') or '')]
+    # The hard facts fill fields the labelled reading missed; the description would add a garden's m².
+    cards = [
+        (_card(offer), json_pieces([offer.get('hardFacts'), (offer.get('location') or {}).get('address')]))
+        for offer in offers
+        if _EXPOSE.fullmatch(offer.get('url') or '')
+    ]
+    return complete('Immowelt', cards)
 
 
 _EXPOSE = re.compile(re.escape(IMMOWELT) + r'/expose/[\w-]+')

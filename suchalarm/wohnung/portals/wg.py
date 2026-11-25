@@ -19,7 +19,7 @@ from ..domain import (
     number,
     rooms,
 )
-from .common import attribute, plain, rescue
+from .common import AREA, attribute, complete, html_pieces, plain, rescue
 
 log = logging.getLogger('suchalarm')
 
@@ -115,6 +115,25 @@ def wg_total(html):
     return int(found.group(1).replace('.', '')) if found else None
 
 
+# The line under the title names kind, town with district and street. Until 11/2026 one text with "·" between
+# ("2-Zimmer-Wohnung · Darmstadt Darmstadt · Am alten Bahnhof 6"), since 25.11.2026 each part behind an icon.
+DETAILS = re.compile(r'\btitle="([^"]*-Zimmer-[^"]*)"[^>]*>(.*?)</div>', re.S)
+HEADING = re.compile(r'<h[1-6]\b.*?</h[1-6]>', re.S)
+STAY = re.compile(r'(\d{2}\.\d{2}\.\d{4})(?:\s*-\s*(\d{2}\.\d{2}\.\d{4}))?')  # "01.10.2026 - 31.03.2027"
+ICON = re.compile(r'<span\b[^>]*aria-hidden="true"[^>]*>[^<]*</span>')
+
+
+def wg_details(card):
+    """(kind, district, street) of a card, each "" when the card does not name it."""
+    found = DETAILS.search(card)
+    if not found:
+        return '', '', ''
+    summary = unescape(found.group(1))
+    parts = summary.split('·') if '·' in summary else ICON.split(found.group(2))
+    kind, district, street = ([plain(part) for part in parts if plain(part)] + ['', '', ''])[:3]
+    return kind, ' '.join(dict.fromkeys(district.split())), street  # "Darmstadt Darmstadt" -> "Darmstadt"
+
+
 def wg_parse(html):
     """The result list (layout of 10/2026: each offer is an <a class="wgg-list-card offer_list_item">)."""
     tags = list(WG_CARD.finditer(html))
@@ -129,41 +148,38 @@ def wg_parse(html):
         raise Unreadable('WG-Gesucht-Seite enthält keine erkennbaren Anzeigen (Layout geändert oder gesperrt).')
     listings = []
     for index, tag in enumerate(tags):
-        card = html[tag.end() : tags[index + 1].start() if index + 1 < len(tags) else len(html)]
+        # The card ends with its link; the last one would otherwise run on to the page's end.
+        card = html[tag.end() : tags[index + 1].start() if index + 1 < len(tags) else len(html)].split('</a>', 1)[0]
         href = re.search(r'\bhref="(/[^"]+\.\d+\.html)"', tag.group(0))
         if not href:
             continue
         title = line(attribute(tag.group(0), 'aria-label')) or 'Wohnung'
-        # "2-Zimmer-Wohnung · Darmstadt Darmstadt · Am alten Bahnhof 6", found by its content: the class was
-        # renamed from ad-subtitle to card-details-text (live 05.11.2026).
-        heading = re.search(r'\btitle="([^"]*-Zimmer-[^"]*·[^"]*)"', card)
-        subtitle = unescape(heading.group(1)) if heading else ''
-        kind, district, street = ([' '.join(part.split()) for part in subtitle.split('·')] + ['', '', ''])[:3]
-        district = ' '.join(dict.fromkeys(district.split()))  # "Darmstadt Darmstadt" -> "Darmstadt"
+        kind, district, street = wg_details(card)
         price = re.search(r'class="card-main-text">\s*([^<]*?(?:&euro;|€))', card)
-        size = re.search(r'class="size-value">([^<]*)<', card)
-        middle = card.split('middle-row', 1)[-1].split('bottom-card', 1)[0] if 'middle-row' in card else ''
-        dates = re.findall(r'\d{2}\.\d{2}\.\d{4}', middle)
+        # Read from the card's text, not its classes, which the site renames: the size ("30 m²") stands in the
+        # price row, the first dates are the move-in dates. The title may name other sizes and dates.
+        text = plain(HEADING.sub(' ', card))
+        size = AREA.search(text)
+        stay = STAY.search(text)
         count = re.match(r'([\d,.]+)-Zimmer', kind)
         # The picture loads lazily now: its address is in data-src, src is a placeholder (live 05.11.2026).
         picture = re.search(
             r'<img[^>]+class="[^"]*\btop-image-card\b[^"]*"[^>]+?\b(?:data-)?src="(https://img\.wg-gesucht\.de/[^"]+)"',
             card,
         )
-        listings.append(
-            {
-                'url': 'https://www.wg-gesucht.de' + unescape(href.group(1)),
-                'title': title[:300],
-                'place': wg_place(street, district),
-                'rent': money(number(unescape(price.group(1)))) if price else None,
-                'area': area(number(unescape(size.group(1)))) if size else None,
-                'rooms': rooms(number(count.group(1)) if count else 1.0 if kind.startswith('1-Zimmer') else None),
-                'traits': detect_traits(title, temporary=len(dates) > 1),  # "01.10.2026 - 31.03.2027"
-                'availableFrom': available_from(dates[0]) if dates else None,
-                'imageSource': unescape(picture.group(1)) if picture else None,
-            }
-        )
-    return listings
+        listing = {
+            'url': 'https://www.wg-gesucht.de' + unescape(href.group(1)),
+            'title': title[:300],
+            'place': wg_place(street, district),
+            'rent': money(number(unescape(price.group(1)))) if price else None,
+            'area': area(number(size.group(1))) if size else None,
+            'rooms': rooms(number(count.group(1)) if count else 1.0 if kind.startswith('1-Zimmer') else None),
+            'traits': detect_traits(title, temporary=bool(stay and stay.group(2))),
+            'availableFrom': available_from(stay.group(1)) if stay else None,
+            'imageSource': unescape(picture.group(1)) if picture else None,
+        }
+        listings.append((listing, html_pieces(card)))
+    return complete('WG-Gesucht', listings, warm=True)
 
 
 def wg_detail(html):

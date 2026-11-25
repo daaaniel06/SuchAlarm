@@ -1,13 +1,15 @@
-"""Shared by the portals: plain text of markup, the place check and the fallback parser for
-renamed card markup."""
+"""Shared by the portals: plain text of markup, the place check, the fallback parser for renamed card
+markup and the fallback reader that fills fields a portal's own reading missed."""
 
 import logging
 import re
+from collections import Counter
 from html import unescape
 from html.parser import HTMLParser
 from urllib.parse import urljoin
 
 from ..domain import (
+    FROM_TEXT,
     area,
     available_from,
     clip,
@@ -149,8 +151,11 @@ def _descendants(node):
             stack.extend(reversed(item.children))
 
 
-PRICE = re.compile(r'(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:,\d+)?)\s*(?:€|EUR\b)(.{0,25})', re.I)
-AREA = re.compile(r'(\d+(?:[.,]\d+)?)\s*(?:m²|m2\b|qm\b)', re.I)
+# An amount in euros ("1.250 €", "950,50 EUR"), never a price per m² ("9,82 €/m²").
+MONEY = r'(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:,\d+)?)\s*(?:€|EUR\b)(?!\s*/\s*m)'
+SIZE = r'(\d+(?:[.,]\d+)?)\s*(?:m²|m2\b|qm\b)'
+PRICE = re.compile(MONEY + r'(?=(.{0,25}))', re.I)  # the words after it, which the next amount may share
+AREA = re.compile(SIZE, re.I)
 ROOMS = re.compile(r'(\d+(?:[.,]5)?)\s*-?\s*(?:Zi\.|Zimmer)')
 PLACE = re.compile(r'^\d{5}\s+\D|\(\d{5}\)')
 
@@ -184,36 +189,53 @@ def _card_around(tree, node, url):
 
 
 def _fallback_card(node, card, url, base, warm):
-    pieces = _strings(card)
     # Some portals put the facts only into the link's title attribute.
-    text = ' '.join(([node.attrs['title']] if node.attrs.get('title') else []) + pieces)
+    pieces = ([node.attrs['title']] if node.attrs.get('title') else []) + _strings(card)
+    text = ' '.join(pieces)
     heading = next((n for n in _descendants(card) if n.tag in ('h1', 'h2', 'h3', 'h4')), None)
-    fallback_title = node.attrs.get('title') or (pieces[0] if pieces else '')
-    title = line(' '.join(_strings(heading)) if heading else fallback_title) or 'Wohnung'
-    rent, cold = _card_price(text, warm)
-    size, count = AREA.search(text), ROOMS.search(text)
-    dates = re.findall(r'\b\d{2}\.\d{2}\.\d{4}\b', text)
+    title = line(' '.join(_strings(heading)) if heading else (pieces[0] if pieces else '')) or 'Wohnung'
     return {
         'url': url,
         'title': title,
-        'place': line(next((piece for piece in pieces if PLACE.search(piece)), '')),
-        'rent': rent,
-        'coldRent': cold,
-        'area': area(number(size.group(1))) if size else None,
-        'rooms': rooms(number(count.group(1))) if count else None,
-        'availableFrom': available_from(dates[0]) if dates else None,
+        **text_facts(pieces, warm),
         'traits': detect_traits(title + '\n' + text),
         'text': clip(text),
         'imageSource': _card_picture(card, base),
     }
 
 
+def text_facts(pieces, warm=False):
+    """What the text pieces of a card say, read by pattern alone: place, rents, size, rooms and move-in date.
+    `warm`: the card price is the total rent unless it says otherwise."""
+    text = ' '.join(pieces)
+    rent, cold = _card_price(text, warm)
+    size, count = AREA.search(text), ROOMS.search(text)
+    date = re.search(r'\b\d{2}\.\d{2}\.\d{4}\b', text)
+    return {
+        'place': line(next((piece for piece in pieces if PLACE.search(piece)), '')),
+        'rent': rent,
+        'coldRent': cold,
+        'area': area(number(size.group(1))) if size else None,
+        'rooms': rooms(number(count.group(1))) if count else None,
+        'availableFrom': available_from(date.group(0)) if date else None,
+    }
+
+
+PRICE_LABEL = re.compile(r'(\w*(?:warm|kalt)\w*)\W{0,3}$', re.I)  # "Warmmiete 950 €", "Kaltmiete: 700 €"
+# Amounts that are no rent: "Kaution 450 € · Warmmiete 1.250 €" asks 1.250 €.
+OTHER_COST = re.compile(
+    r'\b(?:kaution|nebenkosten|nk|heizkosten|betriebskosten|provision|stellplatz|garage|ablöse)\W{0,3}$', re.I
+)
+
+
 def _card_price(text, warm):
-    """(warm rent, cold rent) of a card: the first price, warm if it says so or WARM and it does not say cold."""
-    price = PRICE.search(text)
+    """(warm rent, cold rent) of a card: the first amount that is no other cost, warm if it says so or WARM and it
+    does not say cold. A label right before the amount says it; otherwise the words after it ("950 € warm")."""
+    price = next((found for found in PRICE.finditer(text) if not OTHER_COST.search(text[: found.start()])), None)
     if not price:
         return None, None
-    cost, note = money(number(price.group(1))), price.group(2)
+    label = PRICE_LABEL.search(text[: price.start()])
+    cost, note = money(number(price.group(1))), label.group(1) if label else price.group(2)
     total = bool(re.search(r'warm', note, re.I)) or (warm and not re.search(r'kalt', note, re.I))
     return (cost, None) if total else (None, cost)
 
@@ -234,3 +256,102 @@ def rescue(portal, html, link, base='', skip_wanted=False, warm=False):
     if listings:
         log.warning('%s: Kartenlayout unbekannt, Ausweich-Parser las %d Angebote', portal, len(listings))
     return listings
+
+
+# --- Fallback for single fields ------------------------------------------
+# A portal's own reading stays first. Where it misses a field, mostly after a renamed class, the card's text
+# fills it (text_facts), as the fallback parser does for whole cards, and a detail page's text its labelled
+# values (page_facts).
+
+
+def own_reading(listing):
+    """The listing as the portal's own reading left it, without the fields filled from its card's text: what
+    the field check (sources.field_warning) judges, so a changed layout is still reported."""
+    return {**listing, **dict.fromkeys(listing.get(FROM_TEXT, ()))}
+
+
+def html_pieces(fragment):
+    """Text pieces of markup in document order, without scripts and styles."""
+    fragment = re.sub(r'<(script|style)\b.*?</\1>', ' ', fragment, flags=re.S | re.I)
+    return [piece for part in re.split(r'<[^>]+>', fragment) if (piece := ' '.join(unescape(part).split()))]
+
+
+def json_pieces(value):
+    """The text values of decoded JSON in order, for portals that answer with data instead of markup."""
+    if isinstance(value, str):
+        return [piece] if (piece := ' '.join(value.split())) else []
+    items = value.values() if isinstance(value, dict) else value if isinstance(value, list) else ()
+    return [piece for item in items for piece in json_pieces(item)]
+
+
+def complete(portal, cards, warm=False):
+    """The listings of (listing, text pieces of its card) pairs, each field the portal reads but found empty
+    taken from the card's text (text_facts)."""
+    filled = Counter(field for listing, pieces in cards for field in _fill(listing, text_facts(pieces, warm)))
+    _log_filled(portal, 'Kartentext', filled)
+    return [listing for listing, _ in cards]
+
+
+def complete_detail(portal, detail, pieces):
+    """A detail page as the portal's parser read it, each field it reads but found empty taken from the labelled
+    values of the page's text pieces (page_facts)."""
+    _log_filled(portal, 'Seitentext', Counter(_fill(detail, page_facts(pieces))))
+    return detail
+
+
+def _fill(own, facts):
+    """The fields of the portal's own reading OWN that it reads but found empty, taken from FACTS read from the
+    text. Fields the portal does not read stay out: a cold-rent portal gets no warm rent. OWN names them under
+    FROM_TEXT (see own_reading and Listing.with_detail)."""
+    filled = [
+        field for field, value in facts.items() if field in own and own[field] in (None, '') and value not in (None, '')
+    ]
+    for field in filled:
+        own[field] = facts[field]
+    if filled:
+        own.setdefault(FROM_TEXT, []).extend(filled)
+    return filled
+
+
+def _log_filled(portal, origin, filled):
+    """A hint that the portal's markup changed."""
+    if filled:
+        found = ', '.join(f'{field} {count}×' for field, count in sorted(filled.items()))
+        log.warning('%s: Felder aus dem %s ergänzt (Layout geändert?): %s', portal, origin, found)
+
+
+# The labels of a detail page, each with its value right behind it ("Wohnfläche ca. 55 m²", "Zimmer: 2").
+# Immowelt also names the price per m² first ("Kaltmiete 9,82 €/m² 540 €"). The first labelled value counts: the
+# offer's own facts come before what a page adds further down.
+_LABEL_GAP = r'\W{0,3}(?:ca\.\s*)?'
+PAGE_LABELS = {
+    'rent': (r'Warmmiete|Gesamtmiete', rf'(?:[\d.,]+\s*€\s*/\s*m²\s*)?{MONEY}'),
+    'coldRent': (r'Nettokaltmiete|Kaltmiete', rf'(?:[\d.,]+\s*€\s*/\s*m²\s*)?{MONEY}'),
+    'area': (r'Wohnfläche', SIZE),
+    'rooms': (r'Zimmeranzahl|Anzahl Zimmer|Zimmer', r'(\d+(?:,5)?)(?![\d.,]|\s*(?:m²|€))'),  # not "1. OG"
+    'availableFrom': (r'Verfügbar ab|Bezugsfrei ab|frei ab', r'(\d{2}\.\d{2}\.\d{4}|sofort)'),
+}
+# A portal's own estimate ("geschätzte Warmmiete", "geschätzte monatliche Warmmiete") is no stated value.
+ESTIMATE = re.compile(r'geschätzt\w*\s+(?:\w+\s+)?$', re.I)
+_READERS = {
+    'rent': lambda value: money(number(value)),
+    'coldRent': lambda value: money(number(value)),
+    'area': lambda value: area(number(value)),
+    'rooms': lambda value: rooms(number(value)),
+    'availableFrom': available_from,
+}
+
+
+def page_facts(pieces):
+    """What the labelled values among a detail page's text pieces say: rents, size, rooms and move-in date."""
+    text = ' '.join(pieces)
+    facts = {}
+    for field, (labels, value) in PAGE_LABELS.items():
+        stated = (
+            found
+            for found in re.finditer(rf'\b(?:{labels})\b{_LABEL_GAP}{value}', text, re.I)
+            if not ESTIMATE.search(text[: found.start()])
+        )
+        found = next(stated, None)
+        facts[field] = _READERS[field](found.group(1)) if found else None
+    return facts

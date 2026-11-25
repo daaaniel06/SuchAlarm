@@ -129,8 +129,71 @@
   }
   const owner = card =>
     vintedOwners.get(card.querySelector('[data-testid^="product-item-id-"]')?.dataset.testid.match(/\d+/)?.[0]) || '';
-  const rows = [...document.querySelectorAll(c.cards)].slice(0, limit).map(card => {
-    const a = card.querySelector(c.link);
+  // Fallback when the selectors miss (renamed classes): cards are found by their detail links, title and price
+  // read from the card's text. A row names what came from there under fromText, which sources.py logs.
+  const detailLink = {
+    ebay: /\/itm\/\d+/,
+    kleinanzeigen: /\/s-anzeige\/.+\/\d+-\d+-\d+/,
+    vinted: /\/items\/\d+/,
+  }[source];
+  const offerOf = a => a.href.split(/[?#]/)[0];
+  // The largest element around each detail link that holds no other offer.
+  const cardsByLinks = () => {
+    if (!detailLink) return [];
+    const links = [...document.querySelectorAll('a[href]')].filter(a => detailLink.test(a.pathname));
+    const cards = new Set();
+    for (const a of links) {
+      let card = a;
+      const alone = node => links.every(other => !node.contains(other) || offerOf(other) === offerOf(a));
+      while (card.parentElement && card.parentElement !== document.body && alone(card.parentElement))
+        card = card.parentElement;
+      cards.add(card);
+    }
+    return [...cards];
+  };
+  // The one euro amount of a card besides shipping and fees; none when it names two (a struck-through price) or a
+  // range ("20 bis 30 €"), so a fallback never guesses between prices. Fees: "+ 4,50 € Versand", "Versand: 4,99 €",
+  // "inkl. Käuferschutz 46,90 €", "46,90 € inkl.".
+  const FEE_AMOUNT =
+    /(?:\+|versand\w*|lieferung|shipping|käuferschutz|inkl\.?)[^\d€]{0,15}(?:EUR\s*)?\d[\d.,]*(?:\s*€)?|\d[\d.,]*\s*(?:€|EUR)\s*inkl/gi;
+  const PRICE_RANGE =
+    /(?:€|\bEUR)\s*\d[\d.,]*\s*(?:bis|[-–])|\d[\d.,]*\s*(?:€|EUR\b)?\s*(?:bis|[-–])\s*\d[\d.,]*\s*(?:€|EUR\b)/i;
+  const lonePrice = cardText => {
+    const rest = cardText.replace(FEE_AMOUNT, ' ');
+    if (PRICE_RANGE.test(rest)) return '';
+    const amounts = new Set(
+      [...rest.matchAll(/(?:€|\bEUR)\s*(\d[\d.,]*)|(\d[\d.,]*)\s*(?:€|EUR\b)/g)].map(found => found[1] || found[2]),
+    );
+    return amounts.size === 1 ? `${[...amounts][0]} €` : '';
+  };
+  // A card's text without headings and its own parts, its text nodes spaced: textContent would join a title
+  // "… PS5" and "29,99 €" to "PS529,99 €".
+  const spacedText = card => {
+    const copy = card.cloneNode(true);
+    copy.querySelectorAll(`${ownParts}, h1, h2, h3, h4`).forEach(el => el.remove());
+    const walker = document.createTreeWalker(copy, NodeFilter.SHOW_TEXT);
+    const parts = [];
+    while (walker.nextNode()) parts.push(walker.currentNode.textContent);
+    return parts.join(' ');
+  };
+  const heading = card => card.querySelector('h1, h2, h3, h4')?.textContent.trim() || '';
+  // What the card says about the offer: without its title and the seller's own description.
+  const ownParts = [c.title, c.description, 'script, style'].filter(Boolean).join(', ');
+  const byClass = [...document.querySelectorAll(c.cards)];
+  const cards = byClass.length ? byClass : cardsByLinks();
+  const rows = cards.slice(0, limit).map(card => {
+    const a = card.querySelector(c.link) || (card.matches('a[href]') ? card : null);
+    const fromText = byClass.length ? [] : ['card'];
+    const status = textWithout(card, ownParts).slice(0, 2500);
+    // Vinted's card title is only the brand since 11/2026; the link's title holds the item's own title
+    // before ", Marke: …, Zustand: …, 30.00 €".
+    const ownTitle =
+      (source === 'vinted' && a?.title.split(/, (?:Marke|Zustand|Größe): /)[0].trim()) || title(card) || a?.title || '';
+    const ownPrice = text(card, c.price);
+    const titleFromText = ownTitle ? '' : heading(card) || a?.textContent.trim() || '';
+    const priceFromText = ownPrice ? '' : lonePrice(spacedText(card));
+    if (titleFromText) fromText.push('title');
+    if (priceFromText) fromText.push('price');
     let shippingText = '';
     if (source === 'ebay') {
       shippingText = textWithout(
@@ -140,14 +203,8 @@
     }
     return {
       shippingText,
-      // Vinted's card title is only the brand since 11/2026; the link's title holds the item's own title
-      // before ", Marke: …, Zustand: …, 30.00 €".
-      title:
-        (source === 'vinted' && a?.title.split(/, (?:Marke|Zustand|Größe): /)[0].trim()) ||
-        title(card) ||
-        a?.title ||
-        '',
-      price: text(card, c.price),
+      title: ownTitle || titleFromText,
+      price: ownPrice || priceFromText,
       url: a?.href || '',
       seller: source === 'ebay' ? ebaySeller(card) : text(card, c.seller),
       owner: owner(card),
@@ -159,8 +216,8 @@
           : '',
       image: picture(card),
       text: card.textContent.slice(0, 2500),
-      // What the card says about the offer: without its title and the seller's own description.
-      status: textWithout(card, [c.title, c.description, 'script, style'].filter(Boolean).join(', ')).slice(0, 2500),
+      status,
+      fromText,
     };
   });
   const structured = [];

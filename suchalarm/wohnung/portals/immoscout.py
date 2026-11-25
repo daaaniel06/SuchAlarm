@@ -19,7 +19,7 @@ from ..domain import (
     published_at,
     rooms,
 )
-from .common import heating_included, warm_from_parts
+from .common import complete, heating_included, json_pieces, warm_from_parts
 
 log = logging.getLogger('suchalarm')
 
@@ -104,8 +104,9 @@ def immoscout_total(data):
 def immoscout_parse(data):
     if not isinstance(data, dict) or not isinstance(data.get('resultListItems'), list):
         raise Unreadable('ImmoScout24-Ergebnisse haben ein unbekanntes Format.')
-    listings = (_immoscout_listing(entry) for entry in data['resultListItems'] if isinstance(entry, dict))
-    return [listing for listing in listings if listing]
+    entries = [entry for entry in data['resultListItems'] if isinstance(entry, dict)]
+    cards = [(listing, _facts(entry)) for entry in entries if (listing := _immoscout_listing(entry))]
+    return complete('ImmoScout24', cards)
 
 
 def _immoscout_listing(entry):
@@ -133,6 +134,12 @@ def _immoscout_listing(entry):
         'publishedAt': published_at(item.get('published')),
         **coordinate_pair(address.get('lat'), address.get('lon')),
     }
+
+
+def _facts(entry):
+    """The text of an entry's facts and address, for fields its own reading missed (the title would add a garden's m²)."""
+    item = entry.get('item') or {}
+    return json_pieces([item.get('attributes'), item.get('address')])
 
 
 def _immoscout_image(item):

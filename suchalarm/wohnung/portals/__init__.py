@@ -30,8 +30,11 @@ from .common import (  # noqa: F401
     SELF_CLOSING,
     VOID_TAGS,
     attribute,
+    complete_detail,
     fallback_cards,
+    html_pieces,
     near,
+    own_reading,
     plain,
     rescue,
 )

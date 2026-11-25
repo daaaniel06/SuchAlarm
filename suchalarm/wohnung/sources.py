@@ -553,7 +553,7 @@ async def _page(source, search, page=1):
     missed = unread(source, page, len(found), total)
     if missed:
         log.warning('%s: page %s lists %s offers the parser could not read', source, page, missed)
-    warning = field_warning(source, listings)
+    warning = field_warning(source, [Listing.from_card(source, portals.own_reading(card)) for card in found])
     if warning:
         log.warning('%s: page %s: %s', source, page, warning)
     return listings, {'listed': len(listings), 'unread': missed, 'warning': warning}
@@ -610,7 +610,7 @@ async def _immowelt_detail(url):
     except browser.Blocked as exc:
         # A refused exposé skips only this listing; whether Immowelt blocks shows in its result list.
         raise RuntimeError(str(exc)) from None
-    return portals.immowelt_detail(html)
+    return read_detail('immowelt', portals.immowelt_detail, html)
 
 
 async def _immoscout_detail(url):
@@ -619,7 +619,9 @@ async def _immoscout_detail(url):
 
 
 async def _kleinanzeigen_detail(url):
-    return portals.kleinanzeigen_detail(await _browser_page('kleinanzeigen-wohnung', url))
+    return read_detail(
+        'kleinanzeigen-wohnung', portals.kleinanzeigen_detail, await _browser_page('kleinanzeigen-wohnung', url)
+    )
 
 
 async def _bauverein_detail(url):
@@ -648,5 +650,10 @@ DETAILS = (*HTML_DETAILS, *DETAIL_PAGES)  # the portals with a detail page to re
 async def detail(source, url):
     """What the detail page of a listing adds (camelCase keys); one booked visit."""
     if source in HTML_DETAILS:
-        return HTML_DETAILS[source](await http.get_html(source, url))
+        return read_detail(source, HTML_DETAILS[source], await http.get_html(source, url))
     return await DETAIL_PAGES[source](url)
+
+
+def read_detail(source, parse, html):
+    """An HTML detail page read by its portal's parser, fields it missed taken from the page's labelled text."""
+    return portals.complete_detail(source, parse(html), portals.html_pieces(html))

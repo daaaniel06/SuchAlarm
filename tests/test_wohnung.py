@@ -802,6 +802,17 @@ class ParserTests(unittest.TestCase):
             ],
         )
         self.assertTrue(all(c['imageSource'].startswith('https://img.wg-gesucht.de/') for c in live))
+        # The live layout of 25.11.2026: size without its class, each part of the address line behind an icon.
+        live = portals.wg_parse(fixture('wg-gesucht', 'list-2026-11-25.html'))
+        self.assertEqual(
+            [(c['rent'], c['area'], c['rooms'], c['place'], c['availableFrom'], c['traits']) for c in live],
+            [
+                (840, 30, 1, 'Musterweg 1, Darmstadt, Johannesviertel', '2026-11-25', []),
+                (814, 19, 1, 'Beispielstraße 2, Darmstadt', '2026-11-25', ['Befristet']),
+                (850, 40, 2, 'Musterweg 3, Darmstadt, Johannesviertel', '2026-11-25', []),
+                (900, 53, 2, 'Beispielstraße, Darmstadt', '2026-12-01', ['Befristet']),
+            ],
+        )
         detail = portals.wg_detail(WG_DETAIL)
         self.assertEqual((detail['rent'], detail['coldRent'], detail['traits']), (1300, 1100, ['WBS']))
         self.assertNotIn('ads()', detail['text'])
@@ -822,6 +833,110 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(portals.nhw_parse('<div class="immo--list"></div>'), [])
         with self.assertRaises(Unreadable):
             portals.nhw_parse('<html>Wartungsarbeiten</html>')
+
+    def test_a_field_the_portal_misses_comes_from_the_card_text(self):
+        # Kleinanzeigen renamed its price class: the cold rent comes from the text, the rest stays as read.
+        renamed = re.sub(r'class="[^"]*(?:price|text-title3)[^"]*"', 'class="renamed"', KLEINANZEIGEN_PAGE)
+        with self.assertLogs('suchalarm', 'WARNING') as logs:
+            card = portals.kleinanzeigen_parse(renamed)[0]
+        self.assertEqual((card['coldRent'], card['area'], card['fromText']), (1050, 62.5, ['coldRent']))
+        self.assertIn(
+            'Kleinanzeigen: Felder aus dem Kartentext ergänzt (Layout geändert?): coldRent 2×', logs.output[0]
+        )
+        self.assertIsNone(portals.own_reading(card)['coldRent'])
+        # ohne-makler: price and size without their markup.
+        renamed = re.sub(r'title="(?:Wohnfläche|Zimmer)"', 'title="renamed"', fixture('ohne-makler', 'list.html'))
+        renamed = renamed.replace('block font-semibold', 'block renamed')
+        with self.assertLogs('suchalarm', 'WARNING'):
+            card = portals.om_parse(renamed)[0]
+        self.assertEqual((card['coldRent'], card['area'], card['rooms']), (755, 50, 2))
+
+    def test_the_text_fills_only_empty_fields_the_portal_reads(self):
+        pieces = ['950 € warm', '70 m²', '3 Zimmer', '64283 Darmstadt', 'frei ab 01.12.2026']
+        cold_portal = {'coldRent': None, 'area': 65, 'rooms': None, 'place': ''}
+        with self.assertLogs('suchalarm', 'WARNING'):
+            (card,) = portals.common.complete('Test', [(cold_portal, pieces)])
+        # A warm rent is no cold rent, a known size stays, no move-in date where the portal reads none.
+        self.assertEqual(
+            card,
+            {'coldRent': None, 'area': 65, 'rooms': 3, 'place': '64283 Darmstadt', 'fromText': ['place', 'rooms']},
+        )
+        self.assertEqual(portals.common.complete('Test', [({'area': 70}, pieces)]), [{'area': 70}])
+
+    def test_a_field_the_detail_parser_misses_comes_from_the_labelled_page_text(self):
+        # Kleinanzeigen renamed its detail list: the labelled values of the page fill in.
+        renamed = KLEINANZEIGEN_DETAIL.replace('addetailslist--detail', 'renamed')
+        with self.assertLogs('suchalarm', 'WARNING') as logs:
+            detail = sources.read_detail('kleinanzeigen-wohnung', portals.kleinanzeigen_detail, renamed)
+        self.assertEqual((detail['rent'], detail['area'], detail['rooms']), (1290, 62.5, 2))
+        self.assertEqual(detail['fromText'], ['rent', 'area', 'rooms'])
+        self.assertIn('Felder aus dem Seitentext ergänzt', logs.output[0])
+        # An estimated warm rent stays unknown: only a stated one counts, never Immowelt's guess.
+        estimated = fixture('immowelt', 'expose_estimated.html')
+        self.assertIsNone(sources.read_detail('immowelt', portals.immowelt_detail, estimated)['rent'])
+        # A page the parser reads fully is left as it is.
+        complete = sources.read_detail('immobilien-de', portals.id_detail, fixture('immobilien-de', 'detail.html'))
+        self.assertNotIn('fromText', complete)
+
+    def test_a_text_value_of_the_detail_page_never_replaces_the_cards(self):
+        card = Listing.from_card('wg-gesucht', {'url': 'https://example.org/1', 'rent': 900, 'area': None})
+        done = card.with_detail({'rent': 2100, 'area': 55, 'traits': [], 'fromText': ['rent', 'area']})
+        self.assertEqual((done.rent, done.area), (900, 55))  # the card's rent stays, the empty size is filled
+        self.assertEqual(card.with_detail({'rent': 950, 'traits': []}).rent, 950)  # the parser's own value wins
+
+    def test_labelled_values_need_their_value_right_behind_the_label(self):
+        facts = portals.common.page_facts
+        for pieces, field in (
+            (['Warmmiete:', 'Kaution', '2100 €'], 'rent'),
+            (['Warmmiete:', 'NK', '150 €'], 'rent'),
+            (['Kaltmiete', '9,82 €/m²'], 'coldRent'),
+            (['geschätzte monatliche Warmmiete', '1.106 €'], 'rent'),
+            (['2', 'Zimmer', '1. OG'], 'rooms'),
+        ):
+            with self.subTest(pieces=pieces):
+                self.assertIsNone(facts(pieces)[field])
+        self.assertEqual(facts(['geschätzte Warmmiete 1.106 €', 'Warmmiete', '1.250 €'])['rent'], 1250)
+
+    def test_a_card_price_is_no_deposit_or_running_cost(self):
+        facts = portals.common.text_facts
+        self.assertEqual(facts(['Kaution 450 €', 'Warmmiete 1.250 €'], warm=True)['rent'], 1250)
+        self.assertEqual(facts(['NK 150 €', '900 €'])['coldRent'], 900)
+
+    def test_wg_move_in_and_size_come_from_the_card_not_its_title(self):
+        page = fixture('wg-gesucht', 'list-2026-11-25.html').replace(
+            'Einzimmerwohnung in Darmstadt </span>', 'Einzimmerwohnung, 99 m² Garten, Besichtigung 15.12.2026 </span>'
+        )
+        first = portals.wg_parse(page)[0]
+        self.assertEqual((first['area'], first['availableFrom']), (30, '2026-11-25'))
+        last = portals.wg_parse(page + '<footer>Impressum 01.01.2030</footer>')[-1]
+        self.assertEqual(last['availableFrom'], '2026-12-01')
+
+    def test_labelled_values_of_a_page(self):
+        facts = portals.common.page_facts(
+            ['Kaltmiete', '9,82 €/m²', '540 €', 'Wohnfläche ca.', '55 m²', 'Zimmer:', '2', 'frei ab', '01.12.2026']
+        )
+        self.assertEqual(facts, {'rent': None, 'coldRent': 540, 'area': 55, 'rooms': 2, 'availableFrom': '2026-12-01'})
+        self.assertIsNone(portals.common.page_facts(['2 Zimmer', '55 m²'])['rooms'])  # no label, no guess
+        self.assertIsNone(portals.common.page_facts(['geschätzte Warmmiete', '900 €'])['rent'])
+
+    def test_a_label_before_the_card_price_names_its_kind(self):
+        facts = portals.common.text_facts
+        self.assertEqual(facts(['Kaltmiete', '795 €', 'Warmmiete', '1.106 €'])['coldRent'], 795)
+        self.assertEqual(
+            (facts(['Warmmiete', '480 €'])['rent'], facts(['Warmmiete', '480 €'])['coldRent']), (480, None)
+        )
+        self.assertEqual(facts(['950 € warm'])['rent'], 950)
+        self.assertEqual(facts(['950 €'], warm=True)['rent'], 950)
+
+    def test_text_pieces_of_markup_and_data(self):
+        self.assertEqual(
+            portals.common.html_pieces('<p>840 &euro;<span>30 m²</span></p><script>x = "9 m²"</script> <b> </b>'),
+            ['840 €', '30 m²'],
+        )
+        self.assertEqual(
+            portals.common.json_pieces({'facts': [{'value': ' 65  m² '}, {'value': 3}], 'city': 'Darmstadt'}),
+            ['65 m²', 'Darmstadt'],
+        )
 
     def test_renamed_card_markup_falls_back_to_links_and_text(self):
         cards = portals.kleinanzeigen_parse(without_markup(KLEINANZEIGEN_PAGE))
@@ -1350,7 +1465,8 @@ class FieldWarningTests(TempData):
         changed = changed.replace('top-image-card', 'unknown-image')
         broken = portals.wg_parse(changed)
         self.assertEqual(len(broken), 10)
-        self.assertTrue(all(not card['rooms'] and not card['place'] and not card['imageSource'] for card in broken))
+        # The rooms come from the card's text ("2-Zimmer-Wohnung"); the warning still names what the layout lost.
+        self.assertTrue(all(card['rooms'] == 2 and not card['place'] and not card['imageSource'] for card in broken))
         flat_search = self.stored_search(sources=['wg-gesucht'])
 
         def check(cards):
